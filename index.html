@@ -3,52 +3,146 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0d4fa8">
 <title>نظام الحضور والانصراف</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800&display=swap" rel="stylesheet">
 <style>
-:root{--bg:#f3f5f9;--card:#fff;--ink:#1d2433;--mute:#6b7488;--line:#e3e7ef;--pri:#2457e6;--pri-d:#1a43b8;--ok:#14935a;--bad:#d63b3b;--warn:#c98a00}
-*{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:var(--ink);font-family:"Segoe UI",Tahoma,"Noto Sans Arabic",Arial,sans-serif;font-size:15px;line-height:1.6}
+:root{
+  --bg:#eaf2fb;--card:#fff;--ink:#12263f;--mute:#6580a0;--line:#d9e6f5;
+  --pri:#1b7ee6;--pri-d:#0f5fc0;--pri-l:#e3f0ff;--navy:#0b3c7d;
+  --ok:#12a371;--bad:#e04545;--warn:#e69a00;
+  --grad:linear-gradient(135deg,#0d4fa8 0%,#1b7ee6 55%,#43b0f5 100%);
+  --sh:0 8px 24px rgba(20,90,170,.10);
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:"Tajawal","Segoe UI",Tahoma,"Noto Sans Arabic",Arial,sans-serif;font-size:15px;line-height:1.6}
 button,input,select,textarea{font:inherit}
-.wrap{max-width:1100px;margin:0 auto;padding:16px}
-.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px;margin-bottom:14px;box-shadow:0 1px 3px rgba(20,30,60,.04)}
+.ic{flex:none;vertical-align:middle}
+
+/* ---------- الهيدر ---------- */
+.top{background:var(--grad);color:#fff;padding:18px 16px 56px;border-radius:0 0 30px 30px;position:relative;overflow:hidden}
+.top::before,.top::after{content:"";position:absolute;border-radius:50%;background:rgba(255,255,255,.09)}
+.top::before{width:240px;height:240px;top:-110px;left:-60px}
+.top::after{width:170px;height:170px;bottom:-90px;right:22%}
+.top-in{max-width:1100px;margin:0 auto;display:flex;align-items:center;justify-content:space-between;gap:12px;position:relative;z-index:1}
+.brand{display:flex;align-items:center;gap:12px}
+.brand b{display:block;font-size:19px;font-weight:800;line-height:1.2}
+.brand small{opacity:.8;font-size:12.5px}
+.logo{width:46px;height:46px;border-radius:14px;background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.35);display:grid;place-items:center;backdrop-filter:blur(4px);color:#fff}
+.logo.big{width:74px;height:74px;border-radius:22px;background:var(--grad);border:0;box-shadow:0 10px 26px rgba(27,126,230,.4);margin:0 auto 12px}
+.top-act{display:flex;gap:8px}
+.ib{width:40px;height:40px;border-radius:12px;border:1px solid rgba(255,255,255,.35);background:rgba(255,255,255,.15);color:#fff;display:grid;place-items:center;cursor:pointer}
+.ib:hover{background:rgba(255,255,255,.28)}
+
+.wrap{max-width:1100px;margin:0 auto;padding:0 16px 24px}
+
+/* ---------- التبويبات ---------- */
+.tabs{display:flex;gap:6px;background:#fff;padding:8px;border-radius:18px;box-shadow:var(--sh);margin:-34px 0 16px;position:relative;z-index:2;overflow-x:auto}
+.tab{display:flex;align-items:center;gap:8px;padding:10px 18px;border-radius:12px;border:0;background:transparent;color:var(--mute);font-weight:700;cursor:pointer;white-space:nowrap}
+.tab:hover{background:var(--pri-l);color:var(--pri-d)}
+.tab.on{background:var(--grad);color:#fff;box-shadow:0 6px 14px rgba(27,126,230,.35)}
+
+/* ---------- البطاقات ---------- */
+.card{background:var(--card);border:1px solid var(--line);border-radius:20px;padding:18px;margin-bottom:14px;box-shadow:var(--sh)}
 h1,h2,h3{margin:0 0 12px}
-h1{font-size:22px}h2{font-size:18px}h3{font-size:16px}
+h1{font-size:22px}h2{font-size:18px}h3{font-size:16.5px;margin:0}
+.ch{display:flex;align-items:center;gap:10px;margin-bottom:14px}
+.chi{width:34px;height:34px;border-radius:11px;background:var(--pri-l);color:var(--pri-d);display:grid;place-items:center}
 .muted{color:var(--mute)}.center{text-align:center}
-.bar{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:14px}
-.tabs{display:flex;gap:6px;overflow-x:auto;margin-bottom:14px;padding-bottom:2px}
-.tab{border:1px solid var(--line);background:var(--card);padding:9px 16px;border-radius:10px;cursor:pointer;white-space:nowrap;color:var(--ink)}
-.tab.on{background:var(--pri);border-color:var(--pri);color:#fff}
-.btn{border:0;background:var(--pri);color:#fff;padding:9px 16px;border-radius:10px;cursor:pointer;font-weight:600}
-.btn:hover{background:var(--pri-d)}
-.btn:disabled{opacity:.45;cursor:not-allowed}
-.btn.sec{background:#e9edf6;color:var(--ink)}.btn.sec:hover{background:#dde3f0}
-.btn.ok{background:var(--ok)}.btn.bad{background:var(--bad)}
-.btn.sm{padding:5px 10px;font-size:13px;border-radius:8px}
+
+/* ---------- الأزرار والحقول ---------- */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;border:0;background:var(--grad);color:#fff;padding:10px 18px;border-radius:12px;cursor:pointer;font-weight:700;box-shadow:0 4px 12px rgba(27,126,230,.28);transition:transform .08s,filter .15s}
+.btn:hover{filter:brightness(1.07)}.btn:active{transform:scale(.97)}
+.btn:disabled{opacity:.4;cursor:not-allowed;filter:none}
+.btn.sec{background:var(--pri-l);color:var(--pri-d);box-shadow:none}
+.btn.sec:hover{background:#d3e7ff}
+.btn.ok{background:linear-gradient(135deg,#0e8f63,#2fcf97);box-shadow:0 4px 12px rgba(18,163,113,.3)}
+.btn.bad{background:linear-gradient(135deg,#c93636,#f06a6a);box-shadow:0 4px 12px rgba(224,69,69,.28)}
+.btn.sm{padding:6px 11px;font-size:13px;border-radius:10px;gap:5px}
 .row{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end}
-.field{display:flex;flex-direction:column;gap:4px;flex:1;min-width:150px}
-.field label{font-size:13px;color:var(--mute)}
-input,select,textarea{border:1px solid var(--line);border-radius:10px;padding:9px 11px;background:#fff;color:var(--ink);width:100%}
-input:focus,select:focus,textarea:focus{outline:2px solid #bcd0ff;border-color:var(--pri)}
-.tw{overflow-x:auto}
+.field{display:flex;flex-direction:column;gap:5px;flex:1;min-width:150px}
+.field label{font-size:13px;color:var(--mute);font-weight:500}
+input,select,textarea{border:1.5px solid var(--line);border-radius:12px;padding:10px 12px;background:#f8fbff;color:var(--ink);width:100%}
+input:focus,select:focus,textarea:focus{outline:none;border-color:var(--pri);background:#fff;box-shadow:0 0 0 4px rgba(27,126,230,.14)}
+
+/* ---------- الجداول ---------- */
+.tw{overflow-x:auto;border:1px solid var(--line);border-radius:14px}
 table{width:100%;border-collapse:collapse;font-size:14px}
-th,td{padding:9px 10px;text-align:right;border-bottom:1px solid var(--line);white-space:nowrap}
-th{background:#f7f9fd;color:var(--mute);font-weight:600}
-.badge{display:inline-block;padding:2px 10px;border-radius:99px;font-size:12px;font-weight:700}
-.b-ok{background:#e3f6ec;color:var(--ok)}.b-bad{background:#fde8e8;color:var(--bad)}.b-warn{background:#fff3d6;color:var(--warn)}.b-mute{background:#eceff5;color:var(--mute)}
-.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:14px}
-.stat{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px}
-.stat b{display:block;font-size:26px}
-.toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#1d2433;color:#fff;padding:11px 20px;border-radius:12px;z-index:99;max-width:90vw;box-shadow:0 6px 24px rgba(0,0,0,.25)}
+th,td{padding:11px 12px;text-align:right;border-bottom:1px solid var(--line);white-space:nowrap}
+th{background:#f1f7fe;color:var(--navy);font-weight:700;font-size:13px}
+tbody tr:last-child td{border-bottom:0}
+tbody tr:hover td{background:#f8fbff}
+.who{display:flex;align-items:center;gap:10px;font-weight:700}
+.av{width:36px;height:36px;border-radius:50%;background:var(--grad);color:#fff;display:grid;place-items:center;font-weight:800;flex:none}
+.av.lg{width:58px;height:58px;font-size:24px;border:3px solid rgba(255,255,255,.55);background:rgba(255,255,255,.2)}
+.acts{display:flex;gap:6px;flex-wrap:wrap}
+.badge{display:inline-flex;align-items:center;gap:4px;padding:3px 11px;border-radius:99px;font-size:12px;font-weight:700}
+.b-ok{background:#dff5ec;color:var(--ok)}.b-bad{background:#fde6e6;color:var(--bad)}.b-warn{background:#fff1d1;color:#b97800}.b-mute{background:#e8eef7;color:var(--mute)}.b-pri{background:var(--pri-l);color:var(--pri-d)}
+
+/* ---------- الإحصائيات ---------- */
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;margin-bottom:14px}
+.stat{background:var(--card);border:1px solid var(--line);border-radius:20px;padding:14px 16px;display:flex;align-items:center;gap:14px;box-shadow:var(--sh)}
+.stat b{display:block;font-size:28px;line-height:1.1;font-weight:800}
+.stat span{color:var(--mute);font-size:13px}
+.st-ic{width:52px;height:52px;border-radius:50%;display:grid;place-items:center;color:#fff;flex:none}
+.st-ic.ok{background:linear-gradient(135deg,#0e8f63,#2fcf97)}
+.st-ic.pri{background:var(--grad)}
+.st-ic.bad{background:linear-gradient(135deg,#c93636,#f58b8b)}
+.st-ic.warn{background:linear-gradient(135deg,#d98600,#ffc24a)}
+.st-ic.navy{background:linear-gradient(135deg,#0b3c7d,#3a74c4)}
+
+/* ---------- تنبيهات ---------- */
+.notice{border:1px solid #f3d38a;background:#fff8e6;border-radius:16px;padding:12px 16px;margin-bottom:14px}
+.toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%);background:#12263f;color:#fff;padding:12px 22px;border-radius:14px;z-index:99;max-width:90vw;box-shadow:0 8px 28px rgba(0,0,0,.28);font-weight:500}
 .toast.err{background:var(--bad)}.toast.good{background:var(--ok)}
-.login{max-width:380px;margin:12vh auto}
-.emp-wrap{max-width:440px;margin:0 auto;padding:16px}
-.clock{font-size:44px;font-weight:800;letter-spacing:1px;direction:ltr;margin:6px 0}
-.big{width:100%;padding:18px;font-size:19px;border-radius:14px;margin-top:10px}
-.status{margin-top:14px;padding:12px;border-radius:12px;background:#eef2fb;text-align:center;min-height:46px}
-.status.err{background:#fde8e8;color:var(--bad)}.status.good{background:#e3f6ec;color:var(--ok)}
-pre.rules{background:#10172a;color:#d6e2ff;padding:14px;border-radius:12px;overflow:auto;direction:ltr;text-align:left;font-size:12.5px;max-height:340px}
+
+/* ---------- الدخول ---------- */
+.auth-bg{min-height:100vh;background:var(--grad);display:grid;place-items:center;padding:20px;position:relative;overflow:hidden}
+.auth-bg::before,.auth-bg::after{content:"";position:absolute;border-radius:50%;background:rgba(255,255,255,.08)}
+.auth-bg::before{width:380px;height:380px;top:-160px;right:-120px}
+.auth-bg::after{width:300px;height:300px;bottom:-130px;left:-90px}
+.login{width:100%;max-width:390px;background:#fff;border-radius:26px;padding:28px 24px;box-shadow:0 24px 60px rgba(8,40,100,.35);position:relative;z-index:1}
+.login h1{font-size:21px;margin-bottom:2px}
+
+/* ---------- واجهة الموظف ---------- */
+.emp-bg{min-height:100vh;background:var(--grad) top/100% 300px no-repeat,var(--bg)}
+.emp-wrap{max-width:460px;margin:0 auto;padding:22px 16px 30px}
+.emp-head{display:flex;align-items:center;gap:14px;color:#fff;margin-bottom:18px}
+.emp-head small{opacity:.85}
+.emp-head h1{margin:0;font-size:23px}
+.clockcard{text-align:center;padding:22px 16px}
+.clock{font-size:48px;font-weight:800;letter-spacing:1px;direction:ltr;color:var(--navy);line-height:1.1;margin:4px 0}
+.live{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;color:var(--ok);font-weight:700}
+.live::before{content:"";width:8px;height:8px;border-radius:50%;background:var(--ok);animation:pulse 1.6s infinite}
+@keyframes pulse{0%{box-shadow:0 0 0 0 rgba(18,163,113,.5)}100%{box-shadow:0 0 0 10px rgba(18,163,113,0)}}
+.punch{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:14px 0}
+.pbtn{border:0;border-radius:22px;padding:22px 8px;color:#fff;font-weight:800;font-size:17px;display:flex;flex-direction:column;align-items:center;gap:10px;cursor:pointer;transition:transform .08s}
+.pbtn:active{transform:scale(.96)}
+.pbtn .pc{width:52px;height:52px;border-radius:50%;background:rgba(255,255,255,.22);display:grid;place-items:center}
+.pbtn.in{background:linear-gradient(135deg,#0e8f63,#2fcf97);box-shadow:0 10px 22px rgba(18,163,113,.35)}
+.pbtn.out{background:linear-gradient(135deg,#c93636,#f58080);box-shadow:0 10px 22px rgba(224,69,69,.32)}
+.pbtn:disabled{opacity:.35;box-shadow:none;cursor:not-allowed}
+.status{padding:13px 14px;border-radius:16px;background:#e8f1fc;color:var(--navy);text-align:center;min-height:48px;margin-bottom:14px;font-weight:500}
+.status.err{background:#fde6e6;color:var(--bad)}.status.good{background:#dff5ec;color:var(--ok)}
+
+pre.rules{background:#0e1a33;color:#d6e2ff;padding:14px;border-radius:14px;overflow:auto;direction:ltr;text-align:left;font-size:12.5px;max-height:340px}
 ol li{margin-bottom:6px}
-a{color:var(--pri)}
+a{color:var(--pri-d)}
+
+/* ---------- الجوال: تبويبات سفلية ---------- */
+@media (max-width:720px){
+  .top{padding:14px 14px 50px;border-radius:0 0 26px 26px}
+  .brand b{font-size:16.5px}
+  .tabs{position:fixed;bottom:0;left:0;right:0;margin:0;border-radius:22px 22px 0 0;padding:6px 6px calc(6px + env(safe-area-inset-bottom));justify-content:space-around;gap:2px;box-shadow:0 -8px 28px rgba(15,80,160,.18);z-index:50;overflow:visible}
+  .tab{flex:1;flex-direction:column;gap:2px;font-size:11.5px;padding:8px 2px;border-radius:14px}
+  .tab.on{background:var(--pri-l);color:var(--pri-d);box-shadow:none}
+  .wrap.main{padding-bottom:100px}
+  .toast{bottom:100px}
+  .stat{padding:12px}.stat b{font-size:24px}.st-ic{width:44px;height:44px}
+  .clock{font-size:42px}
+}
 </style>
 </head>
 <body>
@@ -77,9 +171,35 @@ import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/fireba
 import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import { getFirestore, collection, collectionGroup, doc, getDoc, getDocs, setDoc, addDoc, updateDoc, deleteDoc, query, where, orderBy, limit, writeBatch, Timestamp, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
+/* ---------- الأيقونات (SVG مرسومة داخلياً) ---------- */
+const I = {
+  clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+  today: '<rect x="3" y="4" width="18" height="17" rx="3"/><path d="M8 2v4M16 2v4M3 10h18M9 16l2 2 4-4"/>',
+  users: '<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.6-3.5 3.3-5.5 6.5-5.5s5.9 2 6.5 5.5"/><circle cx="17.5" cy="9" r="2.5"/><path d="M17 14.5c2.4.2 4 1.8 4.5 4.5"/>',
+  pin: '<path d="M12 21s7-6.2 7-11.5A7 7 0 0 0 5 9.5C5 14.8 12 21 12 21z"/><circle cx="12" cy="9.5" r="2.5"/>',
+  report: '<path d="M6 3h8l5 5v13H6z"/><path d="M14 3v5h5M9 17v-3M12 17v-6M15 17v-4"/>',
+  refresh: '<path d="M20 11a8 8 0 0 0-14.5-4M4 4v4h4M4 13a8 8 0 0 0 14.5 4M20 20v-4h-4"/>',
+  logout: '<path d="M9 4H5a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h4M16 8l4 4-4 4M20 12H9"/>',
+  login: '<path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4M10 17l5-5-5-5M15 12H3"/>',
+  link: '<path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/>',
+  send: '<path d="M21 3 10 14M21 3l-7 18-4-7-7-4z"/>',
+  device: '<rect x="7" y="2" width="10" height="20" rx="2.5"/><path d="M11 18h2"/>',
+  power: '<path d="M12 3v8M6.4 6.4a8 8 0 1 0 11.2 0"/>',
+  trash: '<path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v6M14 11v6"/>',
+  plus: '<path d="M12 5v14M5 12h14"/>',
+  download: '<path d="M12 3v12M7 11l5 5 5-5M4 20h16"/>',
+  target: '<circle cx="12" cy="12" r="3"/><circle cx="12" cy="12" r="8"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/>',
+  filter: '<path d="M3 5h18l-7 8v6l-4 2v-8z"/>',
+  check: '<path d="M5 12l5 5 9-9"/>',
+  alert: '<path d="M12 3 2 20h20z"/><path d="M12 10v4M12 17.5v.5"/>',
+  map: '<path d="M9 4 3 6v14l6-2 6 2 6-2V4l-6 2z"/><path d="M9 4v14M15 6v14"/>'
+};
+const ic = (n, s = 20) => `<svg class="ic" width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${I[n]}</svg>`;
+
 /* ---------- أدوات مساعدة ---------- */
 const $ = (s, r = document) => r.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const ini = n => esc((n || '?').trim().charAt(0) || '?');
 const pad = n => String(n).padStart(2, '0');
 const L = d => new Date(d.getTime() + TZ_OFFSET_MIN * 60000); // نقرأ منه بـ getUTC* فيعطي توقيت العمل لا توقيت الجهاز
 const dayKey = d => { const x = L(d); return `${x.getUTCFullYear()}-${pad(x.getUTCMonth()+1)}-${pad(x.getUTCDate())}`; };
@@ -183,8 +303,9 @@ service cloud.firestore {
 }`;
 }
 function setupPage() {
-  root.innerHTML = `<div class="wrap"><div class="card">
-  <h1>⚙️ إعداد النظام (مرة واحدة فقط)</h1>
+  root.innerHTML = `<div class="top"><div class="top-in"><div class="brand"><div class="logo">${ic('clock', 26)}</div><div><b>نظام الحضور والانصراف</b><small>إعداد أولي</small></div></div></div></div>
+  <div class="wrap" style="margin-top:-34px;position:relative;z-index:2"><div class="card">
+  <div class="ch"><span class="chi">${ic('check', 18)}</span><h3>إعداد النظام (مرة واحدة فقط)</h3></div>
   <p class="muted">النظام يحتاج قاعدة بيانات مجانية لمزامنة الإدارة مع الموظفين. الخطوات كلها مجانية ولا تتطلب بطاقة بنكية.</p>
   <ol>
     <li>ادخل إلى <a href="https://console.firebase.google.com" target="_blank">console.firebase.google.com</a> وأنشئ مشروعاً جديداً (خطة Spark المجانية).</li>
@@ -196,7 +317,7 @@ function setupPage() {
     <li>في Authentication ← Settings ← Authorized domains أضف نطاق الاستضافة إن لم يكن مضافاً.</li>
   </ol>
   <div class="field" style="max-width:360px"><label>بريد حساب الإدارة (لتوليد القواعد)</label><input id="admEmail" type="email" dir="ltr" placeholder="admin@example.com"></div>
-  <h3 style="margin-top:14px">قواعد Firestore</h3>
+  <h3 style="margin-top:14px;margin-bottom:10px">قواعد Firestore</h3>
   <pre class="rules" id="rulesBox">${esc(rulesText('admin@example.com'))}</pre>
   <button class="btn" id="copyRules" style="margin-top:10px">نسخ القواعد</button>
   </div></div>`;
@@ -217,8 +338,8 @@ else {
    واجهة الموظف
    ===================================================================== */
 async function employeeApp(db, token) {
-  const showErr = m => { root.innerHTML = `<div class="emp-wrap"><div class="card center"><h2>⚠️</h2><p>${esc(m)}</p></div></div>`; };
-  root.innerHTML = `<div class="emp-wrap"><div class="card center">جاري التحميل…</div></div>`;
+  const showErr = m => { root.innerHTML = `<div class="emp-bg"><div class="emp-wrap"><div class="card center" style="margin-top:60px"><div class="st-ic bad" style="margin:0 auto 12px">${ic('alert', 24)}</div><p style="margin:0;font-weight:500">${esc(m)}</p></div></div></div>`; };
+  root.innerHTML = `<div class="emp-bg"><div class="emp-wrap"><div class="card center" style="margin-top:60px">جاري التحميل…</div></div></div>`;
   const ref = doc(db, 'employees', token);
   let emp, locs = [];
   const myDev = getDeviceId();
@@ -244,19 +365,22 @@ async function employeeApp(db, token) {
   await syncTime();
   const now = () => new Date(Date.now() + offset);
 
-  root.innerHTML = `<div class="emp-wrap">
-    <div class="card center">
-      <div class="muted">مرحباً</div><h1 style="margin-bottom:2px">${esc(emp.name)}</h1>
+  root.innerHTML = `<div class="emp-bg"><div class="emp-wrap">
+    <div class="emp-head"><div class="av lg">${ini(emp.name)}</div><div><small>مرحباً بك</small><h1>${esc(emp.name)}</h1></div></div>
+    <div class="card clockcard">
+      <div class="live">الوقت الرسمي</div>
       <div class="clock" id="clock">--:--:--</div>
       <div class="muted" id="dateTxt"></div>
       <div id="skew" class="badge b-warn" style="display:none;margin-top:8px">ساعة جهازك غير مضبوطة — الوقت المسجّل هو وقت الخادم</div>
       <div style="margin-top:10px" id="state"></div>
-      <button class="btn ok big" id="bIn">🟢 تسجيل حضور</button>
-      <button class="btn bad big" id="bOut">🔴 تسجيل انصراف</button>
-      <div class="status" id="msg">اضغط على الزر المناسب، وسيُطلب منك السماح بتحديد الموقع.</div>
     </div>
-    <div class="card"><h3>آخر تسجيلاتك</h3><div class="tw"><table><tbody id="hist"><tr><td class="muted">…</td></tr></tbody></table></div></div>
-  </div>`;
+    <div class="punch">
+      <button class="pbtn in" id="bIn"><span class="pc">${ic('login', 28)}</span>تسجيل حضور</button>
+      <button class="pbtn out" id="bOut"><span class="pc">${ic('logout', 28)}</span>تسجيل انصراف</button>
+    </div>
+    <div class="status" id="msg">اضغط على الزر المناسب، وسيُطلب منك السماح بتحديد الموقع.</div>
+    <div class="card"><div class="ch"><span class="chi">${ic('report', 18)}</span><h3>آخر تسجيلاتك</h3></div><div class="tw"><table><tbody id="hist"><tr><td class="muted">…</td></tr></tbody></table></div></div>
+  </div></div>`;
   $('#skew').style.display = skewWarn ? 'inline-block' : 'none';
   setInterval(() => { const n = now(); $('#clock').textContent = fmtTime(n, true); $('#dateTxt').textContent = `${weekday(n)} ${fmtDate(n)}`; }, 500);
 
@@ -273,7 +397,7 @@ async function employeeApp(db, token) {
     const canIn = !(last && last.type === 'in' && n - last.t < FORGOT_MS);
     const canOut = !!(last && last.type === 'in');
     $('#bIn').disabled = !canIn; $('#bOut').disabled = !canOut;
-    $('#state').innerHTML = last ? (last.type === 'in' ? `<span class="badge b-ok">أنت حاضر منذ ${fmtTime(last.t)}</span>` : `<span class="badge b-mute">آخر انصراف ${fmtTime(last.t)}</span>`) : '';
+    $('#state').innerHTML = last ? (last.type === 'in' ? `<span class="badge b-ok">${ic('check', 14)} أنت حاضر منذ ${fmtTime(last.t)}</span>` : `<span class="badge b-mute">آخر انصراف ${fmtTime(last.t)}</span>`) : '';
   }
 
   const setMsg = (t, c = '') => { const m = $('#msg'); m.className = 'status ' + c; m.textContent = t; };
@@ -315,12 +439,13 @@ async function employeeApp(db, token) {
    تسجيل دخول الإدارة
    ===================================================================== */
 function loginPage(auth) {
-  root.innerHTML = `<div class="wrap"><div class="card login">
-    <h1 class="center">🕘 نظام الحضور والانصراف</h1>
-    <p class="muted center">دخول الإدارة</p>
+  root.innerHTML = `<div class="auth-bg"><div class="login">
+    <div class="logo big">${ic('clock', 38)}</div>
+    <h1 class="center">نظام الحضور والانصراف</h1>
+    <p class="muted center" style="margin:0 0 18px">تسجيل دخول الإدارة</p>
     <div class="field"><label>البريد الإلكتروني</label><input id="em" type="email" dir="ltr" autocomplete="username"></div>
-    <div class="field" style="margin-top:10px"><label>كلمة المرور</label><input id="pw" type="password" dir="ltr" autocomplete="current-password"></div>
-    <button class="btn" id="go" style="width:100%;margin-top:14px">دخول</button>
+    <div class="field" style="margin-top:12px"><label>كلمة المرور</label><input id="pw" type="password" dir="ltr" autocomplete="current-password"></div>
+    <button class="btn" id="go" style="width:100%;margin-top:18px;padding:13px">دخول</button>
   </div></div>`;
   const go = async () => {
     try { await signInWithEmailAndPassword(auth, $('#em').value.trim(), $('#pw').value); }
@@ -338,6 +463,7 @@ function adminApp(db, auth) {
   S.from = dayKey(new Date(Date.now() - 6 * 86400000)); S.to = dayKey(new Date());
   const base = location.origin + location.pathname;
   const linkOf = id => `${base}?e=${id}`;
+  const ch = (icon, title) => `<div class="ch"><span class="chi">${ic(icon, 18)}</span><h3>${title}</h3></div>`;
 
   async function fetchRecs(a, b) {
     const map = d => ({ id: d.id, empId: d.ref.parent.parent.id, ...d.data(), t: d.data().time?.toDate() });
@@ -371,11 +497,14 @@ function adminApp(db, auth) {
   }
 
   function render() {
-    const tabs = [['today', 'اليوم'], ['emps', 'الموظفون'], ['locs', 'المواقع'], ['recs', 'السجل والتقارير']];
-    root.innerHTML = `<div class="wrap">
-      <div class="bar"><h1>🕘 نظام الحضور والانصراف</h1><div><button class="btn sec sm" data-act="reload">تحديث</button> <button class="btn sec sm" data-act="logout">خروج</button></div></div>
-      ${S.idxUrl ? `<div class="card" style="border-color:var(--warn)"><b>خطوة لمرة واحدة:</b> يلزم إنشاء فهرس لتسريع التقارير. <a href="${esc(S.idxUrl)}" target="_blank">اضغط هنا لإنشائه</a> وانتظر دقيقة ثم اضغط «تحديث». حتى ذلك الحين تُحمَّل السجلات بالطريقة البطيئة.</div>` : ''}
-      <div class="tabs">${tabs.map(([k, n]) => `<button class="tab ${S.tab === k ? 'on' : ''}" data-tab="${k}">${n}</button>`).join('')}</div>
+    const tabs = [['today', 'اليوم', 'today'], ['emps', 'الموظفون', 'users'], ['locs', 'المواقع', 'pin'], ['recs', 'التقارير', 'report']];
+    root.innerHTML = `<div class="top"><div class="top-in">
+        <div class="brand"><div class="logo">${ic('clock', 26)}</div><div><b>نظام الحضور والانصراف</b><small>لوحة الإدارة</small></div></div>
+        <div class="top-act"><button class="ib" data-act="reload" title="تحديث">${ic('refresh', 20)}</button><button class="ib" data-act="logout" title="خروج">${ic('logout', 20)}</button></div>
+      </div></div>
+      <div class="wrap main">
+      <div class="tabs">${tabs.map(([k, n, i]) => `<button class="tab ${S.tab === k ? 'on' : ''}" data-tab="${k}">${ic(i, 20)}<span>${n}</span></button>`).join('')}</div>
+      ${S.idxUrl ? `<div class="notice"><b>خطوة لمرة واحدة:</b> يلزم إنشاء فهرس لتسريع التقارير. <a href="${esc(S.idxUrl)}" target="_blank">اضغط هنا لإنشائه</a> وانتظر دقيقة ثم اضغط «تحديث». حتى ذلك الحين تُحمَّل السجلات بالطريقة البطيئة.</div>` : ''}
       <div id="content"></div></div>`;
     ({ today: viewToday, emps: viewEmps, locs: viewLocs, recs: viewRecs })[S.tab]($('#content'));
   }
@@ -385,7 +514,7 @@ function adminApp(db, auth) {
     const now = Date.now(), key = dayKey(new Date(now));
     const act = S.emps.filter(e => e.active);
     const when = t => (dayKey(t) === key ? '' : fmtDate(t) + ' ') + fmtTime(t);
-    const B = { present: ['b-ok', 'حاضر'], left: ['b-mute', 'انصرف'], forgot: ['b-warn', 'نسي الانصراف'], absent: ['b-bad', 'لم يحضر'] };
+    const B = { present: ['b-ok', 'حاضر'], left: ['b-pri', 'انصرف'], forgot: ['b-warn', 'نسي الانصراف'], absent: ['b-bad', 'لم يحضر'] };
     const rows = act.map(e => {
       const rs = S.today.filter(r => r.empId === e.id).sort((a, b) => a.t - b.t);
       const last = rs[rs.length - 1], mine = rs.filter(r => dayKey(r.t) === key), lastToday = mine[mine.length - 1];
@@ -396,36 +525,43 @@ function adminApp(db, auth) {
       return { e, st, firstIn, rec: st === 'absent' ? null : last };
     });
     const c = s => rows.filter(r => r.st === s).length;
-    el.innerHTML = `<div class="stats"><div class="stat"><span class="muted">حاضرون الآن</span><b style="color:var(--ok)">${c('present')}</b></div><div class="stat"><span class="muted">انصرفوا</span><b>${c('left')}</b></div><div class="stat"><span class="muted">لم يحضروا</span><b style="color:var(--bad)">${c('absent')}</b></div><div class="stat"><span class="muted">نسوا الانصراف</span><b style="color:var(--warn)">${c('forgot')}</b></div><div class="stat"><span class="muted">إجمالي الموظفين</span><b>${act.length}</b></div></div>
-    <div class="card"><h3>حالة اليوم — ${weekday(new Date())} ${fmtDate(new Date())}</h3><div class="tw"><table><thead><tr><th>الموظف</th><th>الحالة</th><th>أول حضور</th><th>آخر عملية</th></tr></thead><tbody>
-    ${rows.map(({ e, st, firstIn, rec }) => `<tr><td>${esc(e.name)}</td><td><span class="badge ${B[st][0]}">${B[st][1]}</span></td><td>${firstIn ? when(firstIn.t) : '—'}</td><td>${rec ? `${rec.type === 'in' ? 'حضور' : 'انصراف'} ${when(rec.t)}` : '—'}</td></tr>`).join('') || '<tr><td colspan="4" class="muted">أضف موظفين من تبويب «الموظفون»</td></tr>'}
+    const stat = (icon, cls, label, val) => `<div class="stat"><div class="st-ic ${cls}">${ic(icon, 24)}</div><div><b>${val}</b><span>${label}</span></div></div>`;
+    el.innerHTML = `<div class="stats">
+      ${stat('check', 'ok', 'حاضرون الآن', c('present'))}
+      ${stat('logout', 'pri', 'انصرفوا', c('left'))}
+      ${stat('alert', 'bad', 'لم يحضروا', c('absent'))}
+      ${stat('clock', 'warn', 'نسوا الانصراف', c('forgot'))}
+      ${stat('users', 'navy', 'إجمالي الموظفين', act.length)}
+    </div>
+    <div class="card">${ch('today', `حالة اليوم — ${weekday(new Date())} ${fmtDate(new Date())}`)}<div class="tw"><table><thead><tr><th>الموظف</th><th>الحالة</th><th>أول حضور</th><th>آخر عملية</th></tr></thead><tbody>
+    ${rows.map(({ e, st, firstIn, rec }) => `<tr><td><div class="who"><span class="av">${ini(e.name)}</span>${esc(e.name)}</div></td><td><span class="badge ${B[st][0]}">${B[st][1]}</span></td><td>${firstIn ? when(firstIn.t) : '—'}</td><td>${rec ? `${rec.type === 'in' ? 'حضور' : 'انصراف'} ${when(rec.t)}` : '—'}</td></tr>`).join('') || '<tr><td colspan="4" class="muted">أضف موظفين من تبويب «الموظفون»</td></tr>'}
     </tbody></table></div></div>`;
   }
 
   /* --- الموظفون --- */
   function viewEmps(el) {
-    el.innerHTML = `<div class="card"><h3>إضافة موظف</h3><div class="row">
+    el.innerHTML = `<div class="card">${ch('plus', 'إضافة موظف')}<div class="row">
       <div class="field"><label>الاسم</label><input id="eName"></div>
       <div class="field"><label>رقم الواتساب (اختياري، بصيغة دولية بدون +)</label><input id="ePhone" dir="ltr" placeholder="2189XXXXXXXX"></div>
-      <button class="btn" data-act="addEmp">إضافة وإنشاء رابط</button></div></div>
-    <div class="card"><h3>الموظفون (${S.emps.length})</h3><div class="tw"><table><thead><tr><th>الاسم</th><th>الحالة</th><th>الجهاز</th><th>إجراءات</th></tr></thead><tbody>
-    ${S.emps.map(e => `<tr><td>${esc(e.name)}</td><td>${e.active ? '<span class="badge b-ok">مفعّل</span>' : '<span class="badge b-bad">موقوف</span>'}</td><td>${e.deviceId ? '<span class="badge b-warn">مرتبط</span>' : '<span class="badge b-mute">لم يُفتح بعد</span>'}</td>
-    <td><button class="btn sm" data-act="copy" data-id="${e.id}">نسخ الرابط</button> <button class="btn sm sec" data-act="wa" data-id="${e.id}">واتساب</button> <button class="btn sm sec" data-act="resetDev" data-id="${e.id}">إعادة ضبط الجهاز</button> <button class="btn sm sec" data-act="toggle" data-id="${e.id}">${e.active ? 'إيقاف' : 'تفعيل'}</button> <button class="btn sm bad" data-act="delEmp" data-id="${e.id}">حذف</button></td></tr>`).join('') || '<tr><td colspan="4" class="muted">لا يوجد موظفون</td></tr>'}
+      <button class="btn" data-act="addEmp">${ic('plus', 18)} إضافة وإنشاء رابط</button></div></div>
+    <div class="card">${ch('users', `الموظفون (${S.emps.length})`)}<div class="tw"><table><thead><tr><th>الاسم</th><th>الحالة</th><th>الجهاز</th><th>إجراءات</th></tr></thead><tbody>
+    ${S.emps.map(e => `<tr><td><div class="who"><span class="av">${ini(e.name)}</span>${esc(e.name)}</div></td><td>${e.active ? '<span class="badge b-ok">مفعّل</span>' : '<span class="badge b-bad">موقوف</span>'}</td><td>${e.deviceId ? '<span class="badge b-warn">مرتبط</span>' : '<span class="badge b-mute">لم يُفتح بعد</span>'}</td>
+    <td><div class="acts"><button class="btn sm" data-act="copy" data-id="${e.id}">${ic('link', 15)} نسخ الرابط</button> <button class="btn sm ok" data-act="wa" data-id="${e.id}">${ic('send', 15)} واتساب</button> <button class="btn sm sec" data-act="resetDev" data-id="${e.id}">${ic('device', 15)} إعادة ضبط الجهاز</button> <button class="btn sm sec" data-act="toggle" data-id="${e.id}">${ic('power', 15)} ${e.active ? 'إيقاف' : 'تفعيل'}</button> <button class="btn sm bad" data-act="delEmp" data-id="${e.id}">${ic('trash', 15)} حذف</button></div></td></tr>`).join('') || '<tr><td colspan="4" class="muted">لا يوجد موظفون</td></tr>'}
     </tbody></table></div>
-    <p class="muted" style="font-size:13px;margin-bottom:0">الرابط يُربط تلقائياً بأول جهاز يفتحه لمنع مشاركته بين الموظفين. إن غيّر الموظف هاتفه استخدم «إعادة ضبط الجهاز».</p></div>`;
+    <p class="muted" style="font-size:13px;margin:12px 0 0">الرابط يُربط تلقائياً بأول جهاز يفتحه لمنع مشاركته بين الموظفين. إن غيّر الموظف هاتفه استخدم «إعادة ضبط الجهاز».</p></div>`;
   }
 
   /* --- المواقع --- */
   function viewLocs(el) {
-    el.innerHTML = `<div class="card"><h3>إضافة موقع عمل</h3><div class="row">
+    el.innerHTML = `<div class="card">${ch('pin', 'إضافة موقع عمل')}<div class="row">
       <div class="field"><label>اسم الموقع</label><input id="lName" placeholder="المقر الرئيسي"></div>
       <div class="field"><label>الإحداثيات (خط العرض, خط الطول)</label><input id="lCoord" dir="ltr" placeholder="32.8872, 13.1913"></div>
       <div class="field" style="max-width:150px"><label>النطاق (متر)</label><input id="lRad" type="number" value="100" min="10"></div>
-      <button class="btn sec" data-act="myLoc">📍 موقعي الحالي</button>
-      <button class="btn" data-act="addLoc">إضافة</button></div>
-      <p class="muted" style="font-size:13px;margin-bottom:0">يمكنك نسخ الإحداثيات من خرائط Google (اضغط مطولاً على النقطة ← انسخ الأرقام). يُسمح بعدة مواقع، ويُقبل الموظف إن كان داخل نطاق أي منها.</p></div>
-    <div class="card"><h3>المواقع المسموحة (${S.locs.length})</h3><div class="tw"><table><thead><tr><th>الاسم</th><th>الإحداثيات</th><th>النطاق</th><th></th></tr></thead><tbody>
-    ${S.locs.map(l => `<tr><td>${esc(l.name)}</td><td dir="ltr">${l.lat.toFixed(5)}, ${l.lng.toFixed(5)}</td><td>${l.radius} م</td><td><a href="${mapLink(l.lat, l.lng)}" target="_blank">الخريطة</a> <button class="btn sm bad" data-act="delLoc" data-id="${l.id}">حذف</button></td></tr>`).join('') || '<tr><td colspan="4" class="muted">لم تُضف مواقع بعد — بدونها لن يستطيع أي موظف التسجيل</td></tr>'}
+      <button class="btn sec" data-act="myLoc">${ic('target', 18)} موقعي الحالي</button>
+      <button class="btn" data-act="addLoc">${ic('plus', 18)} إضافة</button></div>
+      <p class="muted" style="font-size:13px;margin:12px 0 0">يمكنك نسخ الإحداثيات من خرائط Google (اضغط مطولاً على النقطة ← انسخ الأرقام). يُسمح بعدة مواقع، ويُقبل الموظف إن كان داخل نطاق أي منها.</p></div>
+    <div class="card">${ch('map', `المواقع المسموحة (${S.locs.length})`)}<div class="tw"><table><thead><tr><th>الاسم</th><th>الإحداثيات</th><th>النطاق</th><th></th></tr></thead><tbody>
+    ${S.locs.map(l => `<tr><td><b>${esc(l.name)}</b></td><td dir="ltr">${l.lat.toFixed(5)}, ${l.lng.toFixed(5)}</td><td><span class="badge b-pri">${l.radius} م</span></td><td><div class="acts"><a class="btn sm sec" style="text-decoration:none" href="${mapLink(l.lat, l.lng)}" target="_blank">${ic('map', 15)} الخريطة</a> <button class="btn sm bad" data-act="delLoc" data-id="${l.id}">${ic('trash', 15)} حذف</button></div></td></tr>`).join('') || '<tr><td colspan="4" class="muted">لم تُضف مواقع بعد — بدونها لن يستطيع أي موظف التسجيل</td></tr>'}
     </tbody></table></div></div>`;
   }
 
@@ -456,15 +592,15 @@ function adminApp(db, auth) {
   }
   function viewRecs(el) {
     const list = filtered(), sum = summary();
-    el.innerHTML = `<div class="card"><div class="row">
+    el.innerHTML = `<div class="card">${ch('filter', 'تصفية التقرير')}<div class="row">
       <div class="field"><label>من</label><input type="date" id="fFrom" value="${S.from}"></div>
       <div class="field"><label>إلى</label><input type="date" id="fTo" value="${S.to}"></div>
       <div class="field"><label>الموظف</label><select id="fEmp"><option value="">الكل</option>${S.emps.map(e => `<option value="${e.id}" ${S.emp === e.id ? 'selected' : ''}>${esc(e.name)}</option>`).join('')}</select></div>
-      <button class="btn" data-act="filter">تطبيق</button><button class="btn sec" data-act="csv">تصدير CSV</button></div></div>
-    <div class="card"><h3>ملخص الدوام اليومي</h3><div class="tw"><table><thead><tr><th>الموظف</th><th>التاريخ</th><th>أول حضور</th><th>آخر انصراف</th><th>ساعات العمل</th></tr></thead><tbody>
-    ${sum.map(s => `<tr><td>${esc(s.name)}</td><td>${s.day.split('-').reverse().join('/')}</td><td>${s.firstIn ? fmtTime(s.firstIn) : '—'}</td><td>${s.lastOut ? fmtTime(s.lastOut) : '—'} ${s.open ? '<span class="badge b-warn">لم ينصرف</span>' : ''}</td><td>${fmtDur(s.total)}</td></tr>`).join('') || '<tr><td colspan="5" class="muted">لا توجد بيانات</td></tr>'}
+      <button class="btn" data-act="filter">${ic('filter', 18)} تطبيق</button><button class="btn sec" data-act="csv">${ic('download', 18)} تصدير CSV</button></div></div>
+    <div class="card">${ch('clock', 'ملخص الدوام اليومي')}<div class="tw"><table><thead><tr><th>الموظف</th><th>التاريخ</th><th>أول حضور</th><th>آخر انصراف</th><th>ساعات العمل</th></tr></thead><tbody>
+    ${sum.map(s => `<tr><td><div class="who"><span class="av">${ini(s.name)}</span>${esc(s.name)}</div></td><td>${s.day.split('-').reverse().join('/')}</td><td>${s.firstIn ? fmtTime(s.firstIn) : '—'}</td><td>${s.lastOut ? fmtTime(s.lastOut) : '—'} ${s.open ? '<span class="badge b-warn">لم ينصرف</span>' : ''}</td><td><b>${fmtDur(s.total)}</b></td></tr>`).join('') || '<tr><td colspan="5" class="muted">لا توجد بيانات</td></tr>'}
     </tbody></table></div></div>
-    <div class="card"><h3>كل العمليات (${list.length})</h3><div class="tw"><table><thead><tr><th>الموظف</th><th>العملية</th><th>التاريخ</th><th>الوقت</th><th>الموقع</th><th>البعد</th><th>الخريطة</th></tr></thead><tbody>
+    <div class="card">${ch('report', `كل العمليات (${list.length})`)}<div class="tw"><table><thead><tr><th>الموظف</th><th>العملية</th><th>التاريخ</th><th>الوقت</th><th>الموقع</th><th>البعد</th><th>الخريطة</th></tr></thead><tbody>
     ${list.map(r => `<tr><td>${esc(r.empName)}</td><td><span class="badge ${r.type === 'in' ? 'b-ok' : 'b-bad'}">${r.type === 'in' ? 'حضور' : 'انصراف'}</span></td><td>${fmtDate(r.t)}</td><td>${fmtTime(r.t, true)}</td><td>${esc(r.locationName)}</td><td>${r.distance} م</td><td><a href="${mapLink(r.lat, r.lng)}" target="_blank">عرض</a></td></tr>`).join('') || '<tr><td colspan="7" class="muted">لا توجد بيانات</td></tr>'}
     </tbody></table></div></div>`;
   }
