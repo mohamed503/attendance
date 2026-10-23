@@ -1,0 +1,530 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>نظام الحضور والانصراف</title>
+<style>
+:root{--bg:#f3f5f9;--card:#fff;--ink:#1d2433;--mute:#6b7488;--line:#e3e7ef;--pri:#2457e6;--pri-d:#1a43b8;--ok:#14935a;--bad:#d63b3b;--warn:#c98a00}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:"Segoe UI",Tahoma,"Noto Sans Arabic",Arial,sans-serif;font-size:15px;line-height:1.6}
+button,input,select,textarea{font:inherit}
+.wrap{max-width:1100px;margin:0 auto;padding:16px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px;margin-bottom:14px;box-shadow:0 1px 3px rgba(20,30,60,.04)}
+h1,h2,h3{margin:0 0 12px}
+h1{font-size:22px}h2{font-size:18px}h3{font-size:16px}
+.muted{color:var(--mute)}.center{text-align:center}
+.bar{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:14px}
+.tabs{display:flex;gap:6px;overflow-x:auto;margin-bottom:14px;padding-bottom:2px}
+.tab{border:1px solid var(--line);background:var(--card);padding:9px 16px;border-radius:10px;cursor:pointer;white-space:nowrap;color:var(--ink)}
+.tab.on{background:var(--pri);border-color:var(--pri);color:#fff}
+.btn{border:0;background:var(--pri);color:#fff;padding:9px 16px;border-radius:10px;cursor:pointer;font-weight:600}
+.btn:hover{background:var(--pri-d)}
+.btn:disabled{opacity:.45;cursor:not-allowed}
+.btn.sec{background:#e9edf6;color:var(--ink)}.btn.sec:hover{background:#dde3f0}
+.btn.ok{background:var(--ok)}.btn.bad{background:var(--bad)}
+.btn.sm{padding:5px 10px;font-size:13px;border-radius:8px}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end}
+.field{display:flex;flex-direction:column;gap:4px;flex:1;min-width:150px}
+.field label{font-size:13px;color:var(--mute)}
+input,select,textarea{border:1px solid var(--line);border-radius:10px;padding:9px 11px;background:#fff;color:var(--ink);width:100%}
+input:focus,select:focus,textarea:focus{outline:2px solid #bcd0ff;border-color:var(--pri)}
+.tw{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:14px}
+th,td{padding:9px 10px;text-align:right;border-bottom:1px solid var(--line);white-space:nowrap}
+th{background:#f7f9fd;color:var(--mute);font-weight:600}
+.badge{display:inline-block;padding:2px 10px;border-radius:99px;font-size:12px;font-weight:700}
+.b-ok{background:#e3f6ec;color:var(--ok)}.b-bad{background:#fde8e8;color:var(--bad)}.b-warn{background:#fff3d6;color:var(--warn)}.b-mute{background:#eceff5;color:var(--mute)}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;margin-bottom:14px}
+.stat{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px}
+.stat b{display:block;font-size:26px}
+.toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#1d2433;color:#fff;padding:11px 20px;border-radius:12px;z-index:99;max-width:90vw;box-shadow:0 6px 24px rgba(0,0,0,.25)}
+.toast.err{background:var(--bad)}.toast.good{background:var(--ok)}
+.login{max-width:380px;margin:12vh auto}
+.emp-wrap{max-width:440px;margin:0 auto;padding:16px}
+.clock{font-size:44px;font-weight:800;letter-spacing:1px;direction:ltr;margin:6px 0}
+.big{width:100%;padding:18px;font-size:19px;border-radius:14px;margin-top:10px}
+.status{margin-top:14px;padding:12px;border-radius:12px;background:#eef2fb;text-align:center;min-height:46px}
+.status.err{background:#fde8e8;color:var(--bad)}.status.good{background:#e3f6ec;color:var(--ok)}
+pre.rules{background:#10172a;color:#d6e2ff;padding:14px;border-radius:12px;overflow:auto;direction:ltr;text-align:left;font-size:12.5px;max-height:340px}
+ol li{margin-bottom:6px}
+a{color:var(--pri)}
+</style>
+</head>
+<body>
+<div id="app"></div>
+
+<script type="module">
+/* =====================================================================
+   ضع هنا إعدادات مشروع Firebase الخاص بك (انظر خطوات الإعداد في الصفحة
+   التي تظهر عند فتح الملف قبل ضبط الإعدادات)
+   ===================================================================== */
+const firebaseConfig = {
+  apiKey: "AIzaSyAQIRRnqHTKIqihh4Vu8yI-rCe2WznVGKg",
+  authDomain: "hodr-wa-inseraf.firebaseapp.com",
+  projectId: "hodr-wa-inseraf",
+  storageBucket: "hodr-wa-inseraf.firebasestorage.app",
+  messagingSenderId: "539190333489",
+  appId: "1:539190333489:web:b1d975e74a6f51ea038510"
+};
+
+const MAX_ACCURACY = 200;        // أقصى هامش خطأ مقبول لدقة الـ GPS بالمتر
+const FORGOT_MS = 14 * 3600e3;   // بعد هذه المدة يُعتبر الحضور المفتوح «نسيان انصراف» (يجب أن يطابق 50400000 في القواعد)
+const MIN_GAP_MS = 20000;        // أقل فاصل بين عمليتين لنفس الموظف (يطابق 20000 في القواعد)
+const TZ_OFFSET_MIN = 120;       // توقيت طرابلس UTC+2 ثابت (بلا توقيت صيفي). غيّره إن استخدمت النظام في بلد آخر
+
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+import { getFirestore, collection, collectionGroup, doc, getDoc, getDocs, setDoc, addDoc, updateDoc, deleteDoc, query, where, orderBy, limit, writeBatch, Timestamp, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+
+/* ---------- أدوات مساعدة ---------- */
+const $ = (s, r = document) => r.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const pad = n => String(n).padStart(2, '0');
+const L = d => new Date(d.getTime() + TZ_OFFSET_MIN * 60000); // نقرأ منه بـ getUTC* فيعطي توقيت العمل لا توقيت الجهاز
+const dayKey = d => { const x = L(d); return `${x.getUTCFullYear()}-${pad(x.getUTCMonth()+1)}-${pad(x.getUTCDate())}`; };
+const fmtDate = d => { const x = L(d); return `${pad(x.getUTCDate())}/${pad(x.getUTCMonth()+1)}/${x.getUTCFullYear()}`; };
+const fmtTime = (d, sec = false) => { const x = L(d); let h = x.getUTCHours(); const ap = h >= 12 ? 'م' : 'ص'; h = h % 12 || 12; return `${pad(h)}:${pad(x.getUTCMinutes())}${sec ? ':' + pad(x.getUTCSeconds()) : ''} ${ap}`; };
+const DAYS_AR = ['الأحد', 'الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'];
+const weekday = d => DAYS_AR[L(d).getUTCDay()];
+const dayStart = key => new Date(Date.parse(key + 'T00:00:00Z') - TZ_OFFSET_MIN * 60000);
+const dayEnd = key => new Date(dayStart(key).getTime() + 86400000);
+// معاملات تحويل الدرجات إلى أمتار عند هذا خط العرض (تُخزَّن مع الموقع ليتحقق منها Firestore)
+const geoK = lat => { const p = lat * Math.PI / 180; return { ky: 111132.92 - 559.82 * Math.cos(2*p) + 1.175 * Math.cos(4*p), kx: 111412.84 * Math.cos(p) - 93.5 * Math.cos(3*p) + 0.118 * Math.cos(5*p) }; };
+const fmtDur = ms => { const m = Math.round(ms / 60000); return `${Math.floor(m / 60)}س ${m % 60}د`; };
+const randToken = () => Array.from(crypto.getRandomValues(new Uint8Array(16)), b => b.toString(16).padStart(2, '0')).join('');
+const dist = (a, b, c, d) => { const R = 6371000, r = x => x * Math.PI / 180; const dLat = r(c - a), dLng = r(d - b); const h = Math.sin(dLat/2)**2 + Math.cos(r(a)) * Math.cos(r(c)) * Math.sin(dLng/2)**2; return 2 * R * Math.asin(Math.sqrt(h)); };
+const mapLink = (lat, lng) => `https://www.google.com/maps?q=${lat},${lng}`;
+function toast(msg, type = '') { const t = document.createElement('div'); t.className = 'toast ' + type; t.textContent = msg; document.body.appendChild(t); setTimeout(() => t.remove(), 3500); }
+function getDeviceId() { try { let id = localStorage.getItem('att_dev'); if (!id) { id = randToken(); localStorage.setItem('att_dev', id); } return id; } catch { return 'nodev-' + navigator.userAgent.length; } }
+
+const configured = firebaseConfig.apiKey !== "YOUR_API_KEY" && !!firebaseConfig.apiKey;
+const params = new URLSearchParams(location.search);
+const empToken = params.get('e');
+const root = $('#app');
+
+/* ---------- صفحة الإعداد ---------- */
+function rulesText(email) {
+return `rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isAdmin() {
+      return request.auth != null && request.auth.token.email == '${email}';
+    }
+
+    match /locations/{id} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /employees/{empId} {
+      allow get: if true;
+      allow list, create, delete: if isAdmin();
+      allow update: if isAdmin() || claimDevice() || punchState();
+
+      // أول فتح للرابط: ربط الجهاز
+      function claimDevice() {
+        return resource.data.get('deviceId', null) == null
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['deviceId']);
+      }
+
+      // تحديث حالة الموظف مسموح فقط مع إنشاء سجل جديد في نفس الدفعة (batch)
+      function punchState() {
+        let a = request.resource.data;
+        return resource.data.active == true
+          && a.diff(resource.data).affectedKeys().hasOnly(['state', 'lastAt', 'lastRecId'])
+          && a.state in ['in', 'out']
+          && a.lastAt == request.time
+          && a.lastRecId is string
+          && !exists(/databases/$(database)/documents/employees/$(empId)/records/$(a.lastRecId))
+          && existsAfter(/databases/$(database)/documents/employees/$(empId)/records/$(a.lastRecId));
+      }
+
+      match /records/{recId} {
+        allow read: if true;
+        allow create: if validRecord();
+        allow update, delete: if isAdmin();
+
+        function validRecord() {
+          let d = request.resource.data;
+          let e = get(/databases/$(database)/documents/employees/$(empId)).data;
+          let a = getAfter(/databases/$(database)/documents/employees/$(empId)).data;
+          let l = get(/databases/$(database)/documents/locations/$(d.locationId)).data;
+          let st = e.get('state', null);
+          let last = e.get('lastAt', null);
+          let dx = (d.lng - l.lng) * l.kx;
+          let dy = (d.lat - l.lat) * l.ky;
+          return d.keys().hasOnly(['type','time','lat','lng','accuracy','distance','locationId','locationName','empName','deviceId'])
+            && d.keys().hasAll(['type','time','lat','lng','accuracy','distance','locationId','locationName','empName','deviceId'])
+            && d.time == request.time
+            && d.type in ['in', 'out']
+            && e.active == true
+            && d.empName == e.name
+            && d.deviceId == e.get('deviceId', null)
+            && d.lat is number && d.lng is number
+            && d.lat >= -90 && d.lat <= 90 && d.lng >= -180 && d.lng <= 180
+            && d.accuracy is number && d.accuracy >= 0 && d.accuracy <= 250
+            && d.distance is number
+            && d.locationId is string && d.locationName == l.name
+            && l.get('active', true) != false
+            && math.sqrt(dx * dx + dy * dy) <= l.radius + 10
+            && a.get('lastRecId', null) == recId && a.get('state', null) == d.type
+            && (last == null || request.time.toMillis() - last.toMillis() >= 20000)
+            && ((d.type == 'in' && (st == null || st == 'out' || (last != null && request.time.toMillis() - last.toMillis() >= 50400000)))
+              || (d.type == 'out' && (st == null || st == 'in')));
+        }
+      }
+    }
+
+    match /{path=**}/records/{recId} {
+      allow read: if isAdmin();
+    }
+  }
+}`;
+}
+function setupPage() {
+  root.innerHTML = `<div class="wrap"><div class="card">
+  <h1>⚙️ إعداد النظام (مرة واحدة فقط)</h1>
+  <p class="muted">النظام يحتاج قاعدة بيانات مجانية لمزامنة الإدارة مع الموظفين. الخطوات كلها مجانية ولا تتطلب بطاقة بنكية.</p>
+  <ol>
+    <li>ادخل إلى <a href="https://console.firebase.google.com" target="_blank">console.firebase.google.com</a> وأنشئ مشروعاً جديداً (خطة Spark المجانية).</li>
+    <li>من <b>Build ← Authentication</b> فعّل طريقة <b>Email/Password</b> ثم أضف مستخدماً (بريدك وكلمة مرور) — هذا حساب الإدارة.</li>
+    <li>من <b>Build ← Firestore Database</b> أنشئ قاعدة بيانات (اختر Production mode وأقرب منطقة).</li>
+    <li>من تبويب <b>Rules</b> في Firestore الصق القواعد أدناه ثم اضغط Publish. اكتب بريد الإدارة أولاً ليدخل في القواعد.</li>
+    <li>من <b>Project settings ← Your apps</b> أضف تطبيق ويب <code>&lt;/&gt;</code> وانسخ قيم <code>firebaseConfig</code> إلى أعلى هذا الملف (داخل وسم script) مكان القيم الافتراضية.</li>
+    <li>ارفع الملف على استضافة مجانية تدعم HTTPS (مثل <b>Netlify Drop</b> أو <b>GitHub Pages</b> أو <b>Cloudflare Pages</b> أو <b>Firebase Hosting</b>). الـ HTTPS ضروري ليسمح المتصفح بتحديد الموقع.</li>
+    <li>في Authentication ← Settings ← Authorized domains أضف نطاق الاستضافة إن لم يكن مضافاً.</li>
+  </ol>
+  <div class="field" style="max-width:360px"><label>بريد حساب الإدارة (لتوليد القواعد)</label><input id="admEmail" type="email" dir="ltr" placeholder="admin@example.com"></div>
+  <h3 style="margin-top:14px">قواعد Firestore</h3>
+  <pre class="rules" id="rulesBox">${esc(rulesText('admin@example.com'))}</pre>
+  <button class="btn" id="copyRules" style="margin-top:10px">نسخ القواعد</button>
+  </div></div>`;
+  $('#admEmail').oninput = e => { $('#rulesBox').textContent = rulesText(e.target.value.trim() || 'admin@example.com'); };
+  $('#copyRules').onclick = () => { navigator.clipboard.writeText($('#rulesBox').textContent).then(() => toast('تم النسخ', 'good')); };
+}
+
+if (!configured) { setupPage(); }
+else {
+  const app = initializeApp(firebaseConfig);
+  const db = getFirestore(app);
+  const auth = getAuth(app);
+  if (empToken) employeeApp(db, empToken);
+  else { onAuthStateChanged(auth, u => u ? adminApp(db, auth) : loginPage(auth)); }
+}
+
+/* =====================================================================
+   واجهة الموظف
+   ===================================================================== */
+async function employeeApp(db, token) {
+  const showErr = m => { root.innerHTML = `<div class="emp-wrap"><div class="card center"><h2>⚠️</h2><p>${esc(m)}</p></div></div>`; };
+  root.innerHTML = `<div class="emp-wrap"><div class="card center">جاري التحميل…</div></div>`;
+  const ref = doc(db, 'employees', token);
+  let emp, locs = [];
+  const myDev = getDeviceId();
+  try {
+    const snap = await getDoc(ref);
+    if (!snap.exists() || !snap.data().active) return showErr('الرابط غير صالح أو تم إيقافه. تواصل مع الإدارة.');
+    emp = snap.data();
+    if (!emp.deviceId) { await updateDoc(ref, { deviceId: myDev }); emp.deviceId = myDev; }
+    if (emp.deviceId !== myDev) return showErr('هذا الرابط مرتبط بجهاز آخر. اطلب من الإدارة إعادة ضبط الجهاز.');
+    const ls = await getDocs(collection(db, 'locations'));
+    locs = ls.docs.map(d => ({ id: d.id, ...d.data() })).filter(l => l.active !== false);
+  } catch (e) { return showErr('تعذر الاتصال بالنظام. تحقق من الإنترنت وحاول مجدداً.'); }
+
+  let offset = 0, skewWarn = false;
+  async function syncTime() {
+    try {
+      const t0 = Date.now();
+      const r = await fetch(location.origin + location.pathname + '?_=' + t0, { method: 'HEAD', cache: 'no-store' });
+      const t1 = Date.now(); const dh = r.headers.get('Date');
+      if (dh) { offset = new Date(dh).getTime() - (t0 + t1) / 2; skewWarn = Math.abs(offset) > 120000; }
+    } catch {}
+  }
+  await syncTime();
+  const now = () => new Date(Date.now() + offset);
+
+  root.innerHTML = `<div class="emp-wrap">
+    <div class="card center">
+      <div class="muted">مرحباً</div><h1 style="margin-bottom:2px">${esc(emp.name)}</h1>
+      <div class="clock" id="clock">--:--:--</div>
+      <div class="muted" id="dateTxt"></div>
+      <div id="skew" class="badge b-warn" style="display:none;margin-top:8px">ساعة جهازك غير مضبوطة — الوقت المسجّل هو وقت الخادم</div>
+      <div style="margin-top:10px" id="state"></div>
+      <button class="btn ok big" id="bIn">🟢 تسجيل حضور</button>
+      <button class="btn bad big" id="bOut">🔴 تسجيل انصراف</button>
+      <div class="status" id="msg">اضغط على الزر المناسب، وسيُطلب منك السماح بتحديد الموقع.</div>
+    </div>
+    <div class="card"><h3>آخر تسجيلاتك</h3><div class="tw"><table><tbody id="hist"><tr><td class="muted">…</td></tr></tbody></table></div></div>
+  </div>`;
+  $('#skew').style.display = skewWarn ? 'inline-block' : 'none';
+  setInterval(() => { const n = now(); $('#clock').textContent = fmtTime(n, true); $('#dateTxt').textContent = `${weekday(n)} ${fmtDate(n)}`; }, 500);
+
+  let last = null;
+  async function loadHist() {
+    try {
+      const q = query(collection(db, 'employees', token, 'records'), orderBy('time', 'desc'), limit(15));
+      const s = await getDocs(q);
+      const rows = s.docs.map(d => ({ ...d.data(), t: d.data().time?.toDate() })).filter(r => r.t);
+      last = rows[0] || null;
+      $('#hist').innerHTML = rows.length ? rows.map(r => `<tr><td><span class="badge ${r.type === 'in' ? 'b-ok' : 'b-bad'}">${r.type === 'in' ? 'حضور' : 'انصراف'}</span></td><td>${fmtDate(r.t)}</td><td>${fmtTime(r.t)}</td><td class="muted">${esc(r.locationName)}</td></tr>`).join('') : '<tr><td class="muted">لا توجد تسجيلات بعد</td></tr>';
+    } catch { $('#hist').innerHTML = '<tr><td class="muted">تعذر تحميل السجل</td></tr>'; }
+    const n = now();
+    const canIn = !(last && last.type === 'in' && n - last.t < FORGOT_MS);
+    const canOut = !!(last && last.type === 'in');
+    $('#bIn').disabled = !canIn; $('#bOut').disabled = !canOut;
+    $('#state').innerHTML = last ? (last.type === 'in' ? `<span class="badge b-ok">أنت حاضر منذ ${fmtTime(last.t)}</span>` : `<span class="badge b-mute">آخر انصراف ${fmtTime(last.t)}</span>`) : '';
+  }
+
+  const setMsg = (t, c = '') => { const m = $('#msg'); m.className = 'status ' + c; m.textContent = t; };
+  const getPos = () => new Promise((res, rej) => navigator.geolocation.getCurrentPosition(res, rej, { enableHighAccuracy: true, timeout: 25000, maximumAge: 0 }));
+
+  async function punch(type) {
+    if (!navigator.geolocation) return setMsg('متصفحك لا يدعم تحديد الموقع.', 'err');
+    if (!locs.length) return setMsg('لم تحدد الإدارة أي موقع عمل بعد.', 'err');
+    if (last && now() - last.t < MIN_GAP_MS) return setMsg('تم تسجيلك للتو، انتظر لحظات ثم أعد المحاولة.', 'err');
+    $('#bIn').disabled = $('#bOut').disabled = true;
+    setMsg('جاري تحديد موقعك… (قد يستغرق بضع ثوانٍ)');
+    let pos;
+    try { pos = await getPos(); }
+    catch (e) {
+      setMsg(e.code === 1 ? 'تم رفض إذن الموقع. فعّل الإذن من إعدادات المتصفح ثم أعد المحاولة.' : 'تعذر تحديد موقعك. فعّل GPS وتأكد من الاتصال ثم أعد المحاولة.', 'err');
+      return loadHist();
+    }
+    const { latitude: lat, longitude: lng, accuracy } = pos.coords;
+    if (accuracy > MAX_ACCURACY) { setMsg(`دقة الموقع ضعيفة (±${Math.round(accuracy)}م). فعّل GPS أو انتقل لمكان مفتوح وأعد المحاولة.`, 'err'); return loadHist(); }
+    let best = null;
+    for (const l of locs) { const d = dist(lat, lng, l.lat, l.lng); if (!best || d < best.d) best = { l, d }; }
+    if (best.d > best.l.radius) { setMsg(`أنت خارج نطاق العمل. تبعد حوالي ${Math.round(best.d)} متر عن «${best.l.name}» (المسموح ${best.l.radius}م). لم يتم التسجيل.`, 'err'); return loadHist(); }
+    try {
+      const recRef = doc(collection(db, 'employees', token, 'records'));
+      const batch = writeBatch(db);
+      batch.set(recRef, { type, time: serverTimestamp(), lat, lng, accuracy: Math.round(accuracy), distance: Math.round(best.d), locationId: best.l.id, locationName: best.l.name, empName: emp.name, deviceId: myDev });
+      batch.update(ref, { state: type, lastAt: serverTimestamp(), lastRecId: recRef.id });
+      await batch.commit();
+      setMsg(type === 'in' ? `✅ تم تسجيل حضورك في «${best.l.name}»` : `✅ تم تسجيل انصرافك من «${best.l.name}»`, 'good');
+    } catch (e) { setMsg(e.code === 'permission-denied' ? 'رفض الخادم التسجيل: تأكد أنك داخل نطاق العمل وأن آخر عملية لم تُسجَّل للتو، ثم أعد المحاولة.' : 'تعذر حفظ التسجيل. تحقق من الاتصال وحاول مجدداً.', 'err'); }
+    loadHist();
+  }
+  $('#bIn').onclick = () => punch('in');
+  $('#bOut').onclick = () => punch('out');
+  loadHist();
+}
+
+/* =====================================================================
+   تسجيل دخول الإدارة
+   ===================================================================== */
+function loginPage(auth) {
+  root.innerHTML = `<div class="wrap"><div class="card login">
+    <h1 class="center">🕘 نظام الحضور والانصراف</h1>
+    <p class="muted center">دخول الإدارة</p>
+    <div class="field"><label>البريد الإلكتروني</label><input id="em" type="email" dir="ltr" autocomplete="username"></div>
+    <div class="field" style="margin-top:10px"><label>كلمة المرور</label><input id="pw" type="password" dir="ltr" autocomplete="current-password"></div>
+    <button class="btn" id="go" style="width:100%;margin-top:14px">دخول</button>
+  </div></div>`;
+  const go = async () => {
+    try { await signInWithEmailAndPassword(auth, $('#em').value.trim(), $('#pw').value); }
+    catch { toast('بيانات الدخول غير صحيحة', 'err'); }
+  };
+  $('#go').onclick = go;
+  $('#pw').onkeydown = e => { if (e.key === 'Enter') go(); };
+}
+
+/* =====================================================================
+   لوحة الإدارة
+   ===================================================================== */
+function adminApp(db, auth) {
+  const S = { tab: 'today', emps: [], locs: [], recs: [], today: [], idxUrl: '', from: '', to: '', emp: '' };
+  S.from = dayKey(new Date(Date.now() - 6 * 86400000)); S.to = dayKey(new Date());
+  const base = location.origin + location.pathname;
+  const linkOf = id => `${base}?e=${id}`;
+
+  async function fetchRecs(a, b) {
+    const map = d => ({ id: d.id, empId: d.ref.parent.parent.id, ...d.data(), t: d.data().time?.toDate() });
+    try {
+      const s = await getDocs(query(collectionGroup(db, 'records'), where('time', '>=', Timestamp.fromDate(a)), where('time', '<', Timestamp.fromDate(b)), orderBy('time')));
+      return s.docs.map(map).filter(x => x.t);
+    } catch (err) {
+      if (err.code !== 'failed-precondition') throw err;
+      S.idxUrl = (String(err.message).match(/https:\/\/\S+/) || [''])[0] || 'https://console.firebase.google.com';
+      console.warn(err.message);
+      const s = await getDocs(collectionGroup(db, 'records')); // بديل مؤقت حتى يُنشأ الفهرس
+      return s.docs.map(map).filter(x => x.t && x.t >= a && x.t < b);
+    }
+  }
+  // نحمّل يوماً إضافياً قبل بداية الفترة ليكتمل ربط الحضور بالانصراف للورديات العابرة لمنتصف الليل
+  async function loadRecs() { S.recs = await fetchRecs(new Date(dayStart(S.from).getTime() - 86400000), dayEnd(S.to)); }
+  async function migrateLocs() {
+    for (const l of S.locs) if (!(l.kx > 0) || !(l.ky > 0)) { const k = geoK(l.lat); await updateDoc(doc(db, 'locations', l.id), k); Object.assign(l, k); }
+  }
+  async function loadAll() {
+    S.idxUrl = '';
+    try {
+      const [e, l] = await Promise.all([getDocs(collection(db, 'employees')), getDocs(collection(db, 'locations'))]);
+      S.emps = e.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => (a.name || '').localeCompare(b.name || '', 'ar'));
+      S.locs = l.docs.map(d => ({ id: d.id, ...d.data() }));
+      await migrateLocs();
+      await loadRecs();
+      S.today = await fetchRecs(dayStart(dayKey(new Date(Date.now() - 86400000))), dayEnd(dayKey(new Date())));
+    } catch (err) { console.error(err); toast('تعذر تحميل البيانات — تأكد أن بريدك مطابق للمكتوب في قواعد Firestore', 'err'); }
+    render();
+  }
+
+  function render() {
+    const tabs = [['today', 'اليوم'], ['emps', 'الموظفون'], ['locs', 'المواقع'], ['recs', 'السجل والتقارير']];
+    root.innerHTML = `<div class="wrap">
+      <div class="bar"><h1>🕘 نظام الحضور والانصراف</h1><div><button class="btn sec sm" data-act="reload">تحديث</button> <button class="btn sec sm" data-act="logout">خروج</button></div></div>
+      ${S.idxUrl ? `<div class="card" style="border-color:var(--warn)"><b>خطوة لمرة واحدة:</b> يلزم إنشاء فهرس لتسريع التقارير. <a href="${esc(S.idxUrl)}" target="_blank">اضغط هنا لإنشائه</a> وانتظر دقيقة ثم اضغط «تحديث». حتى ذلك الحين تُحمَّل السجلات بالطريقة البطيئة.</div>` : ''}
+      <div class="tabs">${tabs.map(([k, n]) => `<button class="tab ${S.tab === k ? 'on' : ''}" data-tab="${k}">${n}</button>`).join('')}</div>
+      <div id="content"></div></div>`;
+    ({ today: viewToday, emps: viewEmps, locs: viewLocs, recs: viewRecs })[S.tab]($('#content'));
+  }
+
+  /* --- اليوم --- */
+  function viewToday(el) {
+    const now = Date.now(), key = dayKey(new Date(now));
+    const act = S.emps.filter(e => e.active);
+    const when = t => (dayKey(t) === key ? '' : fmtDate(t) + ' ') + fmtTime(t);
+    const B = { present: ['b-ok', 'حاضر'], left: ['b-mute', 'انصرف'], forgot: ['b-warn', 'نسي الانصراف'], absent: ['b-bad', 'لم يحضر'] };
+    const rows = act.map(e => {
+      const rs = S.today.filter(r => r.empId === e.id).sort((a, b) => a.t - b.t);
+      const last = rs[rs.length - 1], mine = rs.filter(r => dayKey(r.t) === key), lastToday = mine[mine.length - 1];
+      let st = 'absent';
+      if (last && last.type === 'in') st = now - last.t < FORGOT_MS ? 'present' : 'forgot';
+      else if (lastToday) st = 'left';
+      const firstIn = mine.find(r => r.type === 'in') || (st === 'present' || st === 'forgot' ? last : null);
+      return { e, st, firstIn, rec: st === 'absent' ? null : last };
+    });
+    const c = s => rows.filter(r => r.st === s).length;
+    el.innerHTML = `<div class="stats"><div class="stat"><span class="muted">حاضرون الآن</span><b style="color:var(--ok)">${c('present')}</b></div><div class="stat"><span class="muted">انصرفوا</span><b>${c('left')}</b></div><div class="stat"><span class="muted">لم يحضروا</span><b style="color:var(--bad)">${c('absent')}</b></div><div class="stat"><span class="muted">نسوا الانصراف</span><b style="color:var(--warn)">${c('forgot')}</b></div><div class="stat"><span class="muted">إجمالي الموظفين</span><b>${act.length}</b></div></div>
+    <div class="card"><h3>حالة اليوم — ${weekday(new Date())} ${fmtDate(new Date())}</h3><div class="tw"><table><thead><tr><th>الموظف</th><th>الحالة</th><th>أول حضور</th><th>آخر عملية</th></tr></thead><tbody>
+    ${rows.map(({ e, st, firstIn, rec }) => `<tr><td>${esc(e.name)}</td><td><span class="badge ${B[st][0]}">${B[st][1]}</span></td><td>${firstIn ? when(firstIn.t) : '—'}</td><td>${rec ? `${rec.type === 'in' ? 'حضور' : 'انصراف'} ${when(rec.t)}` : '—'}</td></tr>`).join('') || '<tr><td colspan="4" class="muted">أضف موظفين من تبويب «الموظفون»</td></tr>'}
+    </tbody></table></div></div>`;
+  }
+
+  /* --- الموظفون --- */
+  function viewEmps(el) {
+    el.innerHTML = `<div class="card"><h3>إضافة موظف</h3><div class="row">
+      <div class="field"><label>الاسم</label><input id="eName"></div>
+      <div class="field"><label>رقم الواتساب (اختياري، بصيغة دولية بدون +)</label><input id="ePhone" dir="ltr" placeholder="2189XXXXXXXX"></div>
+      <button class="btn" data-act="addEmp">إضافة وإنشاء رابط</button></div></div>
+    <div class="card"><h3>الموظفون (${S.emps.length})</h3><div class="tw"><table><thead><tr><th>الاسم</th><th>الحالة</th><th>الجهاز</th><th>إجراءات</th></tr></thead><tbody>
+    ${S.emps.map(e => `<tr><td>${esc(e.name)}</td><td>${e.active ? '<span class="badge b-ok">مفعّل</span>' : '<span class="badge b-bad">موقوف</span>'}</td><td>${e.deviceId ? '<span class="badge b-warn">مرتبط</span>' : '<span class="badge b-mute">لم يُفتح بعد</span>'}</td>
+    <td><button class="btn sm" data-act="copy" data-id="${e.id}">نسخ الرابط</button> <button class="btn sm sec" data-act="wa" data-id="${e.id}">واتساب</button> <button class="btn sm sec" data-act="resetDev" data-id="${e.id}">إعادة ضبط الجهاز</button> <button class="btn sm sec" data-act="toggle" data-id="${e.id}">${e.active ? 'إيقاف' : 'تفعيل'}</button> <button class="btn sm bad" data-act="delEmp" data-id="${e.id}">حذف</button></td></tr>`).join('') || '<tr><td colspan="4" class="muted">لا يوجد موظفون</td></tr>'}
+    </tbody></table></div>
+    <p class="muted" style="font-size:13px;margin-bottom:0">الرابط يُربط تلقائياً بأول جهاز يفتحه لمنع مشاركته بين الموظفين. إن غيّر الموظف هاتفه استخدم «إعادة ضبط الجهاز».</p></div>`;
+  }
+
+  /* --- المواقع --- */
+  function viewLocs(el) {
+    el.innerHTML = `<div class="card"><h3>إضافة موقع عمل</h3><div class="row">
+      <div class="field"><label>اسم الموقع</label><input id="lName" placeholder="المقر الرئيسي"></div>
+      <div class="field"><label>الإحداثيات (خط العرض, خط الطول)</label><input id="lCoord" dir="ltr" placeholder="32.8872, 13.1913"></div>
+      <div class="field" style="max-width:150px"><label>النطاق (متر)</label><input id="lRad" type="number" value="100" min="10"></div>
+      <button class="btn sec" data-act="myLoc">📍 موقعي الحالي</button>
+      <button class="btn" data-act="addLoc">إضافة</button></div>
+      <p class="muted" style="font-size:13px;margin-bottom:0">يمكنك نسخ الإحداثيات من خرائط Google (اضغط مطولاً على النقطة ← انسخ الأرقام). يُسمح بعدة مواقع، ويُقبل الموظف إن كان داخل نطاق أي منها.</p></div>
+    <div class="card"><h3>المواقع المسموحة (${S.locs.length})</h3><div class="tw"><table><thead><tr><th>الاسم</th><th>الإحداثيات</th><th>النطاق</th><th></th></tr></thead><tbody>
+    ${S.locs.map(l => `<tr><td>${esc(l.name)}</td><td dir="ltr">${l.lat.toFixed(5)}, ${l.lng.toFixed(5)}</td><td>${l.radius} م</td><td><a href="${mapLink(l.lat, l.lng)}" target="_blank">الخريطة</a> <button class="btn sm bad" data-act="delLoc" data-id="${l.id}">حذف</button></td></tr>`).join('') || '<tr><td colspan="4" class="muted">لم تُضف مواقع بعد — بدونها لن يستطيع أي موظف التسجيل</td></tr>'}
+    </tbody></table></div></div>`;
+  }
+
+  /* --- السجل --- */
+  function filtered() {
+    return S.recs.filter(r => { const k = dayKey(r.t); return k >= S.from && k <= S.to && (!S.emp || r.empId === S.emp); });
+  }
+  // يربط كل حضور بانصرافه حتى لو عبر منتصف الليل، وينسب الوردية ليوم بدايتها
+  function summary() {
+    const byEmp = {}, days = {};
+    [...S.recs].sort((a, b) => a.t - b.t).forEach(r => (byEmp[r.empId] = byEmp[r.empId] || []).push(r));
+    Object.entries(byEmp).forEach(([empId, rs]) => {
+      const name = rs[rs.length - 1].empName;
+      const add = (start, end) => {
+        const day = dayKey(start); if (day < S.from || day > S.to) return;
+        const g = (days[empId + '|' + day] = days[empId + '|' + day] || { empId, name, day, firstIn: start, lastOut: null, total: 0, open: false });
+        if (start < g.firstIn) g.firstIn = start;
+        if (end) { g.total += end - start; if (!g.lastOut || end > g.lastOut) g.lastOut = end; } else g.open = true;
+      };
+      let open = null;
+      rs.forEach(r => {
+        if (r.type === 'in') { if (!open) open = r.t; else if (r.t - open >= FORGOT_MS) { add(open, null); open = r.t; } }
+        else if (open) { if (r.t - open >= FORGOT_MS) add(open, null); else add(open, r.t); open = null; }
+      });
+      if (open) add(open, null);
+    });
+    return Object.values(days).filter(x => !S.emp || x.empId === S.emp).sort((a, b) => b.day.localeCompare(a.day) || (a.name || '').localeCompare(b.name || '', 'ar'));
+  }
+  function viewRecs(el) {
+    const list = filtered(), sum = summary();
+    el.innerHTML = `<div class="card"><div class="row">
+      <div class="field"><label>من</label><input type="date" id="fFrom" value="${S.from}"></div>
+      <div class="field"><label>إلى</label><input type="date" id="fTo" value="${S.to}"></div>
+      <div class="field"><label>الموظف</label><select id="fEmp"><option value="">الكل</option>${S.emps.map(e => `<option value="${e.id}" ${S.emp === e.id ? 'selected' : ''}>${esc(e.name)}</option>`).join('')}</select></div>
+      <button class="btn" data-act="filter">تطبيق</button><button class="btn sec" data-act="csv">تصدير CSV</button></div></div>
+    <div class="card"><h3>ملخص الدوام اليومي</h3><div class="tw"><table><thead><tr><th>الموظف</th><th>التاريخ</th><th>أول حضور</th><th>آخر انصراف</th><th>ساعات العمل</th></tr></thead><tbody>
+    ${sum.map(s => `<tr><td>${esc(s.name)}</td><td>${s.day.split('-').reverse().join('/')}</td><td>${s.firstIn ? fmtTime(s.firstIn) : '—'}</td><td>${s.lastOut ? fmtTime(s.lastOut) : '—'} ${s.open ? '<span class="badge b-warn">لم ينصرف</span>' : ''}</td><td>${fmtDur(s.total)}</td></tr>`).join('') || '<tr><td colspan="5" class="muted">لا توجد بيانات</td></tr>'}
+    </tbody></table></div></div>
+    <div class="card"><h3>كل العمليات (${list.length})</h3><div class="tw"><table><thead><tr><th>الموظف</th><th>العملية</th><th>التاريخ</th><th>الوقت</th><th>الموقع</th><th>البعد</th><th>الخريطة</th></tr></thead><tbody>
+    ${list.map(r => `<tr><td>${esc(r.empName)}</td><td><span class="badge ${r.type === 'in' ? 'b-ok' : 'b-bad'}">${r.type === 'in' ? 'حضور' : 'انصراف'}</span></td><td>${fmtDate(r.t)}</td><td>${fmtTime(r.t, true)}</td><td>${esc(r.locationName)}</td><td>${r.distance} م</td><td><a href="${mapLink(r.lat, r.lng)}" target="_blank">عرض</a></td></tr>`).join('') || '<tr><td colspan="7" class="muted">لا توجد بيانات</td></tr>'}
+    </tbody></table></div></div>`;
+  }
+
+  /* --- الأحداث --- */
+  root.onclick = async ev => {
+    const tab = ev.target.closest('[data-tab]'); if (tab) { S.tab = tab.dataset.tab; return render(); }
+    const b = ev.target.closest('[data-act]'); if (!b) return;
+    const act = b.dataset.act, id = b.dataset.id;
+    try {
+      if (act === 'logout') return signOut(auth);
+      if (act === 'reload') { await loadAll(); return toast('تم التحديث', 'good'); }
+      if (act === 'addEmp') {
+        const name = $('#eName').value.trim(); if (!name) return toast('اكتب اسم الموظف', 'err');
+        const phone = $('#ePhone').value.replace(/\D/g, '');
+        const nid = randToken();
+        await setDoc(doc(db, 'employees', nid), { name, phone, active: true, deviceId: null, createdAt: serverTimestamp() });
+        await loadAll(); toast('تمت الإضافة — انسخ الرابط وأرسله للموظف', 'good');
+      }
+      if (act === 'copy') { await navigator.clipboard.writeText(linkOf(id)); toast('تم نسخ الرابط', 'good'); }
+      if (act === 'wa') {
+        const e = S.emps.find(x => x.id === id);
+        const msg = `مرحباً ${e.name}، هذا رابطك الشخصي لتسجيل الحضور والانصراف (لا تشاركه مع أحد):\n${linkOf(id)}`;
+        window.open(`https://wa.me/${e.phone || ''}?text=${encodeURIComponent(msg)}`, '_blank');
+      }
+      if (act === 'resetDev') { if (confirm('إعادة ضبط الجهاز المرتبط بهذا الموظف؟')) { await updateDoc(doc(db, 'employees', id), { deviceId: null }); await loadAll(); toast('تمت إعادة الضبط', 'good'); } }
+      if (act === 'toggle') { const e = S.emps.find(x => x.id === id); await updateDoc(doc(db, 'employees', id), { active: !e.active }); await loadAll(); }
+      if (act === 'delEmp') { if (confirm('حذف الموظف نهائياً؟ سيتوقف رابطه (تبقى سجلاته السابقة في التقارير).')) { await deleteDoc(doc(db, 'employees', id)); await loadAll(); } }
+      if (act === 'myLoc') {
+        toast('جاري تحديد موقعك…');
+        navigator.geolocation.getCurrentPosition(p => { $('#lCoord').value = `${p.coords.latitude.toFixed(6)}, ${p.coords.longitude.toFixed(6)}`; toast('تم تعبئة الإحداثيات', 'good'); }, () => toast('تعذر تحديد الموقع', 'err'), { enableHighAccuracy: true, timeout: 20000 });
+      }
+      if (act === 'addLoc') {
+        const name = $('#lName').value.trim();
+        const m = $('#lCoord').value.match(/(-?\d+(?:\.\d+)?)\s*[,،\s]\s*(-?\d+(?:\.\d+)?)/);
+        const radius = parseInt($('#lRad').value, 10);
+        if (!name || !m || !(radius >= 10)) return toast('أكمل الاسم والإحداثيات والنطاق (10 أمتار على الأقل)', 'err');
+        const lat = parseFloat(m[1]), lng = parseFloat(m[2]);
+        if (Math.abs(lat) > 90 || Math.abs(lng) > 180) return toast('إحداثيات غير صحيحة', 'err');
+        await addDoc(collection(db, 'locations'), { name, lat, lng, radius, active: true, ...geoK(lat) });
+        await loadAll(); toast('تمت إضافة الموقع', 'good');
+      }
+      if (act === 'delLoc') { if (confirm('حذف هذا الموقع؟')) { await deleteDoc(doc(db, 'locations', id)); await loadAll(); } }
+      if (act === 'filter') {
+        const f = $('#fFrom').value, t = $('#fTo').value;
+        if (!f || !t || t < f) return toast('حدد فترة صحيحة', 'err');
+        if ((dayStart(t) - dayStart(f)) / 86400000 > 92) return toast('الحد الأقصى للفترة 3 أشهر', 'err');
+        S.from = f; S.to = t; S.emp = $('#fEmp').value; await loadRecs(); render();
+      }
+      if (act === 'csv') {
+        const rows = [['الموظف', 'العملية', 'التاريخ', 'الوقت', 'الموقع', 'البعد (م)', 'خط العرض', 'خط الطول']];
+        filtered().forEach(r => rows.push([r.empName, r.type === 'in' ? 'حضور' : 'انصراف', fmtDate(r.t), fmtTime(r.t, true), r.locationName, r.distance, r.lat, r.lng]));
+        const csv = '\ufeff' + rows.map(r => r.map(c => `"${String(c ?? '').replace(/"/g, '""')}"`).join(',')).join('\n');
+        const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' })); a.download = `attendance_${S.from}_${S.to}.csv`; a.click();
+      }
+    } catch (err) { console.error(err); toast('حدث خطأ — تحقق من الاتصال وصلاحيات Firestore', 'err'); }
+  };
+
+  loadAll();
+}
+</script>
+</body>
+</html>
