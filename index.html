@@ -212,8 +212,8 @@ const FORGOT_MS = 14 * 3600e3;   // بعد هذه المدة يُعتبر الح
 const MIN_GAP_MS = 20000;        // أقل فاصل بين عمليتين لنفس الموظف (يطابق 20000 في القواعد)
 const TZ_OFFSET_MIN = 120;       // توقيت طرابلس UTC+2 ثابت (بلا توقيت صيفي). غيّره إن استخدمت النظام في بلد آخر
 
-import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, signInAnonymously } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+import { initializeApp, deleteApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
+import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, onAuthStateChanged, signInAnonymously } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import { getFirestore, collection, collectionGroup, doc, getDoc, getDocs, setDoc, addDoc, updateDoc, deleteDoc, query, where, orderBy, limit, writeBatch, Timestamp, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 /* ---------- الأيقونات (SVG مرسومة داخلياً) ---------- */
@@ -455,10 +455,12 @@ service cloud.firestore {
   match /databases/{database}/documents {
 
     // الإدارة: البريد المكتوب هنا يبقى «المالك» دائماً (للاسترجاع) + أي مشرف مضاف في /admins
+    // يمكن إضافة المشرفين ببريدهم (مقابل حسابهم في Authentication) أو بمعرّف UID — كلاهما يُعتمد
     function isAdmin() {
       return request.auth != null
         && (request.auth.token.email == '${email}'
-            || exists(/databases/$(database)/documents/admins/$(request.auth.uid)));
+            || exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+            || exists(/databases/$(database)/documents/admins/$(request.auth.token.email)));
     }
 
     // صاحب الرابط: هوية مجهولة مرتبطة بوصف الموظف — تمنع نسخ att_dev أو انتحال الجهاز
@@ -946,7 +948,7 @@ function adminApp(db, auth) {
       ${S.idxUrl ? `<div class="notice"><b>خطوة لمرة واحدة:</b> يلزم إنشاء فهرس لتسريع التقارير. <a href="${esc(S.idxUrl)}" target="_blank">اضغط هنا لإنشائه</a> وانتظر دقيقة ثم اضغط «تحديث». حتى ذلك الحين تُحمَّل السجلات بالطريقة البطيئة.</div>` : ''}
       ${S.rulesOld ? `<div class="notice"><b>تحديث لمرة واحدة:</b> لحفظ جداول الدوام يلزم تحديث قواعد Firestore. اضغط الزر لنسخ القواعد الجديدة، ثم افتح Firestore ← Rules، وامسح القديم والصق الجديد واضغط Publish، ثم حدّث الصفحة.<div style="margin-top:10px"><button class="btn sm" data-act="copyRules">${ic('copy', 15)} نسخ القواعد الجديدة</button></div></div>` : ''}
       ${S.reqsErr || S.adminsErr ? `<div class="notice"><b>تحديث مطلوب:</b> قواعد Firestore المنشورة حالياً لا تتيح قراءة طلبات الموظفين جماعياً أو بيانات المشرفين. انسخ القواعد الأحدث وانشرها ثم أعد التحميل.<div style="margin-top:10px"><button class="btn sm" data-act="copyRules">${ic('copy', 15)} نسخ القواعد الأحدث</button></div></div>` : ''}
-      ${localStorage.getItem('att_v2rules') ? '' : `<div class="notice"><b>أمان نسخة 2 جاهز:</b> القواعد الجديدة تربط كل موظف بهوية مجهولة مرتبطة برابطه (تغلق باب انتحال الجهاز)، وتقيّد قراءة السجلات والطلبات، وتدعم تعدد المشرفين. انسخها وانشرها في Firestore ← Rules مرة واحدة. <b>لا تنسَ تفعيل «Anonymous» من Authentication ← Sign-in method.</b><div style="margin-top:10px"><button class="btn sm" data-act="copyRules">${ic('copy', 15)} نسخ القواعد</button> <button class="btn sm sec" data-act="v2Done">${ic('check', 15)} نشرتها — لا تُظهر مجدداً</button></div></div>`}
+      ${localStorage.getItem('att_v21rules') ? '' : `<div class="notice"><b>تحديث قواعد (مرة أخرى، إسهم دقيقة):</b> القواعد المحدثة تضيف: إدارة المشرفين من اللوحة بأجعلي بريد المشرف بدل UID. انسخها وانشرها في Firestore ← Rules. <b>لا تنسَ تفعيل «Anonymous» من Authentication ← Sign-in method.</b><div style="margin-top:10px"><button class="btn sm" data-act="copyRules">${ic('copy', 15)} نسخ القواعد</button> <button class="btn sm sec" data-act="v2Done">${ic('check', 15)} نشرتها — لا تُظهر مجدداً</button></div></div>`}
       <div id="content"></div></div>`;
     ({ today: viewToday, emps: viewEmps, sched: viewSched, locs: viewLocs, reqs: viewReqs, recs: viewRecs })[S.tab]($('#content'));
   }
@@ -1209,14 +1211,15 @@ function adminApp(db, auth) {
     </tbody></table></div>
     <p class="muted" style="font-size:13px;margin:12px 0 0">الرابط يُربط تلقائياً بأول جهاز يفتحه لمنع مشاركته بين الموظفين. إن غيّر الموظف هاتفه استخدم «إعادة ضبط الجهاز».</p></div>
     <div class="card">${ch('users', `المشرفون المضافون (${S.admins.length})`)}
-      <p class="hint" style="margin-top:0">لإضافة مشرف: أنشئ له حساباً في Firebase Console ← Authentication (Email/Password)، انسخ معرّفه <b>UID</b>، ثم أضفه هنا — ستحصل على كل صلاحيات الإدارة. البريد المكتوب في نص القواعد يبقى المالك دائماً.</p>
+      <p class="hint" style="margin-top:0">أضف المشرف من هنا مباشرة: اكتب <b>اسمه + بريده + كلمة مرور مؤقتة</b> — سينشئ النظام حسابه في Firebase تلقائياً ويمنحه كامل الصلاحيات فوراً، بلا أي زيارة للموقع وبلا تكلفة. إن كان بريده مسجلاً من قبل وتركت الكلمة فارغة فتُمنح الصلاحيات لحسابه الحالي. عند «إزالة» مشرف تُسحب صلاحياته فوراً ويرى لا شيء (يبقى حسابه الخامل في Firebase ويمكن حذفه يدوياً من Console إن رغبت)..</p>
       <div class="row">
-        <div class="field" style="max-width:300px"><label>معرّف المشرف (UID)</label><input id="aUid" dir="ltr" placeholder="حروف وأرقام من حساب Firebase"></div>
         <div class="field"><label>اسم المشرف</label><input id="aName" placeholder="مسؤول الموارد البشرية"></div>
+        <div class="field"><label>البريد الإلكتروني</label><input id="aUid" type="email" dir="ltr" placeholder="hr@example.com"></div>
+        <div class="field" style="max-width:200px"><label>كلمة المرور (لحساب جديد)</label><input id="aPw" type="text" dir="ltr" placeholder="6 أحرف على الأقل" autocomplete="new-password"></div>
         <button class="btn" data-act="addAdmin">${ic('plus', 18)} إضافة مشرف</button>
       </div>
-      <div class="tw" style="margin-top:10px"><table><thead><tr><th>UID</th><th>الاسم</th><th></th></tr></thead><tbody>
-      ${S.admins.map(a => `<tr><td dir="ltr" style="font-size:12px">${esc(a.id)}</td><td>${esc(a.name)}</td><td><button class="btn sm bad" data-act="delAdmin" data-id="${a.id}">${ic('trash', 15)} إزالة</button></td></tr>`).join('') || `<tr><td colspan="3" class="muted">${S.adminsErr ? 'تعذر قراءة قائمة المشرفين — انشر القواعد الجديدة (الزر أعلى الصفحة)' : 'لا يوجد مشرفون إضافيون — أنت المالك الوحيد'}</td></tr>`}
+      <div class="tw" style="margin-top:10px"><table><thead><tr><th>الاسم</th><th>البريد</th><th>الصلاحية</th><th></th></tr></thead><tbody>
+      ${S.admins.map(a => `<tr><td>${esc(a.name)}</td><td dir="ltr">${esc(a.email || a.id)}</td><td><span class="badge b-pri">كامل الصلاحيات</span></td><td><button class="btn sm bad" data-act="delAdmin" data-id="${a.id}">${ic('trash', 15)} إزالة</button></td></tr>`).join('') || `<tr><td colspan="4" class="muted">${S.adminsErr ? 'تعذر قراءة قائمة المشرفين — انشر القواعد الجديدة (الزر أعلى الصفحة)' : 'لا يوجد مشرفون إضافيون — أنت المالك الوحيد'}</td></tr>`}
       </tbody></table></div></div>`;
   }
 
@@ -1600,13 +1603,34 @@ function adminApp(db, auth) {
         await loadAll(); toast('حُفظت إعدادات المنشأة', 'good');
       }
       if (act === 'addAdmin') {
-        const uidv = ($('#aUid') ? $('#aUid').value.trim() : ''), nm = ($('#aName') ? $('#aName').value.trim() : '');
-        if (!uidv || uidv.length < 10 || !/^[a-zA-Z0-9_-]+$/.test(uidv) || !nm) return toast('اكتب معرّف UID صحيحاً (حروف/أرقام) واسم المشرف', 'err');
-        await setDoc(doc(db, 'admins', uidv), { name: nm, addedAt: serverTimestamp() });
-        await loadAll(); toast('أُضيف المشرف — سيدخل بحسابه فوراً', 'good');
+        const nm = ($('#aName') ? $('#aName').value.trim() : '');
+        const em = ($('#aUid') ? $('#aUid').value.trim() : '');
+        const pw = $('#aPw') ? $('#aPw').value : '';
+        if (!nm) return toast('اكتب اسم المشرف', 'err');
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(em)) return toast('اكتب بريداً إلكترونياً صحيحاً', 'err');
+        let key, note;
+        if (pw && pw.length >= 6) {
+          // إنشاء الحساب تلقائياً عبر تطبيق مصادقة مؤقت — جلسة دخولك الحالية لا تتراجع إطلاقاً
+          const tmp = initializeApp(firebaseConfig, 'adm-' + Date.now());
+          try {
+            const cred = await createUserWithEmailAndPassword(getAuth(tmp), em, pw);
+            key = cred.user.uid; note = 'أُنشئ حساب المشرف وأُضيفت صلاحياته';
+          } catch (e2) {
+            if (e2 && e2.code === 'auth/email-already-in-use') { key = em.toLowerCase(); note = 'البريد مستخدم من قبل — أُضيفت الصلاحيات لحسابه الحالي'; }
+            else throw e2;
+          } finally {
+            try { await signOut(getAuth(tmp)); } catch {}
+            try { await deleteApp(tmp); } catch {}
+          }
+        } else {
+          if (pw) return toast('كلمة المرور 6 أحرف على الأقل (أو اتركها فارغة لمنح صلاحيات لحساب موجود مسبقاً)', 'err');
+          key = em.toLowerCase(); note = 'البريد موجود مسبقاً — أُضيفت الصلاحيات لحسابه';
+        }
+        await setDoc(doc(db, 'admins', key), { name: nm, email: em.toLowerCase(), addedAt: serverTimestamp() });
+        await loadAll(); toast(note, 'good');
       }
       if (act === 'delAdmin') { if (confirm('إزالة صلاحيات هذا المشرف؟')) { await deleteDoc(doc(db, 'admins', id)); await loadAll(); } }
-      if (act === 'v2Done') { localStorage.setItem('att_v2rules', '1'); return render(); }
+      if (act === 'v2Done') { localStorage.setItem('att_v21rules', '1'); return render(); }
       if (act === 'appr' || act === 'rej') {
         const empId = b.dataset.e;
         const r = S.reqs.find(x => x.id === id && x.empId === empId);
