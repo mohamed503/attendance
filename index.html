@@ -213,7 +213,7 @@ const MIN_GAP_MS = 20000;        // أقل فاصل بين عمليتين لنف
 const TZ_OFFSET_MIN = 120;       // توقيت طرابلس UTC+2 ثابت (بلا توقيت صيفي). غيّره إن استخدمت النظام في بلد آخر
 
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+import { getAuth, signInWithEmailAndPassword, signOut, onAuthStateChanged, signInAnonymously } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import { getFirestore, collection, collectionGroup, doc, getDoc, getDocs, setDoc, addDoc, updateDoc, deleteDoc, query, where, orderBy, limit, writeBatch, Timestamp, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 
 /* ---------- الأيقونات (SVG مرسومة داخلياً) ---------- */
@@ -252,13 +252,14 @@ const $ = (s, r = document) => r.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const ini = n => esc((n || '?').trim().charAt(0) || '?');
 const pad = n => String(n).padStart(2, '0');
-const L = d => new Date(d.getTime() + TZ_OFFSET_MIN * 60000); // نقرأ منه بـ getUTC* فيعطي توقيت العمل لا توقيت الجهاز
+let TZOFF = TZ_OFFSET_MIN;                    // يُحدَّث من إعدادات المنشأة عند التحميل
+const L = d => new Date(d.getTime() + TZOFF * 60000); // نقرأ منه بـ getUTC* فيعطي توقيت العمل لا توقيت الجهاز
 const dayKey = d => { const x = L(d); return `${x.getUTCFullYear()}-${pad(x.getUTCMonth()+1)}-${pad(x.getUTCDate())}`; };
 const fmtDate = d => { const x = L(d); return `${pad(x.getUTCDate())}/${pad(x.getUTCMonth()+1)}/${x.getUTCFullYear()}`; };
 const fmtTime = (d, sec = false) => { const x = L(d); let h = x.getUTCHours(); const ap = h >= 12 ? 'م' : 'ص'; h = h % 12 || 12; return `${pad(h)}:${pad(x.getUTCMinutes())}${sec ? ':' + pad(x.getUTCSeconds()) : ''} ${ap}`; };
 const DAYS_AR = ['الأحد', 'الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'];
 const weekday = d => DAYS_AR[L(d).getUTCDay()];
-const dayStart = key => new Date(Date.parse(key + 'T00:00:00Z') - TZ_OFFSET_MIN * 60000);
+const dayStart = key => new Date(Date.parse(key + 'T00:00:00Z') - TZOFF * 60000);
 const dayEnd = key => new Date(dayStart(key).getTime() + 86400000);
 /*@@ENGINE-START*/
 /* ===== المحرك: الجداول (الخطوة 2) ===== */
@@ -328,8 +329,85 @@ function newSched() {
   const days = {}; for (let i = 0; i < 7; i++) days[i] = { on: i <= 4, p: [{ s: '08:00', e: '16:00' }], h: 8 };
   return { name: '', mode: 'fixed', days, shifts: [], cycle: [], anchor: dayKey(new Date()), breakMin: 0, graceLate: 10, graceEarly: 10, graceMode: 'forgive', ot: Object.assign({}, OT_DEF) };
 }
-/* ===== نهاية المحرك ===== */
+/* ===== نهاية محرك الجداول ===== */
 /*@@ENGINE-END*/
+/* ===== محرك الاحتساب اليومي: ربط الجداول بالتقارير وشاشة «اليوم» (الخطوة 1) ===== */
+// يربط كل حضور بانصرافه حتى لو عبر منتصف الليل، ويغلق الجلسة المفتوحة لأكثر من 14 ساعة (نسيان انصراف)
+function pairSessions(rs) {
+  const out = []; let open = null;
+  [...rs].sort((a, b) => a.t - b.t).forEach(r => {
+    if (r.type === 'in') {
+      if (!open) open = r.t;
+      else if (r.t - open >= FORGOT_MS) { out.push({ start: open, end: null }); open = r.t; }
+    } else if (open) {
+      if (r.t - open >= FORGOT_MS) out.push({ start: open, end: null });
+      else out.push({ start: open, end: r.t });
+      open = null;
+    }
+  });
+  if (open) out.push({ start: open, end: null });
+  return out;
+}
+// دقائق اليوم بتوقيت العمل (0..1439)
+const localMin = d => Math.floor(d.getTime() / 60000 + TZOFF) % 1440;
+// هل يقع هذا التاريخ ضمن إجازة معتمدة لهذا الموظف؟
+function onLeave(leaves, empId, key) { return (leaves || []).some(l => l.empId === empId && l.kind === 'leave' && key >= l.from && key <= l.to); }
+
+// يحتسب نتائج يوم واحد لموظف وفق جدوله: عمل/راحة/عطلة، صافي الساعات، التأخير، المبكر، والإضافي المكافئ
+function calcDay(sc, key, sesAll, holidays, rotOffset, opt = {}) {
+  const res = { key, firstIn: null, lastOut: null, raw: 0, net: 0, breakMin: 0, late: 0, early: 0, otMin: 0, otEq: 0, otRate: 0, open: false, planned: 0, dayType: 'rest', shiftName: '' };
+  const isHol = Array.isArray(holidays) && holidays.includes(key);
+  const b = baseDay(sc, key, rotOffset);
+  res.shiftName = b.shiftName;
+  if (b.work) { res.dayType = isHol ? 'holiday' : 'work'; res.planned = b.flexMin || b.periods.reduce((a, p) => a + (p.e - p.s), 0); }
+  else if (isHol) res.dayType = 'holiday';
+  const ses = (sesAll || []).filter(s => dayKey(s.start) === key);
+  if (!ses.length) return res;
+  res.firstIn = ses[0].start;
+  const last = ses[ses.length - 1];
+  res.lastOut = last.end; res.open = !last.end;
+  let raw = 0;
+  ses.forEach(s => { if (s.end) raw += (s.end - s.start) / 60000; else if (opt.nowMs) raw += Math.max(0, (opt.nowMs - s.start) / 60000); });
+  res.raw = raw;
+  let net = raw;
+  if (raw > 240 && (sc ? sc.breakMin || 0 : 0) > 0) { res.breakMin = sc.breakMin; net = Math.max(0, raw - sc.breakMin); }
+  res.net = net;
+  // العمل الإضافي
+  const ot = sc ? Object.assign({}, OT_DEF, sc.ot || {}) : Object.assign({}, OT_DEF);
+  if (ot.mode !== 'none' && net > 0) {
+    let extra = 0;
+    if (res.dayType === 'work') {
+      if (ot.mode === 'hours') extra = net - (ot.baseH > 0 ? ot.baseH * 60 : res.planned);
+      else if (ot.mode === 'afterEnd' && res.lastOut && (sc.mode === 'fixed' || sc.mode === 'rotation') && b.periods.length) {
+        const st = localMin(ses[ses.length - 1].start);
+        extra = st + (res.lastOut - last.start) / 60000 - b.periods[b.periods.length - 1].e;
+      }
+    } else extra = net; // العمل في يوم راحة أو عطلة: كل الساعات إضافية (offDayAll)
+    if (extra > 0) {
+      if (ot.step > 0) extra = Math.floor(extra / ot.step) * ot.step;
+      if (ot.capH > 0) extra = Math.min(extra, ot.capH * 60);
+      if (extra >= ot.min) {
+        res.otMin = extra;
+        res.otRate = res.dayType === 'holiday' ? (ot.rateHoliday ?? 0) : res.dayType === 'rest' ? (ot.rateRest ?? 0) : (ot.rateNormal ?? 0);
+        res.otEq = extra / 60 * res.otRate;
+      }
+    }
+  }
+  // التأخير والانصراف المبكر (للدوام الثابت والورديات فقط)
+  if (res.dayType === 'work' && sc && (sc.mode === 'fixed' || sc.mode === 'rotation') && b.periods.length) {
+    const s0 = b.periods[0].s, pe = b.periods[b.periods.length - 1].e;
+    const lm = localMin(res.firstIn);
+    let d = ((lm - s0) % 1440 + 1440) % 1440; if (d > 720) d -= 1440; // فرق موقّع في نطاق (−12س، +12س]
+    if (d > (sc.graceLate ?? 10)) res.late = sc.graceMode === 'excess' ? d - (sc.graceLate ?? 10) : d;
+    if (res.lastOut) {
+      let e2 = localMin(res.lastOut); while (e2 < s0 - 720) e2 += 1440; // اسحب وقت الانصراف لإطار يوم الوردية (الدوام الليلي)
+      let de = ((e2 - pe) % 1440 + 1440) % 1440; if (de > 720) de -= 1440;
+      if (de < -(sc.graceEarly ?? 10)) res.early = sc.graceMode === 'excess' ? -de - (sc.graceEarly ?? 10) : -de;
+    }
+  }
+  return res;
+}
+/* ===== نهاية محرك الاحتساب ===== */
 // معاملات تحويل الدرجات إلى أمتار عند هذا خط العرض (تُخزَّن مع الموقع ليتحقق منها Firestore)
 const geoK = lat => { const p = lat * Math.PI / 180; return { ky: 111132.92 - 559.82 * Math.cos(2*p) + 1.175 * Math.cos(4*p), kx: 111412.84 * Math.cos(p) - 93.5 * Math.cos(3*p) + 0.118 * Math.cos(5*p) }; };
 const fmtDur = ms => { const m = Math.round(ms / 60000); return `${Math.floor(m / 60)}س ${m % 60}د`; };
@@ -370,42 +448,74 @@ function rulesText(email) {
 return `rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+
+    // الإدارة: البريد المكتوب هنا يبقى «المالك» دائماً (للاسترجاع) + أي مشرف مضاف في /admins
     function isAdmin() {
-      return request.auth != null && request.auth.token.email == '${email}';
+      return request.auth != null
+        && (request.auth.token.email == '${email}'
+            || exists(/databases/$(database)/documents/admins/$(request.auth.uid)));
+    }
+
+    // صاحب الرابط: هوية مجهولة مرتبطة بوصف الموظف — تمنع نسخ att_dev أو انتحال الجهاز
+    function ownerOnly(empId) {
+      return request.auth != null
+        && get(/databases/$(database)/documents/employees/$(empId)).data.get('uid', null) == request.auth.uid;
+    }
+
+    match /admins/{uid} {
+      allow read, write: if isAdmin();
     }
 
     match /locations/{id} {
-      allow read: if true;
+      allow read: if request.auth != null;
       allow write: if isAdmin();
     }
     match /schedules/{id} {
-      allow read: if true;
+      allow read: if request.auth != null;
       allow write: if isAdmin();
     }
     match /holidays/{id} {
-      allow read: if true;
+      allow read: if request.auth != null;
       allow write: if isAdmin();
     }
     match /settings/{id} {
-      allow read: if true;
+      allow read: if request.auth != null;
       allow write: if isAdmin();
     }
 
     match /employees/{empId} {
-      allow get: if true;
+      allow get: if isAdmin() || ownerOnly(empId) || unclaimed();
       allow list, create, delete: if isAdmin();
-      allow update: if isAdmin() || claimDevice() || punchState();
+      allow update: if isAdmin() || claimDevice() || bindUid() || punchState();
 
-      // أول فتح للرابط: ربط الجهاز
-      function claimDevice() {
-        return resource.data.get('deviceId', null) == null
-          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['deviceId']);
+      // الرابط لم يُربط بهوية بعد: يمكن قراءته لأجل ربطه
+      function unclaimed() {
+        return request.auth != null
+          && resource.data.get('uid', null) == null
+          && resource.data.active == true;
       }
 
-      // تحديث حالة الموظف مسموح فقط مع إنشاء سجل جديد في نفس الدفعة (batch)
+      // أول فتح للرابط: ربط الجهاز + الهوية معاً
+      function claimDevice() {
+        return request.auth != null
+          && resource.data.get('deviceId', null) == null
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['deviceId', 'uid'])
+          && request.resource.data.uid == request.auth.uid;
+      }
+
+      // ترقية رابط قديم (جهاز فقط) إلى نظام الهوية
+      function bindUid() {
+        return request.auth != null
+          && resource.data.get('uid', null) == null
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['uid'])
+          && request.resource.data.uid == request.auth.uid;
+      }
+
+      // تحديث حالة الموظف مسموح فقط لصاحب الهوية ومع إنشاء سجل في نفس الدفعة (batch)
       function punchState() {
         let a = request.resource.data;
-        return resource.data.active == true
+        return ownerOnly(empId)
+          && resource.data.active == true
           && a.diff(resource.data).affectedKeys().hasOnly(['state', 'lastAt', 'lastRecId'])
           && a.state in ['in', 'out']
           && a.lastAt == request.time
@@ -415,7 +525,7 @@ service cloud.firestore {
       }
 
       match /records/{recId} {
-        allow read: if true;
+        allow read: if isAdmin() || ownerOnly(empId);
         allow create: if isAdmin() || validRecord();
         allow update, delete: if isAdmin();
 
@@ -428,7 +538,9 @@ service cloud.firestore {
           let last = e.get('lastAt', null);
           let dx = (d.lng - l.lng) * l.kx;
           let dy = (d.lat - l.lat) * l.ky;
-          return d.keys().hasOnly(['type','time','lat','lng','accuracy','distance','locationId','locationName','empName','deviceId'])
+          return request.auth != null
+            && e.get('uid', null) == request.auth.uid
+            && d.keys().hasOnly(['type','time','lat','lng','accuracy','distance','locationId','locationName','empName','deviceId'])
             && d.keys().hasAll(['type','time','lat','lng','accuracy','distance','locationId','locationName','empName','deviceId'])
             && d.time == request.time
             && d.type in ['in', 'out']
@@ -449,16 +561,18 @@ service cloud.firestore {
         }
       }
 
-      // طلبات الإجازة والتصحيح
+      // طلبات الإجازة والتصحيح — القراءة والكتابة لصاحب الهوية أو الإدارة فقط
       match /requests/{rid} {
-        allow read: if true;
+        allow read: if isAdmin() || ownerOnly(empId);
         allow create: if isAdmin() || validRequest();
         allow update, delete: if isAdmin();
 
         function validRequest() {
           let d = request.resource.data;
           let e = get(/databases/$(database)/documents/employees/$(empId)).data;
-          return d.keys().hasOnly(['kind','type','typeName','from','to','fixIn','fixOut','note','status','empName','createdAt'])
+          return request.auth != null
+            && e.get('uid', null) == request.auth.uid
+            && d.keys().hasOnly(['kind','type','typeName','from','to','fixIn','fixOut','note','status','empName','createdAt'])
             && d.keys().hasAll(['kind','from','to','status','empName','createdAt'])
             && e.active == true
             && d.status == 'pending'
@@ -493,15 +607,17 @@ function setupPage() {
   <p class="muted">النظام يحتاج قاعدة بيانات مجانية لمزامنة الإدارة مع الموظفين. الخطوات كلها مجانية ولا تتطلب بطاقة بنكية.</p>
   <ol>
     <li>ادخل إلى <a href="https://console.firebase.google.com" target="_blank">console.firebase.google.com</a> وأنشئ مشروعاً جديداً (خطة Spark المجانية).</li>
-    <li>من <b>Build ← Authentication</b> فعّل طريقة <b>Email/Password</b> ثم أضف مستخدماً (بريدك وكلمة مرور) — هذا حساب الإدارة.</li>
+    <li>من <b>Build ← Authentication</b>: فعّل <b>Email/Password</b> وأضف مستخدماً (بريدك وكلمة مرور) — هذا حساب الإدارة. ثم من <b>Sign-in method</b> فعّل أيضاً <b>Anonymous</b> — يستخدمه رابط الموظف لهوية آمنة مرتبطة بجهازه.</li>
     <li>من <b>Build ← Firestore Database</b> أنشئ قاعدة بيانات (اختر Production mode وأقرب منطقة).</li>
-    <li>من تبويب <b>Rules</b> في Firestore الصق القواعد أدناه ثم اضغط Publish. اكتب بريد الإدارة أولاً ليدخل في القواعد.</li>
+    <li>من تبويب <b>Rules</b> في Firestore الصق القواعد أدناه (الإصدار 2) ثم اضغط Publish. اكتب بريد الإدارة أولاً ليدخل في القواعد.</li>
     <li>من <b>Project settings ← Your apps</b> أضف تطبيق ويب <code>&lt;/&gt;</code> وانسخ قيم <code>firebaseConfig</code> إلى أعلى هذا الملف (داخل وسم script) مكان القيم الافتراضية.</li>
     <li>ارفع الملف على استضافة مجانية تدعم HTTPS (مثل <b>Netlify Drop</b> أو <b>GitHub Pages</b> أو <b>Cloudflare Pages</b> أو <b>Firebase Hosting</b>). الـ HTTPS ضروري ليسمح المتصفح بتحديد الموقع.</li>
     <li>في Authentication ← Settings ← Authorized domains أضف نطاق الاستضافة إن لم يكن مضافاً.</li>
+    <li>بعد الدخول للوحة: يمكنك إضافة مشرفين إضافيين من تبويب «الموظفون» (قسم المشرفون) دون تعديل القواعد.</li>
   </ol>
+  <p class="hint">القواعد هنا إصدار 2: القراءة مقيّدة بالهوية (الموظف المجهول المرتبط برابطه أو الإدارة) بدل القراءة العامة، وكل تسجيل البصمة يشترط وجود هوية موثقة.</p>
   <div class="field" style="max-width:360px"><label>بريد حساب الإدارة (لتوليد القواعد)</label><input id="admEmail" type="email" dir="ltr" placeholder="admin@example.com"></div>
-  <h3 style="margin-top:14px;margin-bottom:10px">قواعد Firestore</h3>
+  <h3 style="margin-top:14px;margin-bottom:10px">قواعد Firestore (الإصدار 2)</h3>
   <pre class="rules" id="rulesBox">${esc(rulesText('admin@example.com'))}</pre>
   <button class="btn" id="copyRules" style="margin-top:10px">نسخ القواعد</button>
   </div></div>`;
@@ -514,28 +630,53 @@ else {
   const app = initializeApp(firebaseConfig);
   const db = getFirestore(app);
   const auth = getAuth(app);
-  if (empToken) employeeApp(db, empToken);
+  if (empToken) employeeApp(db, auth, empToken);
   else { onAuthStateChanged(auth, u => u ? adminApp(db, auth) : loginPage(auth)); }
 }
 
 /* =====================================================================
    واجهة الموظف
    ===================================================================== */
-async function employeeApp(db, token) {
+async function employeeApp(db, auth, token) {
   const showErr = m => { root.innerHTML = `<div class="emp-bg"><div class="emp-wrap"><div class="card center" style="margin-top:60px"><div class="st-ic bad" style="margin:0 auto 12px">${ic('alert', 24)}</div><p style="margin:0;font-weight:500">${esc(m)}</p></div></div></div>`; };
   root.innerHTML = `<div class="emp-bg"><div class="emp-wrap"><div class="card center" style="margin-top:60px">جاري التحميل…</div></div></div>`;
   const ref = doc(db, 'employees', token);
   let emp, locs = [];
   const myDev = getDeviceId();
+  /* --- المصادقة المجهولة: هوية دائمة تُربط بوصف الموظف (تغلق باب نسخ att_dev أو انتحال الجهاز) --- */
+  let uid = null;
+  try {
+    const cu = auth.currentUser;
+    if (cu && cu.isAnonymous) uid = cu.uid;
+    else { if (cu) await signOut(auth); const cred = await signInAnonymously(auth); uid = cred.user.uid; }
+  } catch (e) {
+    return showErr(e && (e.code === 'auth/configuration-not-found' || e.code === 'auth/operation-not-allowed')
+      ? 'تسجيل الدخول المجهول (Anonymous) غير مفعّل في Firebase. اطلب من الإدارة تفعيله من Authentication ثم نشر القواعد الجديدة.'
+      : 'تعذر الاتصال بالنظام. تحقق من الإنترنت وحاول مجدداً.');
+  }
   try {
     const snap = await getDoc(ref);
     if (!snap.exists() || !snap.data().active) return showErr('الرابط غير صالح أو تم إيقافه. تواصل مع الإدارة.');
     emp = snap.data();
-    if (!emp.deviceId) { await updateDoc(ref, { deviceId: myDev }); emp.deviceId = myDev; }
-    if (emp.deviceId !== myDev) return showErr('هذا الرابط مرتبط بجهاز آخر. اطلب من الإدارة إعادة ضبط الجهاز.');
+    if (!emp.deviceId && !emp.uid) {
+      // أول فتح للرابط: ربط الجهاز + الهوية في تحديث واحد
+      await updateDoc(ref, { deviceId: myDev, uid });
+      emp.deviceId = myDev; emp.uid = uid;
+    } else if (emp.uid && emp.uid !== uid) {
+      return showErr('هذا الرابط مرتبط بجهاز آخر. اطلب من الإدارة إعادة ضبط الجهاز.');
+    } else if (!emp.uid) {
+      // ترقية رابط قديم (مرتبط بجهاز فقط) إلى نظام الهوية الجديد
+      await updateDoc(ref, { uid });
+      emp.uid = uid;
+    } else if (emp.deviceId !== myDev) {
+      return showErr('هذا الرابط مرتبط بجهاز آخر. اطلب من الإدارة إعادة ضبط الجهاز.');
+    }
     const ls = await getDocs(collection(db, 'locations'));
     locs = ls.docs.map(d => ({ id: d.id, ...d.data() })).filter(l => l.active !== false);
-  } catch (e) { return showErr('تعذر الاتصال بالنظام. تحقق من الإنترنت وحاول مجدداً.'); }
+  } catch (e) {
+    if (e && e.code === 'permission-denied') return showErr('هذا الرابط مرتبط بجهاز آخر، أو القواعد لم تُحدث بعد. اطلب من الإدارة إعادة ضبط الجهاز.');
+    return showErr('تعذر الاتصال بالنظام. تحقق من الإنترنت وحاول مجدداً.');
+  }
   let sched = null;
   try { if (emp.scheduleId) { const ss = await getDoc(doc(db, 'schedules', emp.scheduleId)); if (ss.exists()) sched = normSched({ id: ss.id, ...ss.data() }); } } catch {}
 
@@ -567,6 +708,14 @@ async function employeeApp(db, token) {
       <button class="pbtn out" id="bOut"><span class="pc">${ic('logout', 28)}</span>تسجيل انصراف</button>
     </div>
     <div class="status" id="msg">اضغط على الزر المناسب، وسيُطلب منك السماح بتحديد الموقع.</div>
+    <div class="card"><div class="ch"><span class="chi">${ic('send', 18)}</span><h3>طلباتي</h3></div>
+      <div class="sc">
+        <button class="chip" id="rqLeave">${ic('sun', 15)} طلب إجازة</button>
+        <button class="chip" id="rqFix">${ic('edit', 15)} تصحيح نسيان حضور / انصراف</button>
+      </div>
+      <div id="rqForm"></div>
+      <div class="tw" style="margin-top:10px"><table><tbody id="rqList"><tr><td class="muted">…</td></tr></tbody></table></div>
+    </div>
     <div class="card"><div class="ch"><span class="chi">${ic('report', 18)}</span><h3>آخر تسجيلاتك</h3></div><div class="tw"><table><tbody id="hist"><tr><td class="muted">…</td></tr></tbody></table></div></div>
   </div></div>`;
   $('#skew').style.display = skewWarn ? 'inline-block' : 'none';
@@ -626,6 +775,60 @@ async function employeeApp(db, token) {
     } catch (e) { setMsg(e.code === 'permission-denied' ? 'رفض الخادم التسجيل: تأكد أنك داخل نطاق العمل وأن آخر عملية لم تُسجَّل للتو، ثم أعد المحاولة.' : 'تعذر حفظ التسجيل. تحقق من الاتصال وحاول مجدداً.', 'err'); }
     loadHist();
   }
+  /* ---------- طلبات الموظف: إجازة وتصحيح (متوافقة مع حقول قواعد Firestore) ---------- */
+  const rqFormEl = $('#rqForm');
+  function showRqForm(kind) {
+    rqFormEl.innerHTML = kind === 'leave' ? `
+      <div class="g2" style="margin-top:10px">
+        <div class="field"><label>نوع الإجازة</label><select id="rqType"><option>سنوية</option><option>مرضية</option><option>اضطرارية</option><option>بدون راتب</option><option>أخرى</option></select></div>
+        <div class="field"><label>من تاريخ</label><input type="date" id="rqFrom"></div>
+        <div class="field"><label>إلى تاريخ</label><input type="date" id="rqTo"></div>
+        <div class="field" style="grid-column:1/-1"><label>ملاحظة (اختياري)</label><input id="rqNote" maxlength="300"></div>
+        <button class="btn" id="rqSend" style="grid-column:1/-1">إرسال الطلب للإدارة</button>
+      </div>` : `
+      <div class="g2" style="margin-top:10px">
+        <div class="field"><label>يوم النسيان</label><input type="date" id="rqDay"></div>
+        <div class="field"><label>وقت حضور</label><input type="time" id="rqIn"></div>
+        <div class="field"><label>وقت انصراف</label><input type="time" id="rqOut"></div>
+        <div class="field" style="grid-column:1/-1"><label>سبب النسيان / ملاحظة</label><input id="rqNote" maxlength="300"></div>
+        <button class="btn" id="rqSend" style="grid-column:1/-1">إرسال الطلب للإدارة</button>
+      </div>`;
+    $('#rqSend').onclick = async () => {
+      try {
+        const note = ($('#rqNote') ? $('#rqNote').value.trim() : '');
+        if (kind === 'leave') {
+          const from = $('#rqFrom').value, to = $('#rqTo').value;
+          if (!from || !to || to < from) return toast('حدد فترة إجازة صحيحة', 'err');
+          await addDoc(collection(db, 'employees', token, 'requests'), { kind: 'leave', type: 'leave', typeName: $('#rqType').value, from, to, note, status: 'pending', empName: emp.name, createdAt: serverTimestamp() });
+          rqFormEl.innerHTML = '';
+          toast('أُرسل طلب الإجازة — بانتظار موافقة الإدارة', 'good');
+        } else {
+          const d = $('#rqDay').value, tin = $('#rqIn').value, tout = $('#rqOut').value;
+          if (!d || (!tin && !tout)) return toast('حدد اليوم والوقت المطلوب تصحيحه', 'err');
+          await addDoc(collection(db, 'employees', token, 'requests'), { kind: 'fix', type: '', typeName: '', from: d, to: d, fixIn: tin || '', fixOut: tout || '', note, status: 'pending', empName: emp.name, createdAt: serverTimestamp() });
+          rqFormEl.innerHTML = '';
+          toast('أُرسل طلب التصحيح — بانتظار موافقة الإدارة', 'good');
+        }
+        loadReqs();
+      } catch (e) { console.error(e); toast('تعذر إرسال الطلب، حاول مجدداً', 'err'); }
+    };
+  }
+  $('#rqLeave').onclick = () => showRqForm('leave');
+  $('#rqFix').onclick = () => showRqForm('fix');
+  async function loadReqs() {
+    try {
+      const q = query(collection(db, 'employees', token, 'requests'), orderBy('createdAt', 'desc'), limit(10));
+      const s = await getDocs(q);
+      $('#rqList').innerHTML = s.docs.length ? s.docs.map(d => {
+        const r = d.data();
+        const st = r.status === 'pending' ? '<span class="badge b-warn">بانتظار المراجعة</span>' : r.status === 'approved' ? '<span class="badge b-ok">مقبول</span>' : '<span class="badge b-bad">مرفوض</span>';
+        const det = r.kind === 'leave' ? `${esc(r.typeName || 'إجازة')} · من ${r.from} إلى ${r.to}` : `تصحيح ${r.from}${r.fixIn ? ' · حضور ' + r.fixIn : ''}${r.fixOut ? ' · انصراف ' + r.fixOut : ''}`;
+        return `<tr><td>${det}</td><td>${st}</td></tr>`;
+      }).join('') : '<tr><td class="muted">لا توجد طلبات بعد</td></tr>';
+    } catch { $('#rqList').innerHTML = '<tr><td class="muted">تعذر تحميل طلباتك</td></tr>'; }
+  }
+  loadReqs();
+
   $('#bIn').onclick = () => punch('in');
   $('#bOut').onclick = () => punch('out');
   loadHist();
@@ -655,10 +858,11 @@ function loginPage(auth) {
    لوحة الإدارة
    ===================================================================== */
 function adminApp(db, auth) {
-  const S = { tab: 'today', emps: [], locs: [], scheds: [], rulesOld: false, recs: [], today: [], idxUrl: '', from: '', to: '', emp: '' };
+  const S = { tab: 'today', emps: [], locs: [], scheds: [], rulesOld: false, recs: [], today: [], idxUrl: '', from: '', to: '', emp: '', hols: [], holKeys: [], set: {}, reqs: [], leaves: [], reqsErr: false, admins: [], adminsErr: false };
   S.from = dayKey(new Date(Date.now() - 6 * 86400000)); S.to = dayKey(new Date());
   const base = location.origin + location.pathname;
   const linkOf = id => `${base}?e=${id}`;
+  const brandName = () => (S.set && S.set.orgName) ? S.set.orgName : BRAND;
   const ch = (icon, title) => `<div class="ch"><span class="chi">${ic(icon, 18)}</span><h3>${title}</h3></div>`;
 
   async function fetchRecs(a, b) {
@@ -690,6 +894,31 @@ function adminApp(db, auth) {
         S.scheds = sc.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => (a.name || '').localeCompare(b.name || '', 'ar'));
         S.rulesOld = false;
       } catch (e2) { if (e2.code === 'permission-denied') S.rulesOld = true; else throw e2; }
+      // العطلات الرسمية
+      try {
+        const hs = await getDocs(collection(db, 'holidays'));
+        S.hols = hs.docs.map(d => ({ id: d.id, date: d.data().date || d.id, name: d.data().name || '' })).sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+        S.holKeys = S.hols.map(h => h.date || h.id);
+      } catch (e2) { if (e2.code !== 'permission-denied') console.warn(e2); }
+      // إعدادات المنشأة (اسم المنشأة + المنطقة الزمنية)
+      try {
+        const st = await getDoc(doc(db, 'settings', 'general'));
+        S.set = st.exists() ? st.data() : {};
+      } catch (e2) { if (e2.code !== 'permission-denied') console.warn(e2); }
+      if (S.set && S.set.tzOffset != null && +S.set.tzOffset !== TZOFF) TZOFF = +S.set.tzOffset;
+      // طلبات الموظفين (إجازة/تصحيح) عبر كل القاعدة
+      try {
+        const rq = await getDocs(collectionGroup(db, 'requests'));
+        S.reqs = rq.docs.map(d => ({ id: d.id, empId: d.ref.parent.parent.id, ...d.data(), cAt: (d.data().createdAt && d.data().createdAt.toMillis ? d.data().createdAt.toMillis() : 0) }));
+        S.reqsErr = false;
+      } catch (e2) { S.reqs = []; if (e2.code === 'permission-denied') S.reqsErr = true; else console.warn(e2); }
+      S.leaves = S.reqs.filter(r => r.kind === 'leave' && r.status === 'approved');
+      // المشرفون الإضافيون (المرحلة 2)
+      try {
+        const ad = await getDocs(collection(db, 'admins'));
+        S.admins = ad.docs.map(d => ({ id: d.id, name: d.data().name || '' }));
+        S.adminsErr = false;
+      } catch (e2) { S.admins = []; if (e2.code === 'permission-denied') S.adminsErr = true; else console.warn(e2); }
       await migrateLocs();
       await loadRecs();
       S.today = await fetchRecs(dayStart(dayKey(new Date(Date.now() - 86400000))), dayEnd(dayKey(new Date())));
@@ -698,45 +927,70 @@ function adminApp(db, auth) {
   }
 
   function render() {
-    const tabs = [['today', 'اليوم', 'today'], ['emps', 'الموظفون', 'users'], ['sched', 'الدوام', 'sched'], ['locs', 'المواقع', 'pin'], ['recs', 'التقارير', 'report']];
+    const pend = S.reqs.filter(r => r.status === 'pending').length;
+    const tabs = [['today', 'اليوم', 'today'], ['emps', 'الموظفون', 'users'], ['sched', 'الدوام', 'sched'], ['locs', 'المواقع', 'pin'], ['reqs', `الطلبات${pend ? ' (' + pend + ')' : ''}`, 'send'], ['recs', 'التقارير', 'report']];
     root.innerHTML = `<div class="top"><div class="top-in">
-        <div class="brand"><div class="logo">${logoMark(30)}</div><div><b>${BRAND}</b><small>للحضور والانصراف · لوحة الإدارة</small></div></div>
+        <div class="brand"><div class="logo">${logoMark(30)}</div><div><b>${esc(brandName())}</b><small>للحضور والانصراف · لوحة الإدارة</small></div></div>
         <div class="top-act"><button class="ib" data-act="reload" title="تحديث">${ic('refresh', 20)}</button><button class="ib" data-act="logout" title="خروج">${ic('logout', 20)}</button></div>
       </div></div>
       <div class="wrap main">
       <div class="tabs">${tabs.map(([k, n, i]) => `<button class="tab ${S.tab === k ? 'on' : ''}" data-tab="${k}">${ic(i, 20)}<span>${n}</span></button>`).join('')}</div>
       ${S.idxUrl ? `<div class="notice"><b>خطوة لمرة واحدة:</b> يلزم إنشاء فهرس لتسريع التقارير. <a href="${esc(S.idxUrl)}" target="_blank">اضغط هنا لإنشائه</a> وانتظر دقيقة ثم اضغط «تحديث». حتى ذلك الحين تُحمَّل السجلات بالطريقة البطيئة.</div>` : ''}
       ${S.rulesOld ? `<div class="notice"><b>تحديث لمرة واحدة:</b> لحفظ جداول الدوام يلزم تحديث قواعد Firestore. اضغط الزر لنسخ القواعد الجديدة، ثم افتح Firestore ← Rules، وامسح القديم والصق الجديد واضغط Publish، ثم حدّث الصفحة.<div style="margin-top:10px"><button class="btn sm" data-act="copyRules">${ic('copy', 15)} نسخ القواعد الجديدة</button></div></div>` : ''}
+      ${S.reqsErr || S.adminsErr ? `<div class="notice"><b>تحديث مطلوب:</b> قواعد Firestore المنشورة حالياً لا تتيح قراءة طلبات الموظفين جماعياً أو بيانات المشرفين. انسخ القواعد الأحدث وانشرها ثم أعد التحميل.<div style="margin-top:10px"><button class="btn sm" data-act="copyRules">${ic('copy', 15)} نسخ القواعد الأحدث</button></div></div>` : ''}
+      ${localStorage.getItem('att_v2rules') ? '' : `<div class="notice"><b>أمان نسخة 2 جاهز:</b> القواعد الجديدة تربط كل موظف بهوية مجهولة مرتبطة برابطه (تغلق باب انتحال الجهاز)، وتقيّد قراءة السجلات والطلبات، وتدعم تعدد المشرفين. انسخها وانشرها في Firestore ← Rules مرة واحدة. <b>لا تنسَ تفعيل «Anonymous» من Authentication ← Sign-in method.</b><div style="margin-top:10px"><button class="btn sm" data-act="copyRules">${ic('copy', 15)} نسخ القواعد</button> <button class="btn sm sec" data-act="v2Done">${ic('check', 15)} نشرتها — لا تُظهر مجدداً</button></div></div>`}
       <div id="content"></div></div>`;
-    ({ today: viewToday, emps: viewEmps, sched: viewSched, locs: viewLocs, recs: viewRecs })[S.tab]($('#content'));
+    ({ today: viewToday, emps: viewEmps, sched: viewSched, locs: viewLocs, reqs: viewReqs, recs: viewRecs })[S.tab]($('#content'));
   }
 
   /* --- اليوم --- */
   function viewToday(el) {
-    const now = Date.now(), key = dayKey(new Date(now));
+    const nowMs = Date.now(), key = dayKey(new Date(nowMs));
     const act = S.emps.filter(e => e.active);
     const when = t => (dayKey(t) === key ? '' : fmtDate(t) + ' ') + fmtTime(t);
-    const B = { present: ['b-ok', 'حاضر'], left: ['b-pri', 'انصرف'], forgot: ['b-warn', 'نسي الانصراف'], absent: ['b-bad', 'لم يحضر'] };
+    const scOf = e => { const x = S.scheds.find(s => s.id === e.scheduleId); return x ? normSched(x) : null; };
+    const B = { present: ['b-ok', 'حاضر'], late: ['b-warn', 'حاضر متأخر'], left: ['b-pri', 'انصرف'], forgot: ['b-warn', 'نسي الانصراف'], absent: ['b-bad', 'لم يحضر'], rest: ['b-mute', 'في راحة'], leave: ['b-pri', 'في إجازة'], holiday: ['b-mute', 'عطلة رسمية'] };
     const rows = act.map(e => {
-      const rs = S.today.filter(r => r.empId === e.id).sort((a, b) => a.t - b.t);
-      const last = rs[rs.length - 1], mine = rs.filter(r => dayKey(r.t) === key), lastToday = mine[mine.length - 1];
+      const sc = scOf(e);
+      const sesAll = pairSessions(S.today.filter(r => r.empId === e.id));
+      const lastSes = sesAll.length ? sesAll[sesAll.length - 1] : null;
       let st = 'absent';
-      if (last && last.type === 'in') st = now - last.t < FORGOT_MS ? 'present' : 'forgot';
-      else if (lastToday) st = 'left';
-      const firstIn = mine.find(r => r.type === 'in') || (st === 'present' || st === 'forgot' ? last : null);
-      return { e, st, firstIn, rec: st === 'absent' ? null : last };
+      if (lastSes && !lastSes.end) st = nowMs - lastSes.start < FORGOT_MS ? 'present' : 'forgot';
+      else if (lastSes && lastSes.end && dayKey(lastSes.end) === key) st = 'left';
+      const ses = sesAll.filter(s => dayKey(s.start) === key);
+      const met = calcDay(sc, key, ses, S.holKeys, e.rotOffset || 0, { nowMs });
+      if (st === 'absent') {
+        if (onLeave(S.leaves, e.id, key)) st = 'leave';
+        else if (S.holKeys.includes(key) && met.dayType !== 'rest') st = 'holiday';
+        else if (met.dayType === 'rest') st = 'rest';
+        else if (S.holKeys.includes(key)) st = 'holiday';
+        else if (e.startDate && key < e.startDate) st = 'rest';
+      }
+      if (st === 'present' && met.late > 0) st = 'late';
+      const planTxt = !sc ? 'بدون جدول'
+        : S.holKeys.includes(key) ? 'عطلة رسمية'
+        : met.dayType === 'work' ? (sc.mode === 'flex' ? `${fmtMinsH(met.planned)} (مرن)` : (met.shiftName || 'دوام مجدول'))
+        : 'يوم راحة';
+      const firstShown = ses.length ? ses[0].start : (lastSes ? lastSes.start : null);
+      const lastRec = S.today.filter(r => r.empId === e.id).sort((a, b) => b.t - a.t)[0];
+      return { e, st, met, planTxt, firstShown, lastRec };
     });
     const c = s => rows.filter(r => r.st === s).length;
     const stat = (icon, cls, label, val) => `<div class="stat"><div class="st-ic ${cls}">${ic(icon, 24)}</div><div><b>${val}</b><span>${label}</span></div></div>`;
     el.innerHTML = `<div class="stats">
-      ${stat('check', 'ok', 'حاضرون الآن', c('present'))}
+      ${stat('check', 'ok', 'حاضرون الآن', c('present') + c('late'))}
       ${stat('logout', 'pri', 'انصرفوا', c('left'))}
-      ${stat('alert', 'bad', 'لم يحضروا', c('absent'))}
+      ${stat('alert', 'bad', 'لم يحضروا (دوام مجدول)', c('absent'))}
       ${stat('clock', 'warn', 'نسوا الانصراف', c('forgot'))}
+      ${stat('sun', 'warn', 'إجازة / راحة / عطلة', c('leave') + c('rest') + c('holiday'))}
       ${stat('users', 'navy', 'إجمالي الموظفين', act.length)}
     </div>
-    <div class="card">${ch('today', `حالة اليوم — ${weekday(new Date())} ${fmtDate(new Date())}`)}<div class="tw"><table><thead><tr><th>الموظف</th><th>الحالة</th><th>أول حضور</th><th>آخر عملية</th></tr></thead><tbody>
-    ${rows.map(({ e, st, firstIn, rec }) => `<tr><td><div class="who"><span class="av">${ini(e.name)}</span>${esc(e.name)}</div></td><td><span class="badge ${B[st][0]}">${B[st][1]}</span></td><td>${firstIn ? when(firstIn.t) : '—'}</td><td>${rec ? `${rec.type === 'in' ? 'حضور' : 'انصراف'} ${when(rec.t)}` : '—'}</td></tr>`).join('') || '<tr><td colspan="4" class="muted">أضف موظفين من تبويب «الموظفون»</td></tr>'}
+    <div class="card">${ch('today', `حالة اليوم — ${weekday(new Date())} ${fmtDate(new Date())}`)}<div class="tw"><table><thead><tr><th>الموظف</th><th>الحالة</th><th>خطة اليوم</th><th>أول حضور</th><th>آخر عملية</th></tr></thead><tbody>
+    ${rows.map(({ e, st, met, planTxt, firstShown, lastRec }) => {
+      const stateTxt = B[st][1] + (st === 'late' && met.late ? ` ${fmtMinsH(met.late)}` : '');
+      const worked = met.net > 0 ? ` · ${fmtDur(met.net * 60000)}${met.open ? ' (جارٍ)' : ''} ${met.otMin ? `· إضافي ${(met.otMin / 60).toFixed(1)}س` : ''}` : '';
+      return `<tr><td><div class="who"><span class="av">${ini(e.name)}</span>${esc(e.name)}</div></td><td><span class="badge ${B[st][0]}">${stateTxt}</span>${worked}</td><td>${esc(planTxt)}</td><td>${firstShown ? when(firstShown) : '—'}</td><td>${lastRec ? `${lastRec.type === 'in' ? 'حضور' : 'انصراف'} ${when(lastRec.t)}` : '—'}</td></tr>`;
+    }).join('') || '<tr><td colspan="5" class="muted">أضف موظفين من تبويب «الموظفون»</td></tr>'}
     </tbody></table></div></div>`;
   }
 
@@ -935,15 +1189,42 @@ function adminApp(db, auth) {
     ${S.emps.map(e => `<tr><td><div class="who"><span class="av">${ini(e.name)}</span>${esc(e.name)}</div></td><td>${sname(e.scheduleId) ? `<span class="badge b-pri">${esc(sname(e.scheduleId))}</span>` : '<span class="badge b-mute">غير محدد</span>'}</td><td>${e.active ? '<span class="badge b-ok">مفعّل</span>' : '<span class="badge b-bad">موقوف</span>'}</td><td>${e.deviceId ? '<span class="badge b-warn">مرتبط</span>' : '<span class="badge b-mute">لم يُفتح بعد</span>'}</td>
     <td><div class="acts"><button class="btn sm sec" data-act="editEmp" data-id="${e.id}">${ic('edit', 15)} تعديل</button> <button class="btn sm" data-act="copy" data-id="${e.id}">${ic('link', 15)} نسخ الرابط</button> <button class="btn sm ok" data-act="wa" data-id="${e.id}">${ic('send', 15)} واتساب</button> <button class="btn sm sec" data-act="resetDev" data-id="${e.id}">${ic('device', 15)} إعادة ضبط الجهاز</button> <button class="btn sm sec" data-act="toggle" data-id="${e.id}">${ic('power', 15)} ${e.active ? 'إيقاف' : 'تفعيل'}</button> <button class="btn sm bad" data-act="delEmp" data-id="${e.id}">${ic('trash', 15)} حذف</button></div></td></tr>`).join('') || '<tr><td colspan="5" class="muted">لا يوجد موظفون</td></tr>'}
     </tbody></table></div>
-    <p class="muted" style="font-size:13px;margin:12px 0 0">الرابط يُربط تلقائياً بأول جهاز يفتحه لمنع مشاركته بين الموظفين. إن غيّر الموظف هاتفه استخدم «إعادة ضبط الجهاز».</p></div>`;
+    <p class="muted" style="font-size:13px;margin:12px 0 0">الرابط يُربط تلقائياً بأول جهاز يفتحه لمنع مشاركته بين الموظفين. إن غيّر الموظف هاتفه استخدم «إعادة ضبط الجهاز».</p></div>
+    <div class="card">${ch('users', `المشرفون المضافون (${S.admins.length})`)}
+      <p class="hint" style="margin-top:0">لإضافة مشرف: أنشئ له حساباً في Firebase Console ← Authentication (Email/Password)، انسخ معرّفه <b>UID</b>، ثم أضفه هنا — ستحصل على كل صلاحيات الإدارة. البريد المكتوب في نص القواعد يبقى المالك دائماً.</p>
+      <div class="row">
+        <div class="field" style="max-width:300px"><label>معرّف المشرف (UID)</label><input id="aUid" dir="ltr" placeholder="حروف وأرقام من حساب Firebase"></div>
+        <div class="field"><label>اسم المشرف</label><input id="aName" placeholder="مسؤول الموارد البشرية"></div>
+        <button class="btn" data-act="addAdmin">${ic('plus', 18)} إضافة مشرف</button>
+      </div>
+      <div class="tw" style="margin-top:10px"><table><thead><tr><th>UID</th><th>الاسم</th><th></th></tr></thead><tbody>
+      ${S.admins.map(a => `<tr><td dir="ltr" style="font-size:12px">${esc(a.id)}</td><td>${esc(a.name)}</td><td><button class="btn sm bad" data-act="delAdmin" data-id="${a.id}">${ic('trash', 15)} إزالة</button></td></tr>`).join('') || `<tr><td colspan="3" class="muted">${S.adminsErr ? 'تعذر قراءة قائمة المشرفين — انشر القواعد الجديدة (الزر أعلى الصفحة)' : 'لا يوجد مشرفون إضافيون — أنت المالك الوحيد'}</td></tr>`}
+      </tbody></table></div></div>`;
   }
 
-  /* --- الدوام --- */
+  /* --- الدوام + العطلات الرسمية + إعدادات المنشأة --- */
+  const TZ_OPTS = [[-180, 'UTC−3'], [-120, 'UTC−2'], [-60, 'UTC−1'], [0, 'UTC+0'], [60, 'UTC+1'], [120, 'UTC+2 — طرابلس (الافتراضي)'], [180, 'UTC+3'], [210, 'UTC+3:30'], [240, 'UTC+4'], [300, 'UTC+5'], [360, 'UTC+6'], [420, 'UTC+7'], [480, 'UTC+8']];
   function viewSched(el) {
     const cnt = id => S.emps.filter(e => e.scheduleId === id).length;
     el.innerHTML = `<div class="card">${ch('sched', 'جداول الدوام')}<p class="hint" style="margin-top:0">أنشئ جدولاً لكل نمط دوام في منشأتك (إدارة، ورديات، ساعات مرنة…) ثم اربط كل موظف بجدوله من تبويب «الموظفون».</p><button class="btn" data-act="newSched">${ic('plus', 18)} إنشاء جدول جديد</button></div>`
-      + (S.scheds.map(x => `<div class="sch"><h4>${esc(x.name)} <span class="badge b-pri">${MODES[x.mode] || ''}</span> <span class="badge b-mute">${cnt(x.id)} موظف</span></h4><p>${esc(schedSummary(x))}</p><div class="acts"><button class="btn sm sec" data-act="editSched" data-id="${x.id}">${ic('edit', 15)} تعديل</button><button class="btn sm sec" data-act="dupSched" data-id="${x.id}">${ic('copy', 15)} نسخ</button><button class="btn sm bad" data-act="delSched" data-id="${x.id}">${ic('trash', 15)} حذف</button></div></div>`).join('')
-      || `<div class="card center muted">لا توجد جداول بعد. اضغط «إنشاء جدول جديد» للبدء.</div>`);
+    + (S.scheds.map(x => `<div class="sch"><h4>${esc(x.name)} <span class="badge b-pri">${MODES[x.mode] || ''}</span> <span class="badge b-mute">${cnt(x.id)} موظف</span></h4><p>${esc(schedSummary(x))}</p><div class="acts"><button class="btn sm sec" data-act="editSched" data-id="${x.id}">${ic('edit', 15)} تعديل</button><button class="btn sm sec" data-act="dupSched" data-id="${x.id}">${ic('copy', 15)} نسخ</button><button class="btn sm bad" data-act="delSched" data-id="${x.id}">${ic('trash', 15)} حذف</button></div></div>`).join('')
+    || `<div class="card center muted">لا توجد جداول بعد. اضغط «إنشاء جدول جديد» للبدء.</div>`)
+    + `<div class="card" style="margin-top:14px">${ch('sun', 'العطلات الرسمية')}<p class="hint">لا يُحتسب الغياب في هذه الأيام، وساعات العمل فيها تُحتسب إضافية بمعامل «معامل العمل في العطلة الرسمية» المعرّف في جدول كل موظف.</p>
+      <div class="row">
+        <div class="field" style="max-width:180px"><label>التاريخ</label><input type="date" id="hDay"></div>
+        <div class="field"><label>اسم العطلة</label><input id="hName" placeholder="عيد الفطر"></div>
+        <button class="btn" data-act="addHol">${ic('plus', 18)} إضافة عطلة</button>
+      </div>
+      <div class="tw" style="margin-top:10px"><table><thead><tr><th>التاريخ</th><th>الاسم</th><th>اليوم</th><th></th></tr></thead><tbody>
+      ${S.hols.map(h => `<tr><td><b>${fmtDate(dayStart(h.date))}</b></td><td>${esc(h.name)}</td><td class="muted">${DAYS_AR[new Date(h.date + 'T00:00:00Z').getUTCDay()]}</td><td><button class="btn sm bad" data-act="delHol" data-id="${h.id}">${ic('trash', 15)} حذف</button></td></tr>`).join('') || '<tr><td colspan="4" class="muted">لا توجد عطلات مسجلة</td></tr>'}
+      </tbody></table></div></div>
+    <div class="card">${ch('device', 'إعدادات المنشأة')}
+      <div class="row">
+        <div class="field" style="max-width:300px"><label>اسم المنشأة (يظهر مكان «مِيقَاتْ» في اللوحة)</label><input id="sOrg" value="${esc((S.set && S.set.orgName) || '')}" placeholder="شركة النور"></div>
+        <div class="field" style="max-width:240px"><label>المنطقة الزمنية للتقارير</label><select id="sTz">${TZ_OPTS.map(([v, l]) => `<option value="${v}" ${(S.set && +S.set.tzOffset || TZ_OFFSET_MIN) === v ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
+        <button class="btn" data-act="saveSet">${ic('check', 18)} حفظ الإعدادات</button>
+      </div>
+      <p class="muted" style="font-size:13px;margin:10px 0 0">المنطقة الزمنية تثبّت أسماء الأيام والحدود اليومية في كل التقارير على جهاز أي مدير مهما كانت ساعة جهازه.</p></div>`;
   }
 
   /* --- المواقع --- */
@@ -960,43 +1241,68 @@ function adminApp(db, auth) {
     </tbody></table></div></div>`;
   }
 
+  /* --- الطلبات (إجازات وتصحيح) --- */
+  function viewReqs(el) {
+    const cname = empId => (S.emps.find(e => e.id === empId) || {}).name || 'موظف محذوف';
+    const pend = S.reqs.filter(r => r.status === 'pending').sort((a, b) => b.cAt - a.cAt);
+    const dec = S.reqs.filter(r => r.status !== 'pending').sort((a, b) => b.cAt - a.cAt).slice(0, 30);
+    const det = r => r.kind === 'leave'
+      ? `<b>${esc(r.typeName || 'إجازة')}</b> من ${fmtDate(dayStart(r.from))} إلى ${fmtDate(dayStart(r.to))}`
+      : `<b>تصحيح</b> يوم ${fmtDate(dayStart(r.from))}${r.fixIn ? ` · حضور <b>${fmtHM(r.fixIn)}</b>` : ''}${r.fixOut ? ` · انصراف <b>${fmtHM(r.fixOut)}</b>` : ''}`;
+    el.innerHTML = `<div class="card">${ch('send', `طلبات بانتظار المراجعة (${pend.length})`)}<div class="tw"><table><thead><tr><th>الموظف</th><th>الطلب</th><th>ملاحظة</th><th>الحالة</th><th>إجراءات</th></tr></thead><tbody>
+    ${pend.map(r => `<tr><td><div class="who"><span class="av">${ini(cname(r.empId))}</span>${esc(cname(r.empId))}</div></td><td>${det(r)}</td><td class="muted">${esc(r.note || '—')}</td><td><span class="badge b-warn">بانتظار المراجعة</span></td><td><div class="acts"><button class="btn sm ok" data-act="appr" data-id="${r.id}" data-e="${r.empId}">${ic('check', 15)} اعتماد</button> <button class="btn sm bad" data-act="rej" data-id="${r.id}" data-e="${r.empId}">${ic('x', 15)} رفض</button></div></td></tr>`).join('') || '<tr><td colspan="5" class="muted">لا توجد طلبات جديدة</td></tr>'}
+    </tbody></table></div></div>
+    <div class="card">${ch('check', 'آخر القرارات')}<div class="tw"><table><thead><tr><th>الموظف</th><th>الطلب</th><th>القرار</th></tr></thead><tbody>
+    ${dec.map(r => `<tr><td>${esc(cname(r.empId))}</td><td>${det(r)}</td><td><span class="badge ${r.status === 'approved' ? 'b-ok' : 'b-bad'}">${r.status === 'approved' ? 'مقبول' : 'مرفوض'}</span></td></tr>`).join('') || '<tr><td colspan="3" class="muted">لا توجد قرارات بعد</td></tr>'}
+    </tbody></table></div></div>`;
+  }
+
   /* --- السجل --- */
   function filtered() {
     return S.recs.filter(r => { const k = dayKey(r.t); return k >= S.from && k <= S.to && (!S.emp || r.empId === S.emp); });
   }
-  // يربط كل حضور بانصرافه حتى لو عبر منتصف الليل، وينسب الوردية ليوم بدايتها
+  // يربط كل حضور بانصرافه حتى لو عبر منتصف الليل، ويحتسب القواعد المعرّفة في جدول دوام كل موظف
   function summary() {
-    const byEmp = {}, days = {};
+    const out = [];
+    const byEmp = {};
     [...S.recs].sort((a, b) => a.t - b.t).forEach(r => (byEmp[r.empId] = byEmp[r.empId] || []).push(r));
     Object.entries(byEmp).forEach(([empId, rs]) => {
-      const name = rs[rs.length - 1].empName;
-      const add = (start, end) => {
-        const day = dayKey(start); if (day < S.from || day > S.to) return;
-        const g = (days[empId + '|' + day] = days[empId + '|' + day] || { empId, name, day, firstIn: start, lastOut: null, total: 0, open: false });
-        if (start < g.firstIn) g.firstIn = start;
-        if (end) { g.total += end - start; if (!g.lastOut || end > g.lastOut) g.lastOut = end; } else g.open = true;
-      };
-      let open = null;
-      rs.forEach(r => {
-        if (r.type === 'in') { if (!open) open = r.t; else if (r.t - open >= FORGOT_MS) { add(open, null); open = r.t; } }
-        else if (open) { if (r.t - open >= FORGOT_MS) add(open, null); else add(open, r.t); open = null; }
-      });
-      if (open) add(open, null);
+      if (S.emp && empId !== S.emp) return;
+      const emp = S.emps.find(e => e.id === empId);
+      const name = emp ? emp.name : rs[rs.length - 1].empName;
+      const sc = emp && emp.scheduleId ? normSched(S.scheds.find(s => s.id === emp.scheduleId) || {}) : null;
+      const rot = emp ? (emp.rotOffset || 0) : 0;
+      const sd = emp ? emp.startDate : null;
+      const sesAll = pairSessions(rs);
+      let k = S.from;
+      while (k <= S.to) {
+        const ses = sesAll.filter(s => dayKey(s.start) === k);
+        const met = calcDay(sc, k, ses, S.holKeys, rot, { nowMs: Date.now() });
+        let status;
+        if (ses.length) status = met.open ? 'open' : 'work';
+        else if (onLeave(S.leaves, empId, k)) status = 'leave';
+        else if (met.dayType === 'work' && met.planned > 0 && (!sd || k >= sd)) status = 'absent';
+        else { k = addDays(k, 1); continue; } // أيام الراحة/العطلة بلا تسجيلات لا تُدرج
+        out.push({ empId, name, day: k, met, status });
+        k = addDays(k, 1);
+      }
     });
-    return Object.values(days).filter(x => !S.emp || x.empId === S.emp).sort((a, b) => b.day.localeCompare(a.day) || (a.name || '').localeCompare(b.name || '', 'ar'));
+    return out.sort((a, b) => b.day.localeCompare(a.day) || (a.name || '').localeCompare(b.name || '', 'ar'));
   }
   function viewRecs(el) {
-    const list = filtered(), sum = summary();
+    const sum = summary();
+    const ST = { work: ['b-ok', 'حضور'], open: ['b-warn', 'لم ينصرف'], absent: ['b-bad', 'غياب'], leave: ['b-pri', 'إجازة'], holiday: ['b-mute', 'عطلة رسمية'], rest: ['b-mute', 'راحة'] };
     el.innerHTML = `<div class="card">${ch('filter', 'تصفية التقرير')}<div class="row">
       <div class="field"><label>من</label><input type="date" id="fFrom" value="${S.from}"></div>
       <div class="field"><label>إلى</label><input type="date" id="fTo" value="${S.to}"></div>
       <div class="field"><label>الموظف</label><select id="fEmp"><option value="">الكل</option>${S.emps.map(e => `<option value="${e.id}" ${S.emp === e.id ? 'selected' : ''}>${esc(e.name)}</option>`).join('')}</select></div>
-      <button class="btn" data-act="filter">${ic('filter', 18)} تطبيق</button><button class="btn sec" data-act="csv">${ic('download', 18)} تصدير CSV</button></div></div>
-    <div class="card">${ch('clock', 'ملخص الدوام اليومي')}<div class="tw"><table><thead><tr><th>الموظف</th><th>التاريخ</th><th>أول حضور</th><th>آخر انصراف</th><th>ساعات العمل</th></tr></thead><tbody>
-    ${sum.map(s => `<tr><td><div class="who"><span class="av">${ini(s.name)}</span>${esc(s.name)}</div></td><td>${s.day.split('-').reverse().join('/')}</td><td>${s.firstIn ? fmtTime(s.firstIn) : '—'}</td><td>${s.lastOut ? fmtTime(s.lastOut) : '—'} ${s.open ? '<span class="badge b-warn">لم ينصرف</span>' : ''}</td><td><b>${fmtDur(s.total)}</b></td></tr>`).join('') || '<tr><td colspan="5" class="muted">لا توجد بيانات</td></tr>'}
+      <button class="btn" data-act="filter">${ic('filter', 18)} تطبيق</button><button class="btn sec" data-act="csv">${ic('download', 18)} تصدير CSV للملخص</button></div>
+      <p class="muted" style="font-size:13px;margin:10px 0 0">تُطبَّق قواعد جدول دوام كل موظف: التأخير والانصراف المبكر وفق سماح الجدول وطريقة الاحتساب (كاملة / بعد السماح)، خصم الاستراحة في أيام العمل الأطول من 4 ساعات، والعمل الإضافي بمعامله (عادي / يوم راحة / عطلة).</p></div>
+    <div class="card">${ch('clock', 'ملخص الدوام اليومي (حسب الجداول)')}<div class="tw"><table><thead><tr><th>الموظف</th><th>التاريخ</th><th>الحالة</th><th>أول حضور</th><th>آخر انصراف</th><th>متأخر</th><th>مبكر</th><th>صافي العمل</th><th>إضافي / مكافئ</th></tr></thead><tbody>
+    ${sum.map(s => `<tr><td><div class="who"><span class="av">${ini(s.name)}</span>${esc(s.name)}</div></td><td>${s.day.split('-').reverse().join('/')}</td><td><span class="badge ${ST[s.status][0]}">${ST[s.status][1]}</span></td><td>${s.met.firstIn ? fmtTime(s.met.firstIn) : '—'}</td><td>${s.met.lastOut ? fmtTime(s.met.lastOut) : '—'}</td><td>${s.met.late ? `<b class="badge b-warn">${fmtMinsH(s.met.late)}</b>` : '—'}</td><td>${s.met.early ? `<b class="badge b-warn">${fmtMinsH(s.met.early)}</b>` : '—'}</td><td><b>${fmtDur(s.met.net * 60000)}</b></td><td>${s.met.otMin ? `${(s.met.otMin / 60).toFixed(1)} س × ${s.met.otRate} = <b>${s.met.otEq.toFixed(1)}</b>` : '—'}</td></tr>`).join('') || '<tr><td colspan="9" class="muted">لا توجد بيانات</td></tr>'}
     </tbody></table></div></div>
-    <div class="card">${ch('report', `كل العمليات (${list.length})`)}<div class="tw"><table><thead><tr><th>الموظف</th><th>العملية</th><th>التاريخ</th><th>الوقت</th><th>الموقع</th><th>البعد</th><th>الخريطة</th></tr></thead><tbody>
-    ${list.map(r => `<tr><td>${esc(r.empName)}</td><td><span class="badge ${r.type === 'in' ? 'b-ok' : 'b-bad'}">${r.type === 'in' ? 'حضور' : 'انصراف'}</span></td><td>${fmtDate(r.t)}</td><td>${fmtTime(r.t, true)}</td><td>${esc(r.locationName)}</td><td>${r.distance} م</td><td><a href="${mapLink(r.lat, r.lng)}" target="_blank">عرض</a></td></tr>`).join('') || '<tr><td colspan="7" class="muted">لا توجد بيانات</td></tr>'}
+    <div class="card">${ch('report', `كل العمليات (${filtered().length})`)}<div class="tw"><table><thead><tr><th>الموظف</th><th>العملية</th><th>التاريخ</th><th>الوقت</th><th>الموقع</th><th>البعد</th><th>الخريطة</th></tr></thead><tbody>
+    ${filtered().map(r => `<tr><td>${esc(r.empName)}</td><td><span class="badge ${r.type === 'in' ? 'b-ok' : 'b-bad'}">${r.type === 'in' ? 'حضور' : 'انصراف'}</span></td><td>${fmtDate(r.t)}</td><td>${fmtTime(r.t, true)}</td><td>${esc(r.locationName)}</td><td>${r.distance} م</td><td><a href="${mapLink(r.lat, r.lng)}" target="_blank">عرض</a></td></tr>`).join('') || '<tr><td colspan="7" class="muted">لا توجد بيانات</td></tr>'}
     </tbody></table></div></div>`;
   }
 
@@ -1021,9 +1327,25 @@ function adminApp(db, auth) {
         const msg = `مرحباً ${e.name}، هذا رابطك الشخصي في «${BRAND}» لتسجيل الحضور والانصراف (لا تشاركه مع أحد):\n${linkOf(id)}`;
         window.open(`https://wa.me/${e.phone || ''}?text=${encodeURIComponent(msg)}`, '_blank');
       }
-      if (act === 'resetDev') { if (confirm('إعادة ضبط الجهاز المرتبط بهذا الموظف؟')) { await updateDoc(doc(db, 'employees', id), { deviceId: null }); await loadAll(); toast('تمت إعادة الضبط', 'good'); } }
+      if (act === 'resetDev') { if (confirm('إعادة ضبط الجهاز المرتبط بهذا الموظف؟ سيتوجب عليه فتح الرابط من جهازه بعد ذلك.')) { await updateDoc(doc(db, 'employees', id), { deviceId: null, uid: null }); await loadAll(); toast('تمت إعادة الضبط', 'good'); } }
       if (act === 'toggle') { const e = S.emps.find(x => x.id === id); await updateDoc(doc(db, 'employees', id), { active: !e.active }); await loadAll(); }
-      if (act === 'delEmp') { if (confirm('حذف الموظف نهائياً؟ سيتوقف رابطه (تبقى سجلاته السابقة في التقارير).')) { await deleteDoc(doc(db, 'employees', id)); await loadAll(); } }
+      if (act === 'delEmp') {
+        if (confirm('حذف الموظف نهائياً مع كل سجلاته وطلباته؟')) {
+          // تنظيف المجموعات الفرعية أولاً حتى لا تبقى سجلات يتيمة تظهر في التقارير (المرحلة 2)
+          for (const sub of ['records', 'requests']) {
+            for (;;) {
+              const grp = await getDocs(query(collection(db, 'employees', id, sub), limit(300)));
+              if (!grp.size) break;
+              const b = writeBatch(db);
+              grp.forEach(d => b.delete(d.ref));
+              await b.commit();
+              if (grp.size < 300) break;
+            }
+          }
+          await deleteDoc(doc(db, 'employees', id));
+          await loadAll(); toast('حُذف الموظف وسجلاته', 'good');
+        }
+      }
       if (act === 'myLoc') {
         toast('جاري تحديد موقعك…');
         navigator.geolocation.getCurrentPosition(p => { $('#lCoord').value = `${p.coords.latitude.toFixed(6)}, ${p.coords.longitude.toFixed(6)}`; toast('تم تعبئة الإحداثيات', 'good'); }, () => toast('تعذر تحديد الموقع', 'err'), { enableHighAccuracy: true, timeout: 20000 });
@@ -1045,6 +1367,46 @@ function adminApp(db, auth) {
       if (act === 'delSched') { const n = S.emps.filter(e => e.scheduleId === id).length; if (confirm(n ? `هذا الجدول مرتبط بـ ${n} موظف وسيصبحون بدون جدول. هل تريد حذفه؟` : 'حذف هذا الجدول؟')) { await deleteDoc(doc(db, 'schedules', id)); await loadAll(); } }
       if (act === 'editEmp') employeeEditor(S.emps.find(x => x.id === id));
       if (act === 'delLoc') { if (confirm('حذف هذا الموقع؟')) { await deleteDoc(doc(db, 'locations', id)); await loadAll(); } }
+      if (act === 'addHol') {
+        const d = $('#hDay').value, n = $('#hName').value.trim();
+        if (!d || !n) return toast('حدد تاريخ العطلة واسمها', 'err');
+        await setDoc(doc(db, 'holidays', d), { date: d, name: n, createdAt: serverTimestamp() });
+        await loadAll(); toast('أُضيفت العطلة الرسمية', 'good');
+      }
+      if (act === 'delHol') { if (confirm('حذف هذه العطلة؟')) { await deleteDoc(doc(db, 'holidays', id)); await loadAll(); } }
+      if (act === 'saveSet') {
+        const org = $('#sOrg').value.trim();
+        const tz = parseInt($('#sTz').value, 10);
+        await setDoc(doc(db, 'settings', 'general'), { orgName: org, tzOffset: isNaN(tz) ? TZ_OFFSET_MIN : tz, updatedAt: serverTimestamp() }, { merge: true });
+        if (!isNaN(tz) && tz !== TZOFF) TZOFF = tz;
+        await loadAll(); toast('حُفظت إعدادات المنشأة', 'good');
+      }
+      if (act === 'addAdmin') {
+        const uidv = ($('#aUid') ? $('#aUid').value.trim() : ''), nm = ($('#aName') ? $('#aName').value.trim() : '');
+        if (!uidv || uidv.length < 10 || !/^[a-zA-Z0-9_-]+$/.test(uidv) || !nm) return toast('اكتب معرّف UID صحيحاً (حروف/أرقام) واسم المشرف', 'err');
+        await setDoc(doc(db, 'admins', uidv), { name: nm, addedAt: serverTimestamp() });
+        await loadAll(); toast('أُضيف المشرف — سيدخل بحسابه فوراً', 'good');
+      }
+      if (act === 'delAdmin') { if (confirm('إزالة صلاحيات هذا المشرف؟')) { await deleteDoc(doc(db, 'admins', id)); await loadAll(); } }
+      if (act === 'v2Done') { localStorage.setItem('att_v2rules', '1'); return render(); }
+      if (act === 'appr' || act === 'rej') {
+        const empId = b.dataset.e;
+        const r = S.reqs.find(x => x.id === id && x.empId === empId);
+        const st = act === 'appr' ? 'approved' : 'rejected';
+        if (!confirm(act === 'appr' ? 'اعتماد هذا الطلب؟' : 'رفض هذا الطلب؟')) return;
+        await updateDoc(doc(db, 'employees', empId, 'requests', id), { status: st, reviewedAt: serverTimestamp(), reviewedBy: (auth.currentUser && auth.currentUser.email) || '' });
+        // اعتماد طلب التصحيح: إنشاء سجلي حضور/انصراف يدوياً بالوقت المطلوب (صلاحية الإدارة تتجاوز قواعد التحقق)
+        if (st === 'approved' && r && r.kind === 'fix') {
+          const base = dayStart(r.from);
+          const batch = writeBatch(db);
+          const mkTime = (type, tstr) => { let m = hm(tstr); if (type === 'out' && r.fixIn && m <= hm(r.fixIn)) m += 1440; return Timestamp.fromDate(new Date(base.getTime() + m * 60000)); };
+          const mkRec = type => ({ type, lat: 0, lng: 0, accuracy: 0, distance: 0, locationId: 'admin', locationName: 'تصحيح إداري (طلب معتمد)', empName: r.empName, deviceId: 'admin-fix' });
+          if (r.fixIn) batch.set(doc(collection(db, 'employees', empId, 'records')), { ...mkRec('in'), time: mkTime('in', r.fixIn) });
+          if (r.fixOut) batch.set(doc(collection(db, 'employees', empId, 'records')), { ...mkRec('out'), time: mkTime('out', r.fixOut) });
+          await batch.commit();
+        }
+        await loadAll(); toast(st === 'approved' ? 'تم اعتماد الطلب' : 'تم رفض الطلب', 'good');
+      }
       if (act === 'filter') {
         const f = $('#fFrom').value, t = $('#fTo').value;
         if (!f || !t || t < f) return toast('حدد فترة صحيحة', 'err');
@@ -1052,10 +1414,17 @@ function adminApp(db, auth) {
         S.from = f; S.to = t; S.emp = $('#fEmp').value; await loadRecs(); render();
       }
       if (act === 'csv') {
-        const rows = [['الموظف', 'العملية', 'التاريخ', 'الوقت', 'الموقع', 'البعد (م)', 'خط العرض', 'خط الطول']];
-        filtered().forEach(r => rows.push([r.empName, r.type === 'in' ? 'حضور' : 'انصراف', fmtDate(r.t), fmtTime(r.t, true), r.locationName, r.distance, r.lat, r.lng]));
+        const rows = [['الموظف', 'التاريخ', 'الحالة', 'أول حضور', 'آخر انصراف', 'متأخر (د)', 'مبكر (د)', 'صافي العمل (د)', 'إضافي (ساعات مكافئة)']];
+        summary().forEach(s => rows.push([
+          s.name, s.day,
+          { work: 'حضور', open: 'لم ينصرف', absent: 'غياب', leave: 'إجازة', holiday: 'عطلة رسمية', rest: 'راحة' }[s.status],
+          s.met.firstIn ? fmtTime(s.met.firstIn, true) : '',
+          s.met.lastOut ? fmtTime(s.met.lastOut, true) : '',
+          s.met.late || 0, s.met.early || 0, Math.round(s.met.net),
+          s.met.otEq ? +s.met.otEq.toFixed(2) : 0
+        ]));
         const csv = '\ufeff' + rows.map(r => r.map(c => `"${String(c ?? '').replace(/"/g, '""')}"`).join(',')).join('\n');
-        const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' })); a.download = `meqat_${S.from}_${S.to}.csv`; a.click();
+        const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' })); a.download = `meqat_summary_${S.from}_${S.to}.csv`; a.click();
       }
     } catch (err) { console.error(err); toast('حدث خطأ — تحقق من الاتصال وصلاحيات Firestore', 'err'); }
   };
