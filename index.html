@@ -137,6 +137,45 @@ pre.rules{background:#0e1a33;color:#d6e2ff;padding:14px;border-radius:14px;overf
 ol li{margin-bottom:6px}
 a{color:var(--pri-d)}
 
+/* ---------- نوافذ ---------- */
+.ov{position:fixed;inset:0;background:rgba(10,30,60,.55);z-index:90;display:grid;place-items:center;padding:14px;backdrop-filter:blur(2px)}
+.modal{background:#fff;border-radius:22px;width:100%;max-width:720px;max-height:92vh;display:flex;flex-direction:column;box-shadow:0 24px 70px rgba(5,25,60,.4)}
+.mh{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:14px 18px;border-bottom:1px solid var(--line)}
+.mh h3{margin:0}
+.mb{padding:16px 18px;overflow-y:auto;flex:1}
+.mf{display:flex;gap:10px;justify-content:flex-end;padding:12px 18px;border-top:1px solid var(--line);background:#f8fbff;border-radius:0 0 22px 22px}
+.ib.dark{background:var(--pri-l);color:var(--pri-d);border-color:transparent;width:36px;height:36px}
+.ib.dark:hover{background:#d3e7ff}
+.sec-t{font-weight:800;color:var(--navy);margin:20px 0 8px;display:flex;align-items:center;gap:8px}
+.hint{font-size:13px;color:var(--mute);margin:4px 0 10px}
+.g2{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
+.drow{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:9px 0;border-bottom:1px dashed var(--line)}
+.drow:last-child{border-bottom:0}
+.dn{width:96px;font-weight:700;display:flex;align-items:center;gap:7px;flex:none}
+.dn input{width:auto}
+.tin{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.tin input{width:auto;min-width:112px;padding:7px 8px}
+.num{width:96px!important}
+.sc{display:flex;gap:6px;flex-wrap:wrap;margin:10px 0}
+.chip{display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border-radius:99px;background:var(--pri-l);color:var(--pri-d);font-weight:700;font-size:13px;cursor:pointer;border:0}
+.chip:hover{background:#d3e7ff}
+.srow{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:8px}
+.srow .nm{flex:1;min-width:120px}
+.srow input[type=time]{width:auto;min-width:112px;padding:8px}
+.cyc{display:grid;grid-template-columns:repeat(auto-fill,minmax(118px,1fr));gap:8px}
+.cyc label{font-size:12px;color:var(--mute);display:flex;flex-direction:column;gap:3px}
+.plan{display:inline-flex;align-items:center;gap:6px;background:var(--pri-l);color:var(--pri-d);padding:5px 12px;border-radius:99px;font-weight:700;font-size:13px;margin-top:8px}
+.sch{border:1px solid var(--line);border-radius:18px;padding:14px;margin-bottom:10px;background:#fff}
+.sch h4{margin:0 0 4px;font-size:16px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.sch p{margin:2px 0 10px;color:var(--mute);font-size:13.5px}
+.chk{display:flex;align-items:center;gap:8px;font-weight:500}
+.chk input{width:auto}
+@media (max-width:720px){
+  .ov{padding:0;place-items:end stretch}
+  .modal{max-width:none;max-height:94vh;border-radius:22px 22px 0 0}
+  .mf{border-radius:0;padding-bottom:calc(12px + env(safe-area-inset-bottom))}
+}
+
 /* ---------- الجوال: تبويبات سفلية ---------- */
 @media (max-width:720px){
   .top{padding:14px 14px 50px;border-radius:0 0 26px 26px}
@@ -198,7 +237,13 @@ const I = {
   filter: '<path d="M3 5h18l-7 8v6l-4 2v-8z"/>',
   check: '<path d="M5 12l5 5 9-9"/>',
   alert: '<path d="M12 3 2 20h20z"/><path d="M12 10v4M12 17.5v.5"/>',
-  map: '<path d="M9 4 3 6v14l6-2 6 2 6-2V4l-6 2z"/><path d="M9 4v14M15 6v14"/>'
+  map: '<path d="M9 4 3 6v14l6-2 6 2 6-2V4l-6 2z"/><path d="M9 4v14M15 6v14"/>',
+  sched: '<rect x="3" y="4" width="18" height="17" rx="3"/><path d="M8 2v4M16 2v4M3 10h18"/><circle cx="12" cy="15.5" r="2.8"/><path d="M12 14.2v1.4l.9.6"/>',
+  edit: '<path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/>',
+  x: '<path d="M6 6l12 12M18 6 6 18"/>',
+  copy: '<rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/>',
+  sun: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M5 5l1.5 1.5M17.5 17.5 19 19M5 19l1.5-1.5M17.5 6.5 19 5"/>',
+  moon: '<path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/>'
 };
 const ic = (n, s = 20) => `<svg class="ic" width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${I[n]}</svg>`;
 
@@ -215,6 +260,76 @@ const DAYS_AR = ['الأحد', 'الاثنين', 'الثلاثاء', 'الأرب
 const weekday = d => DAYS_AR[L(d).getUTCDay()];
 const dayStart = key => new Date(Date.parse(key + 'T00:00:00Z') - TZ_OFFSET_MIN * 60000);
 const dayEnd = key => new Date(dayStart(key).getTime() + 86400000);
+/*@@ENGINE-START*/
+/* ===== المحرك: الجداول (الخطوة 2) ===== */
+const addDays = (key, n) => dayKey(new Date(dayStart(key).getTime() + n * 86400000 + 43200000));
+const dow = key => new Date(key + 'T00:00:00Z').getUTCDay(); // 0 = الأحد
+const daysBetween = (a, b) => Math.round((Date.parse(b + 'T00:00:00Z') - Date.parse(a + 'T00:00:00Z')) / 86400000);
+const hm = s => { const p = String(s || '').split(':'); return (parseInt(p[0], 10) || 0) * 60 + (parseInt(p[1], 10) || 0); };
+const minHM = m => `${pad(Math.floor(m / 60) % 24)}:${pad(m % 60)}`;
+const fmtHM = s => { if (!s) return ''; const m = hm(s); let h = Math.floor(m / 60) % 24; const ap = h >= 12 ? 'م' : 'ص'; h = h % 12 || 12; return `${pad(h)}:${pad(m % 60)} ${ap}`; };
+const fmtMinsH = m => `${Math.floor(m / 60)} س${m % 60 ? ' و ' + (m % 60) + ' د' : ''}`;
+const DAY_NAMES = ['الأحد', 'الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'];
+const DAY_ORDER = [6, 0, 1, 2, 3, 4, 5]; // يبدأ الأسبوع بالسبت
+const MODES = { fixed: 'دوام ثابت', rotation: 'ورديات دورية', flex: 'ساعات مرنة' };
+const OT_DEF = { mode: 'hours', baseH: 0, min: 15, step: 15, capH: 0, rateNormal: 1.5, rateRest: 2, rateHoliday: 2, offDayAll: true };
+
+function normSched(s) {
+  if (!s) return null;
+  const o = Object.assign({}, s);
+  o.mode = ['fixed', 'rotation', 'flex'].includes(s.mode) ? s.mode : 'fixed';
+  o.breakMin = Math.max(0, +s.breakMin || 0);
+  o.graceLate = s.graceLate == null ? 10 : Math.max(0, +s.graceLate || 0);
+  o.graceEarly = s.graceEarly == null ? 10 : Math.max(0, +s.graceEarly || 0);
+  o.graceMode = s.graceMode === 'excess' ? 'excess' : 'forgive';
+  o.ot = Object.assign({}, OT_DEF, s.ot || {});
+  return o;
+}
+
+// الدوام الأساسي ليوم معيّن حسب الجدول (دون عطل أو إجازات). الأوقات بالدقائق من منتصف الليل، وقد تتجاوز 1440 للدوام الليلي
+function baseDay(sc, key, off) {
+  const none = { work: false, periods: [], flexMin: 0, shiftName: '' };
+  if (!sc) return none;
+  if (sc.mode === 'fixed') {
+    const d = (sc.days || {})[dow(key)]; if (!d || !d.on) return none;
+    const periods = (d.p || []).filter(p => p && p.s && p.e).map(p => { const s = hm(p.s); let e = hm(p.e); if (e <= s) e += 1440; return { s, e }; });
+    return periods.length ? { work: true, periods, flexMin: 0, shiftName: '' } : none;
+  }
+  if (sc.mode === 'rotation') {
+    const cyc = sc.cycle || []; if (!cyc.length || !sc.anchor) return none;
+    const n = cyc.length, idx = (((daysBetween(sc.anchor, key) + (off || 0)) % n) + n) % n;
+    const sh = (sc.shifts || []).find(x => x.id === cyc[idx]); if (!sh || !sh.s || !sh.e) return none;
+    const s = hm(sh.s); let e = hm(sh.e); if (e <= s) e += 1440;
+    return { work: true, periods: [{ s, e }], flexMin: 0, shiftName: sh.name || '' };
+  }
+  if (sc.mode === 'flex') {
+    const d = (sc.days || {})[dow(key)]; if (!d || !d.on || !(d.h > 0)) return none;
+    return { work: true, periods: [], flexMin: Math.round(d.h * 60), shiftName: '' };
+  }
+  return none;
+}
+
+function schedSummary(raw) {
+  const sc = normSched(raw); if (!sc) return '';
+  if (sc.mode === 'rotation') {
+    const cyc = sc.cycle || [], n = cyc.length, offs = cyc.filter(x => !x).length;
+    const names = (sc.shifts || []).map(x => x.name || '—').join('، ');
+    return n ? `دورة ${n} يوم (${n - offs} عمل / ${offs} راحة) · ${names}` : 'لم تُحدد الدورة بعد';
+  }
+  const on = DAY_ORDER.filter(i => sc.days && sc.days[i] && sc.days[i].on);
+  if (!on.length) return 'لا توجد أيام عمل';
+  const dn = on.length === 7 ? 'كل الأيام' : on.map(i => DAY_NAMES[i]).join('، ');
+  if (sc.mode === 'flex') { const hs = [...new Set(on.map(i => +sc.days[i].h || 0))]; return `${dn} · ` + (hs.length === 1 ? `${hs[0]} ساعات يومياً (مرن)` : 'ساعات متفاوتة (مرن)'); }
+  const t = on.map(i => (sc.days[i].p || []).filter(p => p.s && p.e).map(p => `${fmtHM(p.s)} – ${fmtHM(p.e)}`).join(' و '));
+  return `${dn} · ` + (new Set(t).size === 1 ? t[0] : 'أوقات متفاوتة');
+}
+
+function newSched() {
+  const days = {}; for (let i = 0; i < 7; i++) days[i] = { on: i <= 4, p: [{ s: '08:00', e: '16:00' }], h: 8 };
+  return { name: '', mode: 'fixed', days, shifts: [], cycle: [], anchor: dayKey(new Date()), breakMin: 0, graceLate: 10, graceEarly: 10, graceMode: 'forgive', ot: Object.assign({}, OT_DEF) };
+}
+/* ===== نهاية المحرك ===== */
+/*@@ENGINE-END*/
 // معاملات تحويل الدرجات إلى أمتار عند هذا خط العرض (تُخزَّن مع الموقع ليتحقق منها Firestore)
 const geoK = lat => { const p = lat * Math.PI / 180; return { ky: 111132.92 - 559.82 * Math.cos(2*p) + 1.175 * Math.cos(4*p), kx: 111412.84 * Math.cos(p) - 93.5 * Math.cos(3*p) + 0.118 * Math.cos(5*p) }; };
 const fmtDur = ms => { const m = Math.round(ms / 60000); return `${Math.floor(m / 60)}س ${m % 60}د`; };
@@ -263,6 +378,18 @@ service cloud.firestore {
       allow read: if true;
       allow write: if isAdmin();
     }
+    match /schedules/{id} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+    match /holidays/{id} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+    match /settings/{id} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
 
     match /employees/{empId} {
       allow get: if true;
@@ -289,7 +416,7 @@ service cloud.firestore {
 
       match /records/{recId} {
         allow read: if true;
-        allow create: if validRecord();
+        allow create: if isAdmin() || validRecord();
         allow update, delete: if isAdmin();
 
         function validRecord() {
@@ -321,9 +448,39 @@ service cloud.firestore {
               || (d.type == 'out' && (st == null || st == 'in')));
         }
       }
+
+      // طلبات الإجازة والتصحيح
+      match /requests/{rid} {
+        allow read: if true;
+        allow create: if isAdmin() || validRequest();
+        allow update, delete: if isAdmin();
+
+        function validRequest() {
+          let d = request.resource.data;
+          let e = get(/databases/$(database)/documents/employees/$(empId)).data;
+          return d.keys().hasOnly(['kind','type','typeName','from','to','fixIn','fixOut','note','status','empName','createdAt'])
+            && d.keys().hasAll(['kind','from','to','status','empName','createdAt'])
+            && e.active == true
+            && d.status == 'pending'
+            && d.kind in ['leave', 'fix']
+            && d.empName == e.name
+            && d.createdAt == request.time
+            && d.from is string && d.from.matches('[0-9]{4}-[0-9]{2}-[0-9]{2}')
+            && d.to is string && d.to.matches('[0-9]{4}-[0-9]{2}-[0-9]{2}')
+            && d.from <= d.to
+            && d.get('note', '') is string && d.get('note', '').size() <= 300
+            && d.get('type', '') is string && d.get('type', '').size() <= 40
+            && d.get('typeName', '') is string && d.get('typeName', '').size() <= 60
+            && d.get('fixIn', '') is string && d.get('fixIn', '').size() <= 5
+            && d.get('fixOut', '') is string && d.get('fixOut', '').size() <= 5;
+        }
+      }
     }
 
     match /{path=**}/records/{recId} {
+      allow read: if isAdmin();
+    }
+    match /{path=**}/requests/{rid} {
       allow read: if isAdmin();
     }
   }
@@ -379,6 +536,8 @@ async function employeeApp(db, token) {
     const ls = await getDocs(collection(db, 'locations'));
     locs = ls.docs.map(d => ({ id: d.id, ...d.data() })).filter(l => l.active !== false);
   } catch (e) { return showErr('تعذر الاتصال بالنظام. تحقق من الإنترنت وحاول مجدداً.'); }
+  let sched = null;
+  try { if (emp.scheduleId) { const ss = await getDoc(doc(db, 'schedules', emp.scheduleId)); if (ss.exists()) sched = normSched({ id: ss.id, ...ss.data() }); } } catch {}
 
   let offset = 0, skewWarn = false;
   async function syncTime() {
@@ -399,6 +558,7 @@ async function employeeApp(db, token) {
       <div class="live">الوقت الرسمي</div>
       <div class="clock" id="clock">--:--:--</div>
       <div class="muted" id="dateTxt"></div>
+      <div id="plan"></div>
       <div id="skew" class="badge b-warn" style="display:none;margin-top:8px">ساعة جهازك غير مضبوطة — الوقت المسجّل هو وقت الخادم</div>
       <div style="margin-top:10px" id="state"></div>
     </div>
@@ -410,7 +570,15 @@ async function employeeApp(db, token) {
     <div class="card"><div class="ch"><span class="chi">${ic('report', 18)}</span><h3>آخر تسجيلاتك</h3></div><div class="tw"><table><tbody id="hist"><tr><td class="muted">…</td></tr></tbody></table></div></div>
   </div></div>`;
   $('#skew').style.display = skewWarn ? 'inline-block' : 'none';
-  setInterval(() => { const n = now(); $('#clock').textContent = fmtTime(n, true); $('#dateTxt').textContent = `${weekday(n)} ${fmtDate(n)}`; }, 500);
+  let planKey = '';
+  const planHtml = key => {
+    if (!sched) return '';
+    const b = baseDay(sched, key, emp.rotOffset);
+    if (!b.work) return `<span class="plan">${ic('sun', 15)} اليوم يوم راحة</span>`;
+    if (sched.mode === 'flex') return `<span class="plan">${ic('clock', 15)} المطلوب اليوم: ${fmtMinsH(b.flexMin)}</span>`;
+    return `<span class="plan">${ic(b.periods[0].e > 1440 ? 'moon' : 'clock', 15)} ${b.shiftName ? esc(b.shiftName) + ': ' : 'دوامك: '}${b.periods.map(p => `${fmtHM(minHM(p.s))} – ${fmtHM(minHM(p.e))}`).join(' و ')}</span>`;
+  };
+  setInterval(() => { const n = now(); $('#clock').textContent = fmtTime(n, true); $('#dateTxt').textContent = `${weekday(n)} ${fmtDate(n)}`; const k = dayKey(n); if (k !== planKey) { planKey = k; $('#plan').innerHTML = planHtml(k); } }, 500);
 
   let last = null;
   async function loadHist() {
@@ -487,7 +655,7 @@ function loginPage(auth) {
    لوحة الإدارة
    ===================================================================== */
 function adminApp(db, auth) {
-  const S = { tab: 'today', emps: [], locs: [], recs: [], today: [], idxUrl: '', from: '', to: '', emp: '' };
+  const S = { tab: 'today', emps: [], locs: [], scheds: [], rulesOld: false, recs: [], today: [], idxUrl: '', from: '', to: '', emp: '' };
   S.from = dayKey(new Date(Date.now() - 6 * 86400000)); S.to = dayKey(new Date());
   const base = location.origin + location.pathname;
   const linkOf = id => `${base}?e=${id}`;
@@ -517,6 +685,11 @@ function adminApp(db, auth) {
       const [e, l] = await Promise.all([getDocs(collection(db, 'employees')), getDocs(collection(db, 'locations'))]);
       S.emps = e.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => (a.name || '').localeCompare(b.name || '', 'ar'));
       S.locs = l.docs.map(d => ({ id: d.id, ...d.data() }));
+      try {
+        const sc = await getDocs(collection(db, 'schedules'));
+        S.scheds = sc.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => (a.name || '').localeCompare(b.name || '', 'ar'));
+        S.rulesOld = false;
+      } catch (e2) { if (e2.code === 'permission-denied') S.rulesOld = true; else throw e2; }
       await migrateLocs();
       await loadRecs();
       S.today = await fetchRecs(dayStart(dayKey(new Date(Date.now() - 86400000))), dayEnd(dayKey(new Date())));
@@ -525,7 +698,7 @@ function adminApp(db, auth) {
   }
 
   function render() {
-    const tabs = [['today', 'اليوم', 'today'], ['emps', 'الموظفون', 'users'], ['locs', 'المواقع', 'pin'], ['recs', 'التقارير', 'report']];
+    const tabs = [['today', 'اليوم', 'today'], ['emps', 'الموظفون', 'users'], ['sched', 'الدوام', 'sched'], ['locs', 'المواقع', 'pin'], ['recs', 'التقارير', 'report']];
     root.innerHTML = `<div class="top"><div class="top-in">
         <div class="brand"><div class="logo">${logoMark(30)}</div><div><b>${BRAND}</b><small>للحضور والانصراف · لوحة الإدارة</small></div></div>
         <div class="top-act"><button class="ib" data-act="reload" title="تحديث">${ic('refresh', 20)}</button><button class="ib" data-act="logout" title="خروج">${ic('logout', 20)}</button></div>
@@ -533,8 +706,9 @@ function adminApp(db, auth) {
       <div class="wrap main">
       <div class="tabs">${tabs.map(([k, n, i]) => `<button class="tab ${S.tab === k ? 'on' : ''}" data-tab="${k}">${ic(i, 20)}<span>${n}</span></button>`).join('')}</div>
       ${S.idxUrl ? `<div class="notice"><b>خطوة لمرة واحدة:</b> يلزم إنشاء فهرس لتسريع التقارير. <a href="${esc(S.idxUrl)}" target="_blank">اضغط هنا لإنشائه</a> وانتظر دقيقة ثم اضغط «تحديث». حتى ذلك الحين تُحمَّل السجلات بالطريقة البطيئة.</div>` : ''}
+      ${S.rulesOld ? `<div class="notice"><b>تحديث لمرة واحدة:</b> لحفظ جداول الدوام يلزم تحديث قواعد Firestore. اضغط الزر لنسخ القواعد الجديدة، ثم افتح Firestore ← Rules، وامسح القديم والصق الجديد واضغط Publish، ثم حدّث الصفحة.<div style="margin-top:10px"><button class="btn sm" data-act="copyRules">${ic('copy', 15)} نسخ القواعد الجديدة</button></div></div>` : ''}
       <div id="content"></div></div>`;
-    ({ today: viewToday, emps: viewEmps, locs: viewLocs, recs: viewRecs })[S.tab]($('#content'));
+    ({ today: viewToday, emps: viewEmps, sched: viewSched, locs: viewLocs, recs: viewRecs })[S.tab]($('#content'));
   }
 
   /* --- اليوم --- */
@@ -566,17 +740,210 @@ function adminApp(db, auth) {
     </tbody></table></div></div>`;
   }
 
+  /* --- نوافذ منبثقة --- */
+  function openModal(o) {
+    const ov = document.createElement('div'); ov.className = 'ov'; document.body.appendChild(ov);
+    const prev = document.body.style.overflow; document.body.style.overflow = 'hidden';
+    const close = () => { ov.remove(); document.body.style.overflow = prev; };
+    let drawing = false, queued = false;
+    const draw = () => {
+      drawing = true;
+      const keep = ov.querySelector('.mb') ? ov.querySelector('.mb').scrollTop : 0;
+      ov.innerHTML = `<div class="modal" role="dialog"><div class="mh"><h3>${o.title}</h3><button class="ib dark" data-m="close" aria-label="إغلاق">${ic('x', 18)}</button></div><div class="mb">${o.body()}</div><div class="mf"><button class="btn sec" data-m="close">إلغاء</button><button class="btn" data-m="save">${ic('check', 18)} ${o.saveText || 'حفظ'}</button></div></div>`;
+      ov.querySelector('.mb').scrollTop = keep;
+      drawing = false;
+    };
+    const redraw = () => { if (queued) return; queued = true; setTimeout(() => { queued = false; draw(); }, 0); };
+    const field = ev => {
+      if (drawing) return;
+      const el = ev.target.closest('[data-k]'); if (!el) return;
+      const v = el.type === 'checkbox' ? el.checked : el.type === 'number' ? (el.value === '' ? '' : parseFloat(el.value)) : el.value;
+      o.onField(el.dataset.k, v);
+      if (ev.type === 'change' && el.hasAttribute('data-redraw')) redraw();
+    };
+    ov.addEventListener('input', field); ov.addEventListener('change', field);
+    ov.addEventListener('click', async ev => {
+      const m = ev.target.closest('[data-m]');
+      if (m) {
+        if (m.dataset.m === 'close') return close();
+        m.disabled = true;
+        try { const r = await o.onSave(); if (r === false) m.disabled = false; else close(); }
+        catch (e) { console.error(e); toast(e.code === 'permission-denied' ? 'غير مسموح: حدّث قواعد Firestore ثم أعد المحاولة' : 'تعذر الحفظ', 'err'); m.disabled = false; }
+        return;
+      }
+      const a = ev.target.closest('[data-a]'); if (a && o.onAct) { o.onAct(a.dataset.a, a.dataset); redraw(); }
+    });
+    draw();
+    return { draw, close };
+  }
+  function setPath(obj, path, v) {
+    const ks = path.split('.'); let o = obj;
+    for (let i = 0; i < ks.length - 1; i++) { if (o[ks[i]] == null) o[ks[i]] = /^\d+$/.test(ks[i + 1]) ? [] : {}; o = o[ks[i]]; }
+    o[ks[ks.length - 1]] = v;
+  }
+
+  /* --- محرر جدول الدوام --- */
+  const PRESETS = [
+    { label: 'نهاري/ليلي 12 ساعة (يومان نهاري، يومان ليلي، 4 راحة)', shifts: [{ id: 'd', name: 'نهاري', s: '07:00', e: '19:00' }, { id: 'n', name: 'ليلي', s: '19:00', e: '07:00' }], cycle: ['d', 'd', 'n', 'n', '', '', '', ''] },
+    { label: 'صباحي/مسائي 8 ساعات (أسبوع لكل وردية، راحة يوم أسبوعياً)', shifts: [{ id: 'm', name: 'صباحي', s: '07:00', e: '15:00' }, { id: 'e', name: 'مسائي', s: '15:00', e: '23:00' }], cycle: ['m', 'm', 'm', 'm', 'm', 'm', '', 'e', 'e', 'e', 'e', 'e', 'e', ''] },
+    { label: '24 ساعة عمل / 48 ساعة راحة', shifts: [{ id: 'x', name: '24 ساعة', s: '08:00', e: '08:00' }], cycle: ['x', '', ''] }
+  ];
+  const MODE_HINT = {
+    fixed: 'أيام وأوقات ثابتة كل أسبوع، ويمكن إضافة فترة ثانية في اليوم للدوام المقسّم. إن كان وقت النهاية أصغر من البداية فهو دوام ليلي ينتهي في اليوم التالي.',
+    rotation: 'ورديات تتكرر بدورة من أيام العمل والراحة (مصانع، مستشفيات، حراسة، مطاعم). كل موظف يُحدَّد له موضعه في الدورة.',
+    flex: 'لا توجد أوقات حضور محددة، بل عدد ساعات مطلوب في اليوم، وما زاد عنها يُحسب إضافياً. مناسب للعمل الحر والمبيعات والفنيين.'
+  };
+  function scheduleEditor(ex) {
+    const W = ex ? JSON.parse(JSON.stringify(ex)) : newSched();
+    delete W.createdAt; delete W.updatedAt;
+    W.days = W.days || {};
+    for (let i = 0; i < 7; i++) { const d = W.days[i] = W.days[i] || { on: false }; if (!Array.isArray(d.p) || !d.p.length) d.p = [{ s: '08:00', e: '16:00' }]; if (!(d.h > 0)) d.h = 8; }
+    W.shifts = W.shifts || []; W.cycle = W.cycle || []; W.ot = Object.assign({}, OT_DEF, W.ot || {});
+    if (!W.anchor) W.anchor = dayKey(new Date());
+    const tm = (k, v) => `<input type="time" data-k="${k}" value="${esc(v || '')}">`;
+    const nm = (k, v, extra = '') => `<input class="num" type="number" inputmode="decimal" data-k="${k}" value="${v ?? ''}" ${extra}>`;
+    const sel = (k, v, opts, redraw) => `<select data-k="${k}" ${redraw ? 'data-redraw' : ''}>${opts.map(([val, lab]) => `<option value="${val}" ${String(v) === String(val) ? 'selected' : ''}>${lab}</option>`).join('')}</select>`;
+    const body = () => {
+      let h = `<div class="g2"><div class="field"><label>اسم الجدول</label><input data-k="name" value="${esc(W.name)}" placeholder="مثال: دوام الإدارة"></div><div class="field"><label>نوع الدوام</label>${sel('mode', W.mode, Object.entries(MODES), true)}</div></div><p class="hint">${MODE_HINT[W.mode]}</p>`;
+      if (W.mode === 'fixed') {
+        h += `<div class="sec-t">${ic('today', 18)} أيام الدوام وأوقاته</div>`;
+        DAY_ORDER.forEach(i => {
+          const d = W.days[i];
+          h += `<div class="drow"><label class="dn"><input type="checkbox" data-k="days.${i}.on" data-redraw ${d.on ? 'checked' : ''}> ${DAY_NAMES[i]}</label>`;
+          if (!d.on) h += `<span class="muted">يوم راحة</span>`;
+          else {
+            d.p.forEach((p, j) => { h += `<span class="tin">${j ? 'و' : 'من'} ${tm(`days.${i}.p.${j}.s`, p.s)} إلى ${tm(`days.${i}.p.${j}.e`, p.e)}${j ? `<button type="button" class="chip" data-a="rmP" data-i="${i}" data-j="${j}">${ic('x', 14)}</button>` : ''}</span>`; });
+            if (d.p.length < 2) h += `<button type="button" class="chip" data-a="addP" data-i="${i}">${ic('plus', 14)} فترة ثانية</button>`;
+          }
+          h += `</div>`;
+        });
+        h += `<div class="sc"><button type="button" class="chip" data-a="copyAll">${ic('copy', 14)} تطبيق أوقات أول يوم عمل على باقي أيام العمل</button></div>`;
+      }
+      if (W.mode === 'flex') {
+        h += `<div class="sec-t">${ic('clock', 18)} ساعات العمل المطلوبة يومياً</div>`;
+        DAY_ORDER.forEach(i => { const d = W.days[i]; h += `<div class="drow"><label class="dn"><input type="checkbox" data-k="days.${i}.on" data-redraw ${d.on ? 'checked' : ''}> ${DAY_NAMES[i]}</label>${d.on ? `${nm(`days.${i}.h`, d.h, 'min="0" max="24" step="0.25"')} ساعة` : '<span class="muted">يوم راحة</span>'}</div>`; });
+      }
+      if (W.mode === 'rotation') {
+        h += `<div class="sec-t">${ic('moon', 18)} قوالب جاهزة (اختياري)</div><div class="sc">${PRESETS.map((p, i) => `<button type="button" class="chip" data-a="preset" data-i="${i}">${p.label}</button>`).join('')}</div>`;
+        h += `<div class="sec-t">${ic('clock', 18)} الورديات</div>`;
+        W.shifts.forEach((x, i) => { h += `<div class="srow"><input class="nm" data-k="shifts.${i}.name" value="${esc(x.name)}" placeholder="اسم الوردية">${tm(`shifts.${i}.s`, x.s)}<span>إلى</span>${tm(`shifts.${i}.e`, x.e)}<button type="button" class="chip" data-a="rmShift" data-i="${i}">${ic('trash', 14)}</button></div>`; });
+        h += `<div class="sc"><button type="button" class="chip" data-a="addShift">${ic('plus', 14)} إضافة وردية</button></div>`;
+        h += `<div class="sec-t">${ic('refresh', 18)} دورة الأيام</div><p class="hint">اختر لكل يوم من الدورة وردية أو «راحة». تتكرر الدورة تلقائياً.</p><div class="cyc">`;
+        W.cycle.forEach((c, i) => { h += `<label>اليوم ${i + 1}<select data-k="cycle.${i}"><option value="">راحة</option>${W.shifts.map(x => `<option value="${x.id}" ${c === x.id ? 'selected' : ''}>${esc(x.name)}</option>`).join('')}</select></label>`; });
+        h += `</div><div class="sc"><button type="button" class="chip" data-a="addDay">${ic('plus', 14)} إضافة يوم للدورة</button>${W.cycle.length ? `<button type="button" class="chip" data-a="rmDay">${ic('x', 14)} حذف آخر يوم</button>` : ''}</div>`;
+        h += `<div class="field" style="max-width:260px"><label>تاريخ اليوم الأول من الدورة</label><input type="date" data-k="anchor" value="${esc(W.anchor)}"></div>`;
+      }
+      h += `<div class="sec-t">${ic('alert', 18)} التأخير والاستراحة</div><div class="g2">`;
+      h += `<div class="field"><label>استراحة غير مدفوعة (دقيقة)</label>${nm('breakMin', W.breakMin, 'min="0"')}</div>`;
+      if (W.mode !== 'flex') {
+        h += `<div class="field"><label>سماح التأخير (دقيقة)</label>${nm('graceLate', W.graceLate, 'min="0"')}</div><div class="field"><label>سماح الخروج المبكر (دقيقة)</label>${nm('graceEarly', W.graceEarly, 'min="0"')}</div>`;
+        h += `<div class="field" style="grid-column:1/-1"><label>طريقة احتساب التأخير بعد السماح</label>${sel('graceMode', W.graceMode, [['forgive', 'إن تجاوز السماح تُحتسب الدقائق كاملة'], ['excess', 'تُحتسب الدقائق التي تلي السماح فقط']])}</div>`;
+      }
+      h += `</div><p class="hint">تُخصم الاستراحة تلقائياً من أي يوم تتجاوز ساعات العمل فيه 4 ساعات.</p>`;
+      h += `<div class="sec-t">${ic('plus', 18)} العمل الإضافي</div><div class="g2">`;
+      h += `<div class="field" style="grid-column:1/-1"><label>متى يُحسب العمل إضافياً؟</label>${sel('ot.mode', W.ot.mode, [['hours', 'ما زاد عن ساعات اليوم'], ['afterEnd', 'ما بعد نهاية الدوام الرسمي'], ['none', 'لا يوجد عمل إضافي']], true)}</div>`;
+      if (W.ot.mode !== 'none') {
+        h += `<div class="field"><label>حد الساعات اليومي (0 = ساعات الجدول)</label>${nm('ot.baseH', W.ot.baseH, 'min="0" step="0.25"')}</div>`;
+        h += `<div class="field"><label>أقل إضافي يُحتسب (دقيقة)</label>${nm('ot.min', W.ot.min, 'min="0"')}</div>`;
+        h += `<div class="field"><label>التقريب للأدنى كل</label>${sel('ot.step', W.ot.step, [[0, 'بدون تقريب'], [5, '5 دقائق'], [10, '10 دقائق'], [15, '15 دقيقة'], [30, '30 دقيقة'], [60, 'ساعة']])}</div>`;
+        h += `<div class="field"><label>أقصى إضافي يومياً بالساعات (0 = بلا حد)</label>${nm('ot.capH', W.ot.capH, 'min="0" step="0.25"')}</div>`;
+        h += `<div class="field"><label>معامل الإضافي في الأيام العادية</label>${nm('ot.rateNormal', W.ot.rateNormal, 'min="0" step="0.05"')}</div>`;
+        h += `<div class="field"><label>معامل العمل في يوم الراحة</label>${nm('ot.rateRest', W.ot.rateRest, 'min="0" step="0.05"')}</div>`;
+        h += `<div class="field"><label>معامل العمل في العطلة الرسمية</label>${nm('ot.rateHoliday', W.ot.rateHoliday, 'min="0" step="0.05"')}</div>`;
+        h += `<div class="field" style="grid-column:1/-1"><label class="chk"><input type="checkbox" data-k="ot.offDayAll" ${W.ot.offDayAll ? 'checked' : ''}> كل ساعات العمل في يوم الراحة أو العطلة تُحتسب إضافية</label></div>`;
+      }
+      h += `</div><p class="hint">المعاملات للمحاسب: تُضرب بها ساعات الإضافي لتعطي الساعات المكافئة في التقارير.</p>`;
+      return h;
+    };
+    openModal({
+      title: ex ? 'تعديل جدول الدوام' : 'جدول دوام جديد', body,
+      onField: (k, v) => setPath(W, k, v),
+      onAct: (a, d) => {
+        const i = +d.i, j = +d.j;
+        if (a === 'addP') W.days[i].p.push({ s: '17:00', e: '21:00' });
+        if (a === 'rmP') W.days[i].p.splice(j, 1);
+        if (a === 'copyAll') { const f = DAY_ORDER.find(x => W.days[x].on); if (f !== undefined) DAY_ORDER.forEach(x => { if (W.days[x].on) W.days[x].p = JSON.parse(JSON.stringify(W.days[f].p)); }); }
+        if (a === 'preset') { const p = PRESETS[i]; W.shifts = JSON.parse(JSON.stringify(p.shifts)); W.cycle = [...p.cycle]; }
+        if (a === 'addShift') W.shifts.push({ id: 's' + Math.random().toString(36).slice(2, 7), name: 'وردية ' + (W.shifts.length + 1), s: '08:00', e: '16:00' });
+        if (a === 'rmShift') { const id = W.shifts[i].id; W.shifts.splice(i, 1); W.cycle = W.cycle.map(c => c === id ? '' : c); }
+        if (a === 'addDay') W.cycle.push('');
+        if (a === 'rmDay') W.cycle.pop();
+      },
+      onSave: async () => {
+        const bad = m => { toast(m, 'err'); return false; };
+        const c = JSON.parse(JSON.stringify(W)); delete c.id; delete c._n;
+        c.name = (c.name || '').trim(); if (!c.name) return bad('اكتب اسم الجدول');
+        if (c.mode === 'fixed') {
+          const on = DAY_ORDER.filter(i => c.days[i].on); if (!on.length) return bad('فعّل يوماً واحداً على الأقل');
+          for (const i of on) { c.days[i].p = c.days[i].p.filter(p => p.s && p.e); if (!c.days[i].p.length) return bad(`أكمل أوقات يوم ${DAY_NAMES[i]}`); }
+        }
+        if (c.mode === 'flex' && !DAY_ORDER.some(i => c.days[i].on && c.days[i].h > 0)) return bad('فعّل يوماً وحدد ساعاته');
+        if (c.mode === 'rotation') {
+          if (!c.shifts.length) return bad('أضف وردية واحدة على الأقل');
+          if (c.shifts.some(x => !x.name.trim() || !x.s || !x.e)) return bad('أكمل اسم وأوقات كل وردية');
+          if (!c.cycle.some(x => x)) return bad('أضف أيام الدورة واختر وردية ليوم واحد على الأقل');
+          if (!c.anchor) return bad('حدد تاريخ اليوم الأول من الدورة');
+        }
+        ['breakMin', 'graceLate', 'graceEarly'].forEach(k => c[k] = Math.max(0, +c[k] || 0));
+        ['baseH', 'min', 'step', 'capH', 'rateNormal', 'rateRest', 'rateHoliday'].forEach(k => c.ot[k] = Math.max(0, +c.ot[k] || 0));
+        c.ot.offDayAll = !!c.ot.offDayAll;
+        c.updatedAt = serverTimestamp();
+        if (ex) await setDoc(doc(db, 'schedules', ex.id), c); else await addDoc(collection(db, 'schedules'), { ...c, createdAt: serverTimestamp() });
+        await loadAll(); toast('تم حفظ الجدول', 'good');
+      }
+    });
+  }
+
+  /* --- محرر بيانات الموظف --- */
+  function employeeEditor(e) {
+    const created = e.createdAt && e.createdAt.toDate ? dayKey(e.createdAt.toDate()) : dayKey(new Date());
+    const W = { name: e.name || '', phone: e.phone || '', scheduleId: e.scheduleId || '', rotPos: (e.rotOffset || 0) + 1, startDate: e.startDate || created };
+    const body = () => {
+      const sc = S.scheds.find(x => x.id === W.scheduleId);
+      let h = `<div class="g2"><div class="field"><label>الاسم</label><input data-k="name" value="${esc(W.name)}"></div><div class="field"><label>رقم الواتساب</label><input data-k="phone" dir="ltr" value="${esc(W.phone)}" placeholder="2189XXXXXXXX"></div></div>`;
+      h += `<div class="sec-t">${ic('sched', 18)} الدوام</div><div class="field"><label>جدول الدوام</label><select data-k="scheduleId" data-redraw><option value="">— بدون جدول (غير محدد) —</option>${S.scheds.map(x => `<option value="${x.id}" ${W.scheduleId === x.id ? 'selected' : ''}>${esc(x.name)}</option>`).join('')}</select></div>`;
+      if (sc) h += `<p class="hint">${esc(schedSummary(sc))}</p>`;
+      if (sc && sc.mode === 'rotation' && (sc.cycle || []).length) {
+        const n = sc.cycle.length, pos = Math.min(Math.max(1, +W.rotPos || 1), n), sh = (sc.shifts || []).find(x => x.id === sc.cycle[pos - 1]);
+        h += `<div class="field" style="max-width:260px"><label>موضع الموظف في الدورة (من 1 إلى ${n})</label><input class="num" type="number" min="1" max="${n}" data-k="rotPos" data-redraw value="${pos}"></div><p class="hint">في تاريخ ${fmtDate(dayStart(sc.anchor))} يكون الموظف في اليوم رقم ${pos} من الدورة: <b>${sh ? esc(sh.name) : 'راحة'}</b>. استخدم مواضع مختلفة لتوزيع الموظفين على فرق.</p>`;
+      }
+      h += `<div class="field" style="max-width:260px"><label>تاريخ بدء احتساب الدوام</label><input type="date" data-k="startDate" value="${esc(W.startDate)}"></div><p class="hint">الأيام السابقة لهذا التاريخ لا تُحتسب غياباً.</p>`;
+      return h;
+    };
+    openModal({
+      title: 'بيانات الموظف', body, onField: (k, v) => { W[k] = v; },
+      onSave: async () => {
+        const name = (W.name || '').trim(); if (!name) { toast('اكتب اسم الموظف', 'err'); return false; }
+        const sc = S.scheds.find(x => x.id === W.scheduleId);
+        const n = sc && sc.mode === 'rotation' ? (sc.cycle || []).length : 0;
+        const rot = n ? Math.min(Math.max(1, +W.rotPos || 1), n) - 1 : 0;
+        await updateDoc(doc(db, 'employees', e.id), { name, phone: String(W.phone || '').replace(/\D/g, ''), scheduleId: sc ? sc.id : '', rotOffset: rot, startDate: W.startDate || created });
+        await loadAll(); toast('تم حفظ بيانات الموظف', 'good');
+      }
+    });
+  }
+
   /* --- الموظفون --- */
   function viewEmps(el) {
+    const sname = id => { const x = S.scheds.find(s => s.id === id); return x ? x.name : ''; };
     el.innerHTML = `<div class="card">${ch('plus', 'إضافة موظف')}<div class="row">
       <div class="field"><label>الاسم</label><input id="eName"></div>
       <div class="field"><label>رقم الواتساب (اختياري، بصيغة دولية بدون +)</label><input id="ePhone" dir="ltr" placeholder="2189XXXXXXXX"></div>
+      <div class="field"><label>جدول الدوام</label><select id="eSched"><option value="">— بدون جدول —</option>${S.scheds.map(x => `<option value="${x.id}">${esc(x.name)}</option>`).join('')}</select></div>
       <button class="btn" data-act="addEmp">${ic('plus', 18)} إضافة وإنشاء رابط</button></div></div>
-    <div class="card">${ch('users', `الموظفون (${S.emps.length})`)}<div class="tw"><table><thead><tr><th>الاسم</th><th>الحالة</th><th>الجهاز</th><th>إجراءات</th></tr></thead><tbody>
-    ${S.emps.map(e => `<tr><td><div class="who"><span class="av">${ini(e.name)}</span>${esc(e.name)}</div></td><td>${e.active ? '<span class="badge b-ok">مفعّل</span>' : '<span class="badge b-bad">موقوف</span>'}</td><td>${e.deviceId ? '<span class="badge b-warn">مرتبط</span>' : '<span class="badge b-mute">لم يُفتح بعد</span>'}</td>
-    <td><div class="acts"><button class="btn sm" data-act="copy" data-id="${e.id}">${ic('link', 15)} نسخ الرابط</button> <button class="btn sm ok" data-act="wa" data-id="${e.id}">${ic('send', 15)} واتساب</button> <button class="btn sm sec" data-act="resetDev" data-id="${e.id}">${ic('device', 15)} إعادة ضبط الجهاز</button> <button class="btn sm sec" data-act="toggle" data-id="${e.id}">${ic('power', 15)} ${e.active ? 'إيقاف' : 'تفعيل'}</button> <button class="btn sm bad" data-act="delEmp" data-id="${e.id}">${ic('trash', 15)} حذف</button></div></td></tr>`).join('') || '<tr><td colspan="4" class="muted">لا يوجد موظفون</td></tr>'}
+    <div class="card">${ch('users', `الموظفون (${S.emps.length})`)}<div class="tw"><table><thead><tr><th>الاسم</th><th>الدوام</th><th>الحالة</th><th>الجهاز</th><th>إجراءات</th></tr></thead><tbody>
+    ${S.emps.map(e => `<tr><td><div class="who"><span class="av">${ini(e.name)}</span>${esc(e.name)}</div></td><td>${sname(e.scheduleId) ? `<span class="badge b-pri">${esc(sname(e.scheduleId))}</span>` : '<span class="badge b-mute">غير محدد</span>'}</td><td>${e.active ? '<span class="badge b-ok">مفعّل</span>' : '<span class="badge b-bad">موقوف</span>'}</td><td>${e.deviceId ? '<span class="badge b-warn">مرتبط</span>' : '<span class="badge b-mute">لم يُفتح بعد</span>'}</td>
+    <td><div class="acts"><button class="btn sm sec" data-act="editEmp" data-id="${e.id}">${ic('edit', 15)} تعديل</button> <button class="btn sm" data-act="copy" data-id="${e.id}">${ic('link', 15)} نسخ الرابط</button> <button class="btn sm ok" data-act="wa" data-id="${e.id}">${ic('send', 15)} واتساب</button> <button class="btn sm sec" data-act="resetDev" data-id="${e.id}">${ic('device', 15)} إعادة ضبط الجهاز</button> <button class="btn sm sec" data-act="toggle" data-id="${e.id}">${ic('power', 15)} ${e.active ? 'إيقاف' : 'تفعيل'}</button> <button class="btn sm bad" data-act="delEmp" data-id="${e.id}">${ic('trash', 15)} حذف</button></div></td></tr>`).join('') || '<tr><td colspan="5" class="muted">لا يوجد موظفون</td></tr>'}
     </tbody></table></div>
     <p class="muted" style="font-size:13px;margin:12px 0 0">الرابط يُربط تلقائياً بأول جهاز يفتحه لمنع مشاركته بين الموظفين. إن غيّر الموظف هاتفه استخدم «إعادة ضبط الجهاز».</p></div>`;
+  }
+
+  /* --- الدوام --- */
+  function viewSched(el) {
+    const cnt = id => S.emps.filter(e => e.scheduleId === id).length;
+    el.innerHTML = `<div class="card">${ch('sched', 'جداول الدوام')}<p class="hint" style="margin-top:0">أنشئ جدولاً لكل نمط دوام في منشأتك (إدارة، ورديات، ساعات مرنة…) ثم اربط كل موظف بجدوله من تبويب «الموظفون».</p><button class="btn" data-act="newSched">${ic('plus', 18)} إنشاء جدول جديد</button></div>`
+      + (S.scheds.map(x => `<div class="sch"><h4>${esc(x.name)} <span class="badge b-pri">${MODES[x.mode] || ''}</span> <span class="badge b-mute">${cnt(x.id)} موظف</span></h4><p>${esc(schedSummary(x))}</p><div class="acts"><button class="btn sm sec" data-act="editSched" data-id="${x.id}">${ic('edit', 15)} تعديل</button><button class="btn sm sec" data-act="dupSched" data-id="${x.id}">${ic('copy', 15)} نسخ</button><button class="btn sm bad" data-act="delSched" data-id="${x.id}">${ic('trash', 15)} حذف</button></div></div>`).join('')
+      || `<div class="card center muted">لا توجد جداول بعد. اضغط «إنشاء جدول جديد» للبدء.</div>`);
   }
 
   /* --- المواقع --- */
@@ -645,7 +1012,7 @@ function adminApp(db, auth) {
         const name = $('#eName').value.trim(); if (!name) return toast('اكتب اسم الموظف', 'err');
         const phone = $('#ePhone').value.replace(/\D/g, '');
         const nid = randToken();
-        await setDoc(doc(db, 'employees', nid), { name, phone, active: true, deviceId: null, createdAt: serverTimestamp() });
+        await setDoc(doc(db, 'employees', nid), { name, phone, active: true, deviceId: null, scheduleId: ($('#eSched') ? $('#eSched').value : ''), rotOffset: 0, startDate: dayKey(new Date()), createdAt: serverTimestamp() });
         await loadAll(); toast('تمت الإضافة — انسخ الرابط وأرسله للموظف', 'good');
       }
       if (act === 'copy') { await navigator.clipboard.writeText(linkOf(id)); toast('تم نسخ الرابط', 'good'); }
@@ -671,6 +1038,12 @@ function adminApp(db, auth) {
         await addDoc(collection(db, 'locations'), { name, lat, lng, radius, active: true, ...geoK(lat) });
         await loadAll(); toast('تمت إضافة الموقع', 'good');
       }
+      if (act === 'copyRules') { await navigator.clipboard.writeText(rulesText((auth.currentUser && auth.currentUser.email) || '')); toast('تم نسخ القواعد — الصقها في Firestore ← Rules', 'good'); }
+      if (act === 'newSched') scheduleEditor(null);
+      if (act === 'editSched') scheduleEditor(S.scheds.find(x => x.id === id));
+      if (act === 'dupSched') { const x = JSON.parse(JSON.stringify(S.scheds.find(y => y.id === id))); delete x.id; delete x.createdAt; delete x.updatedAt; x.name += ' (نسخة)'; await addDoc(collection(db, 'schedules'), { ...x, createdAt: serverTimestamp() }); await loadAll(); toast('تم نسخ الجدول', 'good'); }
+      if (act === 'delSched') { const n = S.emps.filter(e => e.scheduleId === id).length; if (confirm(n ? `هذا الجدول مرتبط بـ ${n} موظف وسيصبحون بدون جدول. هل تريد حذفه؟` : 'حذف هذا الجدول؟')) { await deleteDoc(doc(db, 'schedules', id)); await loadAll(); } }
+      if (act === 'editEmp') employeeEditor(S.emps.find(x => x.id === id));
       if (act === 'delLoc') { if (confirm('حذف هذا الموقع؟')) { await deleteDoc(doc(db, 'locations', id)); await loadAll(); } }
       if (act === 'filter') {
         const f = $('#fFrom').value, t = $('#fTo').value;
