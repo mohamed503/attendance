@@ -443,6 +443,11 @@ function setupIcons() {
 }
 setupIcons();
 
+/* ---------- خدمة العمل دون اتصال (PWA) ---------- */
+if ('serviceWorker' in navigator && (location.protocol === 'https:' || ['localhost', '127.0.0.1'].includes(location.hostname))) {
+  try { navigator.serviceWorker.register('sw.js').catch(() => {}); } catch {}
+}
+
 /* ---------- صفحة الإعداد ---------- */
 function rulesText(email) {
 return `rules_version = '2';
@@ -650,9 +655,11 @@ async function employeeApp(db, auth, token) {
     if (cu && cu.isAnonymous) uid = cu.uid;
     else { if (cu) await signOut(auth); const cred = await signInAnonymously(auth); uid = cred.user.uid; }
   } catch (e) {
-    return showErr(e && (e.code === 'auth/configuration-not-found' || e.code === 'auth/operation-not-allowed')
-      ? 'تسجيل الدخول المجهول (Anonymous) غير مفعّل في Firebase. اطلب من الإدارة تفعيله من Authentication ثم نشر القواعد الجديدة.'
-      : 'تعذر الاتصال بالنظام. تحقق من الإنترنت وحاول مجدداً.');
+    const c = e && e.code ? e.code : '';
+    return showErr(
+      (c === 'auth/operation-not-allowed' || c === 'auth/configuration-not-found' || c === 'auth/admin-restricted-operation')
+        ? 'تسجيل الدخول المجهول (Anonymous) غير مفعّل في هذا المشروع. اطلب من الإدارة: Firebase Console ← Authentication ← Sign-in method ← تفعيل Anonymous، ثم أعد المحاولة.'
+        : 'تعذر الاتصال بالنظام. تحقق من الإنترنت وحاول مجدداً.');
   }
   try {
     const snap = await getDoc(ref);
@@ -673,6 +680,7 @@ async function employeeApp(db, auth, token) {
     }
     const ls = await getDocs(collection(db, 'locations'));
     locs = ls.docs.map(d => ({ id: d.id, ...d.data() })).filter(l => l.active !== false);
+    if (emp.locs && emp.locs.length) locs = locs.filter(l => emp.locs.includes(l.id)); // المواقع المسموحة فقط (اتيحها الإدارة له)
   } catch (e) {
     if (e && e.code === 'permission-denied') return showErr('هذا الرابط مرتبط بجهاز آخر، أو القواعد لم تُحدث بعد. اطلب من الإدارة إعادة ضبط الجهاز.');
     return showErr('تعذر الاتصال بالنظام. تحقق من الإنترنت وحاول مجدداً.');
@@ -694,7 +702,7 @@ async function employeeApp(db, auth, token) {
 
   root.innerHTML = `<div class="emp-bg"><div class="emp-wrap">
     <div class="emp-brand">${logoMark(28)}<span>${BRAND}</span></div>
-    <div class="emp-head"><div class="av lg">${ini(emp.name)}</div><div><small>مرحباً بك</small><h1>${esc(emp.name)}</h1></div></div>
+    <div class="emp-head"><div class="av lg">${ini(emp.name)}</div><div><small>مرحباً بك${emp.dept ? ` · ${esc(emp.dept)}` : ''}</small><h1>${esc(emp.name)}</h1></div></div>
     <div class="card clockcard">
       <div class="live">الوقت الرسمي</div>
       <div class="clock" id="clock">--:--:--</div>
@@ -1151,10 +1159,12 @@ function adminApp(db, auth) {
   /* --- محرر بيانات الموظف --- */
   function employeeEditor(e) {
     const created = e.createdAt && e.createdAt.toDate ? dayKey(e.createdAt.toDate()) : dayKey(new Date());
-    const W = { name: e.name || '', phone: e.phone || '', scheduleId: e.scheduleId || '', rotPos: (e.rotOffset || 0) + 1, startDate: e.startDate || created };
+    const W = { name: e.name || '', phone: e.phone || '', scheduleId: e.scheduleId || '', rotPos: (e.rotOffset || 0) + 1, startDate: e.startDate || created, dept: e.dept || '', payMode: e.payMode === 'monthly' || e.payMode === 'hourly' ? e.payMode : 'none', payAmount: e.payAmount ?? '' };
+    W.locs = {}; (e.locs || []).forEach(id => W.locs[id] = true);
     const body = () => {
       const sc = S.scheds.find(x => x.id === W.scheduleId);
       let h = `<div class="g2"><div class="field"><label>الاسم</label><input data-k="name" value="${esc(W.name)}"></div><div class="field"><label>رقم الواتساب</label><input data-k="phone" dir="ltr" value="${esc(W.phone)}" placeholder="2189XXXXXXXX"></div></div>`;
+      h += `<div class="field" style="max-width:280px"><label>القسم / الفرع (اختياري)</label><input data-k="dept" value="${esc(W.dept)}" placeholder="المبيعات"></div>`;
       h += `<div class="sec-t">${ic('sched', 18)} الدوام</div><div class="field"><label>جدول الدوام</label><select data-k="scheduleId" data-redraw><option value="">— بدون جدول (غير محدد) —</option>${S.scheds.map(x => `<option value="${x.id}" ${W.scheduleId === x.id ? 'selected' : ''}>${esc(x.name)}</option>`).join('')}</select></div>`;
       if (sc) h += `<p class="hint">${esc(schedSummary(sc))}</p>`;
       if (sc && sc.mode === 'rotation' && (sc.cycle || []).length) {
@@ -1162,16 +1172,24 @@ function adminApp(db, auth) {
         h += `<div class="field" style="max-width:260px"><label>موضع الموظف في الدورة (من 1 إلى ${n})</label><input class="num" type="number" min="1" max="${n}" data-k="rotPos" data-redraw value="${pos}"></div><p class="hint">في تاريخ ${fmtDate(dayStart(sc.anchor))} يكون الموظف في اليوم رقم ${pos} من الدورة: <b>${sh ? esc(sh.name) : 'راحة'}</b>. استخدم مواضع مختلفة لتوزيع الموظفين على فرق.</p>`;
       }
       h += `<div class="field" style="max-width:260px"><label>تاريخ بدء احتساب الدوام</label><input type="date" data-k="startDate" value="${esc(W.startDate)}"></div><p class="hint">الأيام السابقة لهذا التاريخ لا تُحتسب غياباً.</p>`;
+      h += `<div class="sec-t">${ic('pin', 18)} المواقع المسموحة لهذا الموظف</div><p class="hint" style="margin-top:0">إن لم تختر أياً منها فسيسمح له بالتسجيل في أي موقع مفعّل. المواقع غير المختارة لن تقبل بصمته.</p>`;
+      h += `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:6px">${S.locs.map(l => `<label class="chk"><input type="checkbox" data-k="locs.${l.id}" ${W.locs[l.id] ? 'checked' : ''}> ${esc(l.name)}</label>`).join('')}</div>`;
+      h += `<div class="sec-t">${ic('plus', 18)} الحساب والرواتب</div><div class="g2"><div class="field"><label>طريقة الأجر</label><select data-k="payMode" data-redraw><option value="none" ${W.payMode === 'none' ? 'selected' : ''}>— غير محدد —</option><option value="monthly" ${W.payMode === 'monthly' ? 'selected' : ''}>راتب شهري</option><option value="hourly" ${W.payMode === 'hourly' ? 'selected' : ''}>أجر لكل ساعة</option></select></div>`;
+      if (W.payMode !== 'none') h += `<div class="field"><label>${W.payMode === 'monthly' ? 'الراتب الشهري' : 'أجر الساعة'} (بالوحدة المحلية)</label><input class="num" type="number" min="0" step="0.01" data-k="payAmount" value="${W.payAmount}"></div>`;
+      h += `</div><p class="hint">مسير الرواتب الشهري الآلي يُبنى في تبويب التقارير من هذه القيم مع بيانات الفترة: مستحق الأساسي، قيمة الإضافي بالمعاملات، وخصم التأخير والمبكر والغياب.</p>`;
       return h;
     };
     openModal({
-      title: 'بيانات الموظف', body, onField: (k, v) => { W[k] = v; },
+      title: 'بيانات الموظف', body, onField: (k, v) => { if (k.startsWith('locs.')) W.locs[k.slice(5)] = !!v; else W[k] = v; },
       onSave: async () => {
         const name = (W.name || '').trim(); if (!name) { toast('اكتب اسم الموظف', 'err'); return false; }
         const sc = S.scheds.find(x => x.id === W.scheduleId);
         const n = sc && sc.mode === 'rotation' ? (sc.cycle || []).length : 0;
         const rot = n ? Math.min(Math.max(1, +W.rotPos || 1), n) - 1 : 0;
-        await updateDoc(doc(db, 'employees', e.id), { name, phone: String(W.phone || '').replace(/\D/g, ''), scheduleId: sc ? sc.id : '', rotOffset: rot, startDate: W.startDate || created });
+        const ids = Object.keys(W.locs).filter(id => W.locs[id]);
+        const amt = +W.payAmount || 0;
+        if (W.payMode !== 'none' && !(amt > 0)) { toast('اكتب قيمة الراتب', 'err'); return false; }
+        await updateDoc(doc(db, 'employees', e.id), { name, phone: String(W.phone || '').replace(/\D/g, ''), scheduleId: sc ? sc.id : '', rotOffset: rot, startDate: W.startDate || created, dept: String(W.dept || '').trim(), payMode: W.payMode, payAmount: W.payMode === 'none' ? 0 : amt, locs: ids });
         await loadAll(); toast('تم حفظ بيانات الموظف', 'good');
       }
     });
@@ -1185,9 +1203,9 @@ function adminApp(db, auth) {
       <div class="field"><label>رقم الواتساب (اختياري، بصيغة دولية بدون +)</label><input id="ePhone" dir="ltr" placeholder="2189XXXXXXXX"></div>
       <div class="field"><label>جدول الدوام</label><select id="eSched"><option value="">— بدون جدول —</option>${S.scheds.map(x => `<option value="${x.id}">${esc(x.name)}</option>`).join('')}</select></div>
       <button class="btn" data-act="addEmp">${ic('plus', 18)} إضافة وإنشاء رابط</button></div></div>
-    <div class="card">${ch('users', `الموظفون (${S.emps.length})`)}<div class="tw"><table><thead><tr><th>الاسم</th><th>الدوام</th><th>الحالة</th><th>الجهاز</th><th>إجراءات</th></tr></thead><tbody>
-    ${S.emps.map(e => `<tr><td><div class="who"><span class="av">${ini(e.name)}</span>${esc(e.name)}</div></td><td>${sname(e.scheduleId) ? `<span class="badge b-pri">${esc(sname(e.scheduleId))}</span>` : '<span class="badge b-mute">غير محدد</span>'}</td><td>${e.active ? '<span class="badge b-ok">مفعّل</span>' : '<span class="badge b-bad">موقوف</span>'}</td><td>${e.deviceId ? '<span class="badge b-warn">مرتبط</span>' : '<span class="badge b-mute">لم يُفتح بعد</span>'}</td>
-    <td><div class="acts"><button class="btn sm sec" data-act="editEmp" data-id="${e.id}">${ic('edit', 15)} تعديل</button> <button class="btn sm" data-act="copy" data-id="${e.id}">${ic('link', 15)} نسخ الرابط</button> <button class="btn sm ok" data-act="wa" data-id="${e.id}">${ic('send', 15)} واتساب</button> <button class="btn sm sec" data-act="resetDev" data-id="${e.id}">${ic('device', 15)} إعادة ضبط الجهاز</button> <button class="btn sm sec" data-act="toggle" data-id="${e.id}">${ic('power', 15)} ${e.active ? 'إيقاف' : 'تفعيل'}</button> <button class="btn sm bad" data-act="delEmp" data-id="${e.id}">${ic('trash', 15)} حذف</button></div></td></tr>`).join('') || '<tr><td colspan="5" class="muted">لا يوجد موظفون</td></tr>'}
+    <div class="card">${ch('users', `الموظفون (${S.emps.length})`)}<div class="tw"><table><thead><tr><th>الاسم</th><th>القسم</th><th>الدوام</th><th>الحالة</th><th>الجهاز</th><th>إجراءات</th></tr></thead><tbody>
+    ${S.emps.map(e => `<tr><td><div class="who"><span class="av">${ini(e.name)}</span>${esc(e.name)}</div></td><td>${e.dept ? `<span class="badge b-warn">${esc(e.dept)}</span>` : '<span class="badge b-mute">—</span>'}</td><td>${sname(e.scheduleId) ? `<span class="badge b-pri">${esc(sname(e.scheduleId))}</span>` : '<span class="badge b-mute">غير محدد</span>'}</td><td>${e.active ? '<span class="badge b-ok">مفعّل</span>' : '<span class="badge b-bad">موقوف</span>'}</td><td>${e.deviceId ? '<span class="badge b-warn">مرتبط</span>' : '<span class="badge b-mute">لم يُفتح بعد</span>'}</td>
+    <td><div class="acts"><button class="btn sm sec" data-act="editEmp" data-id="${e.id}">${ic('edit', 15)} تعديل</button> <button class="btn sm" data-act="copy" data-id="${e.id}">${ic('link', 15)} نسخ الرابط</button> <button class="btn sm ok" data-act="wa" data-id="${e.id}">${ic('send', 15)} واتساب</button> <button class="btn sm sec" data-act="resetDev" data-id="${e.id}">${ic('device', 15)} إعادة ضبط الجهاز</button> <button class="btn sm sec" data-act="toggle" data-id="${e.id}">${ic('power', 15)} ${e.active ? 'إيقاف' : 'تفعيل'}</button> <button class="btn sm bad" data-act="delEmp" data-id="${e.id}">${ic('trash', 15)} حذف</button></div></td></tr>`).join('') || '<tr><td colspan="6" class="muted">لا يوجد موظفون</td></tr>'}
     </tbody></table></div>
     <p class="muted" style="font-size:13px;margin:12px 0 0">الرابط يُربط تلقائياً بأول جهاز يفتحه لمنع مشاركته بين الموظفين. إن غيّر الموظف هاتفه استخدم «إعادة ضبط الجهاز».</p></div>
     <div class="card">${ch('users', `المشرفون المضافون (${S.admins.length})`)}
@@ -1234,15 +1252,171 @@ function adminApp(db, auth) {
       <div class="field"><label>الإحداثيات (خط العرض, خط الطول)</label><input id="lCoord" dir="ltr" placeholder="32.8872, 13.1913"></div>
       <div class="field" style="max-width:150px"><label>النطاق (متر)</label><input id="lRad" type="number" value="100" min="10"></div>
       <button class="btn sec" data-act="myLoc">${ic('target', 18)} موقعي الحالي</button>
-      <button class="btn" data-act="addLoc">${ic('plus', 18)} إضافة</button></div>
+      <button class="btn" data-act="addLoc">${ic('plus', 18)} إضافة</button>
+      <button class="btn sec" data-act="mapLoc">${ic('map', 18)} إضافة بالخريطة</button></div>
       <p class="muted" style="font-size:13px;margin:12px 0 0">يمكنك نسخ الإحداثيات من خرائط Google (اضغط مطولاً على النقطة ← انسخ الأرقام). يُسمح بعدة مواقع، ويُقبل الموظف إن كان داخل نطاق أي منها.</p></div>
     <div class="card">${ch('map', `المواقع المسموحة (${S.locs.length})`)}<div class="tw"><table><thead><tr><th>الاسم</th><th>الإحداثيات</th><th>النطاق</th><th></th></tr></thead><tbody>
-    ${S.locs.map(l => `<tr><td><b>${esc(l.name)}</b></td><td dir="ltr">${l.lat.toFixed(5)}, ${l.lng.toFixed(5)}</td><td><span class="badge b-pri">${l.radius} م</span></td><td><div class="acts"><a class="btn sm sec" style="text-decoration:none" href="${mapLink(l.lat, l.lng)}" target="_blank">${ic('map', 15)} الخريطة</a> <button class="btn sm bad" data-act="delLoc" data-id="${l.id}">${ic('trash', 15)} حذف</button></div></td></tr>`).join('') || '<tr><td colspan="4" class="muted">لم تُضف مواقع بعد — بدونها لن يستطيع أي موظف التسجيل</td></tr>'}
+    ${S.locs.map(l => `<tr><td><b>${esc(l.name)}</b></td><td dir="ltr">${l.lat.toFixed(5)}, ${l.lng.toFixed(5)}</td><td><span class="badge b-pri">${l.radius} م</span></td><td><div class="acts"><a class="btn sm sec" style="text-decoration:none" href="${mapLink(l.lat, l.lng)}" target="_blank">${ic('map', 15)} الخريطة</a> <button class="btn sm sec" data-act="editLoc" data-id="${l.id}">${ic('edit', 15)} تعديل</button> <button class="btn sm bad" data-act="delLoc" data-id="${l.id}">${ic('trash', 15)} حذف</button></div></td></tr>`).join('') || '<tr><td colspan="4" class="muted">لم تُضف مواقع بعد — بدونها لن يستطيع أي موظف التسجيل</td></tr>'}
     </tbody></table></div></div>`;
   }
 
-  /* --- الطلبات (إجازات وتصحيح) --- */
-  function viewReqs(el) {
+  /* --- أدوات المرحلة 3: تحميل مكتبات CDN عند الطلب فقط --- */
+  let _L = null;
+  function loadLeaflet() {
+    if (window.L) return Promise.resolve(window.L);
+    if (_L) return _L;
+    _L = new Promise((res, rej) => {
+      const css = document.createElement('link'); css.rel = 'stylesheet'; css.href = 'https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.css'; document.head.appendChild(css);
+      const s = document.createElement('script'); s.src = 'https://cdn.jsdelivr.net/npm/leaflet@1.9.4/dist/leaflet.js';
+      s.onload = () => res(window.L); s.onerror = () => { _L = null; rej(new Error('leaflet-load')); };
+      document.head.appendChild(s);
+    });
+    return _L;
+  }
+
+  /* --- محرر المواقع بالخريطة (Leaflet + OpenStreetMap) --- */
+  function locEditor(ex) {
+    const W = ex ? { id: ex.id, name: ex.name || '', lat: +ex.lat, lng: +ex.lng, radius: +ex.radius || 100 } : { id: null, name: '', lat: 32.8872, lng: 13.1913, radius: 100 };
+    let map = null, marker = null, circle = null;
+    const syncMap = () => {
+      if (!map || !window.L) return;
+      const c = [W.lat, W.lng];
+      if (marker) marker.setLatLng(c);
+      else { marker = window.L.marker(c, { draggable: true }).addTo(map); marker.on('dragend', () => { const p = marker.getLatLng(); W.lat = p.lat; W.lng = p.lng; syncMap(); }); }
+      if (circle) circle.setLatLng(c).setRadius(W.radius);
+      else circle = window.L.circle(c, { radius: W.radius, color: '#1b7ee6', fillOpacity: 0.15 }).addTo(map);
+      map.setView(c, Math.max(map.getZoom(), 15), { animate: false });
+      const t = $('#coordTxt'); if (t) t.textContent = `${W.lat.toFixed(5)}, ${W.lng.toFixed(5)}`;
+    };
+    const initMap = box => {
+      loadLeaflet().then(() => {
+        if (!box.isConnected) return;
+        box._ready = true;
+        map = window.L.map(box, { scrollWheelZoom: true }).setView([W.lat, W.lng], 15);
+        window.L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '© OpenStreetMap' }).addTo(map);
+        syncMap();
+      }).catch(() => { box._busy = false; toast('تعذر تحميل الخريطة — تحقق من الاتصال ثم أعد المحاولة', 'err'); });
+    };
+    let mo = null;
+    const obs = new MutationObserver(() => {
+      if (!document.querySelector('.ov')) { obs.disconnect(); return; }
+      const box = document.getElementById('mapBox');
+      if (box && !box._ready && !box._busy) { box._busy = true; initMap(box); }
+    });
+    obs.observe(document.body, { childList: true, subtree: true });
+    const body = () => `
+      <div class="g2"><div class="field"><label>اسم الموقع</label><input data-k="name" value="${esc(W.name)}"></div>
+      <div class="field"><label>النطاق (متر)</label><input class="num" type="number" min="10" data-k="radius" data-redraw value="${W.radius}"></div></div>
+      <p class="hint">اضغط على الخريطة لوضع النقطة أو اسحب العلامة. الدائرة الزرقاء هي النطاق المسموح للموظف حول الموقع.</p>
+      <div id="mapBox" style="height:320px;border-radius:14px;border:1px solid var(--line);background:#e8eef7"></div>
+      <div class="sc"><button type="button" class="chip" data-a="myLoc">${ic('target', 15)} موقعي الحالي</button><span class="muted" dir="ltr" id="coordTxt">${W.lat ? W.lat.toFixed(5) + ', ' + W.lng.toFixed(5) : ''}</span></div>`;
+    mo = openModal({
+      title: ex ? 'تعديل الموقع (خريطة تفاعلية)' : 'موقع جديد (خريطة تفاعلية)', saveText: 'حفظ الموقع', body,
+      onField: (k, v) => { if (k === 'radius') W.radius = Math.max(10, +v || 100); else W[k] = v; },
+      onAct: async a => {
+        if (a === 'myLoc') {
+          toast('جاري تحديد موقعك…');
+          try {
+            const p = await new Promise((ok, no) => navigator.geolocation.getCurrentPosition(ok, no, { enableHighAccuracy: true, timeout: 20000 }));
+            W.lat = p.coords.latitude; W.lng = p.coords.longitude;
+            toast('تم تعيين نقطة موقعك على الخريطة', 'good');
+          } catch { toast('تعذر تحديد موقعك', 'err'); }
+          if (mo) mo.draw();
+        }
+      },
+      onSave: async () => {
+        const bad = m => { toast(m, 'err'); return false; };
+        if (!(W.name || '').trim()) return bad('اكتب اسم الموقع');
+        if (typeof W.lat !== 'number' || typeof W.lng !== 'number' || isNaN(W.lat) || isNaN(W.lng)) return bad('حدد نقطة على الخريطة');
+        if (!(W.radius >= 10)) return bad('النطاق 10 أمتار على الأقل');
+        obs.disconnect();
+        if (ex) await updateDoc(doc(db, 'locations', ex.id), { name: W.name.trim(), lat: W.lat, lng: W.lng, radius: Math.round(W.radius), ...geoK(W.lat) });
+        else await addDoc(collection(db, 'locations'), { name: W.name.trim(), lat: W.lat, lng: W.lng, radius: Math.round(W.radius), active: true, ...geoK(W.lat) });
+        await loadAll(); toast('تم حفظ الموقع', 'good');
+      }
+    });
+  }
+
+  /* --- تصدير Excel منسّق (SheetJS عند الطلب) --- */
+  async function exportExcel() {
+    try {
+      const XLSX = await import('https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.mjs');
+      const ST = { work: 'حضور', open: 'لم ينصرف', absent: 'غياب', leave: 'إجازة', holiday: 'عطلة رسمية', rest: 'راحة' };
+      const wb = XLSX.utils.book_new();
+      const aoa1 = [['الموظف', 'التاريخ', 'الحالة', 'أول حضور', 'آخر انصراف', 'متأخر (د)', 'مبكر (د)', 'صافي العمل (د)', 'إضافي (ساعات مكافئة)']];
+      summary().forEach(s => aoa1.push([s.name, s.day, ST[s.status], s.met.firstIn ? fmtTime(s.met.firstIn, true) : '', s.met.lastOut ? fmtTime(s.met.lastOut, true) : '', s.met.late || 0, s.met.early || 0, Math.round(s.met.net), s.met.otEq ? +s.met.otEq.toFixed(2) : 0]));
+      const ws1 = XLSX.utils.aoa_to_sheet(aoa1);
+      ws1['!cols'] = [{ wch: 22 }, { wch: 12 }, { wch: 12 }, { wch: 13 }, { wch: 13 }, { wch: 10 }, { wch: 10 }, { wch: 14 }, { wch: 18 }];
+      try { ws1['!views'] = [{ RTL: true }]; ws1['!autofilter'] = { ref: XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: aoa1.length - 1, c: 8 } }) }; } catch {}
+      XLSX.utils.book_append_sheet(wb, ws1, 'الملخص اليومي');
+      const aoa2 = [['الموظف', 'العملية', 'التاريخ', 'الوقت', 'الموقع', 'البعد (م)', 'خط العرض', 'خط الطول']];
+      filtered().forEach(r => aoa2.push([r.empName, r.type === 'in' ? 'حضور' : 'انصراف', fmtDate(r.t), fmtTime(r.t, true), r.locationName, r.distance, r.lat, r.lng]));
+      const ws2 = XLSX.utils.aoa_to_sheet(aoa2);
+      ws2['!cols'] = [{ wch: 22 }, { wch: 10 }, { wch: 12 }, { wch: 13 }, { wch: 20 }, { wch: 10 }, { wch: 12 }, { wch: 12 }];
+      try { ws2['!views'] = [{ RTL: true }]; } catch {}
+      XLSX.utils.book_append_sheet(wb, ws2, 'عمليات البصمة');
+      const pr = payrollRows().filter(r => r.pm !== 'none');
+      if (pr.length) {
+        const rn = v => +(Math.round(v * 100) / 100);
+        const aoa3 = [['الموظف', 'طريقة الأجر', 'قيمة الأجر', 'ساعات عادية', 'الأساسي', 'قيمة الإضافي', 'خصم التأخير', 'خصم المبكر', 'خصم الغياب', 'الصافي']];
+        pr.forEach(r => aoa3.push([r.name, r.pm === 'monthly' ? 'شهري' : 'بالساعة', rn(r.amt), rn(r.paidH), rn(r.base), rn(r.otPay), rn(r.dedLate), rn(r.dedEarly), rn(r.dedAbs), rn(r.net)]));
+        const ws3 = XLSX.utils.aoa_to_sheet(aoa3);
+        ws3['!cols'] = [{ wch: 22 }, { wch: 10 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 14 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 12 }];
+        try { ws3['!views'] = [{ RTL: true }]; } catch {}
+        XLSX.utils.book_append_sheet(wb, ws3, 'الرواتب');
+      }
+      XLSX.writeFile(wb, `meqat_${S.from}_${S.to}.xlsx`);
+      toast('تم تنزيل ملف Excel', 'good');
+    } catch (e) {
+      console.error(e);
+      toast('تعذر تجهيز Excel (ربما لا يوجد اتصال) — استخدم تصدير CSV', 'err');
+    }
+  }
+
+  /* --- كشف دوام جاهز للطباعة/PDF (A4 لكل موظف) --- */
+  function printReport() {
+    const sum = summary();
+    if (!sum.length) { toast('لا توجد بيانات للفترة المحددة', 'err'); return; }
+    const ST = { work: 'حضور', open: 'لم ينصرف', absent: 'غياب', leave: 'إجازة', holiday: 'عطلة رسمية', rest: 'راحة' };
+    const byEmp = new Map();
+    sum.forEach(s => { const g = byEmp.get(s.empId) || { name: s.name, rows: [] }; g.rows.push(s); byEmp.set(s.empId, g); });
+    const html = `<!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>كشف دوام ${S.from} → ${S.to}</title>
+  <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;700;800&display=swap" rel="stylesheet">
+  <style>body{font-family:"Tajawal",Arial,sans-serif;margin:0;padding:24px;color:#12263f}
+  header{display:flex;justify-content:space-between;align-items:flex-end;border-bottom:3px solid #0d4fa8;padding-bottom:10px;margin-bottom:14px}
+  h1{margin:0;font-size:22px} h2{margin:0 0 6px;font-size:19px}
+  .meta{color:#6580a0;font-size:12.5px}
+  section{margin-bottom:6px}
+  table{width:100%;border-collapse:collapse;font-size:12.5px;margin-bottom:8px}
+  th,td{border:1px solid #9db6d8;padding:5px 7px;text-align:center}
+  th{background:#e3f0ff;color:#0b3c7d}
+  tr.abs td{color:#c93636;font-weight:700}
+  tfoot td{font-weight:800;background:#f1f7fe}
+  .sig{display:flex;justify-content:space-between;margin:10px 0 22px;font-size:13.5px}
+  .pb{page-break-after:always}
+  @page{size:A4;margin:12mm}</style></head><body>
+  <header><div><h1>${esc(brandName())} — كشف دوام</h1><div class="meta">الفترة: ${fmtDate(dayStart(S.from))} إلى ${fmtDate(dayStart(S.to))}</div></div><div class="meta">طُبع في: ${fmtDate(new Date())}</div></header>
+  ${[...byEmp.values()].map(g => {
+      const rows = g.rows.slice().sort((a, b) => a.day.localeCompare(b.day));
+      const net = rows.reduce((a, s) => a + (s.status === 'work' || s.status === 'open' ? s.met.net : 0), 0);
+      const ote = rows.reduce((a, s) => a + (s.met.otEq || 0), 0);
+      const late = rows.reduce((a, s) => a + (s.met.late || 0), 0);
+      const early = rows.reduce((a, s) => a + (s.met.early || 0), 0);
+      const emp = S.emps.find(e => e.name === g.name);
+      const scn = emp && emp.scheduleId ? (S.scheds.find(x => x.id === emp.scheduleId) || {}).name : '';
+      return `<section class="emp"><h2>${esc(g.name)}</h2><div class="meta">الجدول: ${esc(scn || 'بدون جدول')} · متأخر: ${late} د · مبكر: ${early} د</div>
+      <table><thead><tr><th>التاريخ</th><th>اليوم</th><th>الحالة</th><th>أول حضور</th><th>آخر انصراف</th><th>متأخر (د)</th><th>مبكر (د)</th><th>صافي العمل</th><th>إضافي (س.م)</th></tr></thead><tbody>
+      ${rows.map(s => `<tr class="${s.status === 'absent' ? 'abs' : ''}"><td>${s.day.split('-').reverse().join('/')}</td><td>${DAYS_AR[new Date(s.day + 'T00:00:00Z').getUTCDay()]}</td><td>${ST[s.status]}</td><td>${s.met.firstIn ? fmtTime(s.met.firstIn) : '—'}</td><td>${s.met.lastOut ? fmtTime(s.met.lastOut) : '—'}</td><td>${s.met.late || '—'}</td><td>${s.met.early || '—'}</td><td>${fmtDur(s.met.net * 60000)}</td><td>${s.met.otEq ? s.met.otEq.toFixed(1) : '—'}</td></tr>`).join('')}
+      </tbody><tfoot><tr><td colspan="7">إجماليات الفترة</td><td>${fmtDur(net * 60000)}</td><td>${ote.toFixed(1)}</td></tr></tfoot></table>
+      <div class="sig"><span>توقيع الموظف: ....................</span><span>اعتماد الإدارة: ....................</span></div></section>`;
+    }).join('<div class="pb"></div>')}
+  <script>window.onload=function(){try{window.print()}catch(e){}}<\/script></body></html>`;
+    const w = window.open('', '_blank');
+    if (!w) { toast('المتصفح منع النوافذ المنبثقة — اسمح بها لعرض الكشف', 'err'); return; }
+    w.document.open(); w.document.write(html); w.document.close();
+  }
+
+  /* --- الطلبات (إجازات وتصحيح) --- */  function viewReqs(el) {
     const cname = empId => (S.emps.find(e => e.id === empId) || {}).name || 'موظف محذوف';
     const pend = S.reqs.filter(r => r.status === 'pending').sort((a, b) => b.cAt - a.cAt);
     const dec = S.reqs.filter(r => r.status !== 'pending').sort((a, b) => b.cAt - a.cAt).slice(0, 30);
@@ -1289,18 +1463,58 @@ function adminApp(db, auth) {
     });
     return out.sort((a, b) => b.day.localeCompare(a.day) || (a.name || '').localeCompare(b.name || '', 'ar'));
   }
+  /* --- مسير الرواتب الآلي (المرحلة 4) --- */
+  // الشهري: يوم الأجر = الراتب/30، ساعة العمل = (اليوم/8). يتأخر ويخرج مبكراً بخصم، والغياب يخصم يوماً كاملاً
+  // بالساعة: يُستحق ما عمله عادياً + الإضافي المكافئ (الإضافي منسوب خارج الساعات العادية لتفادي الاحتساب المزدوج)
+  function payrollRows() {
+    const agg = new Map();
+    summary().forEach(s => {
+      const g = agg.get(s.empId) || { empId: s.empId, name: s.name, net: 0, otMin: 0, otEq: 0, late: 0, early: 0, absent: 0, daysWorked: 0 };
+      if (s.status === 'work' || s.status === 'open') { g.net += s.met.net; g.otMin += s.met.otMin; g.otEq += (s.met.otEq || 0); g.daysWorked++; }
+      else if (s.status === 'absent') g.absent++;
+      g.late += s.met.late || 0; g.early += s.met.early || 0;
+      agg.set(s.empId, g);
+    });
+    return [...agg.values()].map(g => {
+      const e = S.emps.find(x => x.id === g.empId) || {};
+      const pm = e.payMode === 'monthly' || e.payMode === 'hourly' ? e.payMode : 'none';
+      const amt = +e.payAmount || 0;
+      const regH = Math.max(0, (g.net - g.otMin) / 60);
+      let base = 0, otPay = 0, dedLate = 0, dedEarly = 0, dedAbs = 0;
+      if (pm === 'hourly' && amt > 0) {
+        base = amt * regH; otPay = amt * g.otEq;
+        dedLate = g.late / 60 * amt; dedEarly = g.early / 60 * amt;
+      }
+      if (pm === 'monthly' && amt > 0) {
+        const dayRate = amt / 30, hourRate = dayRate / 8;
+        base = amt; otPay = hourRate * g.otEq;
+        dedLate = hourRate * g.late; dedEarly = hourRate * g.early; dedAbs = dayRate * g.absent;
+      }
+      return { empId: g.empId, name: e.name || g.name, pm, amt, paidH: regH, otEq: g.otEq, base, otPay, dedLate, dedEarly, dedAbs, net: base + otPay - dedLate - dedEarly - dedAbs, absent: g.absent, lateMin: g.late, earlyMin: g.early };
+    });
+  }
   function viewRecs(el) {
     const sum = summary();
+    const pay = payrollRows();
     const ST = { work: ['b-ok', 'حضور'], open: ['b-warn', 'لم ينصرف'], absent: ['b-bad', 'غياب'], leave: ['b-pri', 'إجازة'], holiday: ['b-mute', 'عطلة رسمية'], rest: ['b-mute', 'راحة'] };
     el.innerHTML = `<div class="card">${ch('filter', 'تصفية التقرير')}<div class="row">
       <div class="field"><label>من</label><input type="date" id="fFrom" value="${S.from}"></div>
       <div class="field"><label>إلى</label><input type="date" id="fTo" value="${S.to}"></div>
       <div class="field"><label>الموظف</label><select id="fEmp"><option value="">الكل</option>${S.emps.map(e => `<option value="${e.id}" ${S.emp === e.id ? 'selected' : ''}>${esc(e.name)}</option>`).join('')}</select></div>
-      <button class="btn" data-act="filter">${ic('filter', 18)} تطبيق</button><button class="btn sec" data-act="csv">${ic('download', 18)} تصدير CSV للملخص</button></div>
+      <button class="btn" data-act="filter">${ic('filter', 18)} تطبيق</button><button class="btn sec" data-act="xlsx">${ic('download', 18)} تصدير Excel</button><button class="btn sec" data-act="csv">${ic('download', 18)} CSV</button><button class="btn sec" data-act="print">${ic('report', 18)} طباعة كشف</button></div>
       <p class="muted" style="font-size:13px;margin:10px 0 0">تُطبَّق قواعد جدول دوام كل موظف: التأخير والانصراف المبكر وفق سماح الجدول وطريقة الاحتساب (كاملة / بعد السماح)، خصم الاستراحة في أيام العمل الأطول من 4 ساعات، والعمل الإضافي بمعامله (عادي / يوم راحة / عطلة).</p></div>
     <div class="card">${ch('clock', 'ملخص الدوام اليومي (حسب الجداول)')}<div class="tw"><table><thead><tr><th>الموظف</th><th>التاريخ</th><th>الحالة</th><th>أول حضور</th><th>آخر انصراف</th><th>متأخر</th><th>مبكر</th><th>صافي العمل</th><th>إضافي / مكافئ</th></tr></thead><tbody>
     ${sum.map(s => `<tr><td><div class="who"><span class="av">${ini(s.name)}</span>${esc(s.name)}</div></td><td>${s.day.split('-').reverse().join('/')}</td><td><span class="badge ${ST[s.status][0]}">${ST[s.status][1]}</span></td><td>${s.met.firstIn ? fmtTime(s.met.firstIn) : '—'}</td><td>${s.met.lastOut ? fmtTime(s.met.lastOut) : '—'}</td><td>${s.met.late ? `<b class="badge b-warn">${fmtMinsH(s.met.late)}</b>` : '—'}</td><td>${s.met.early ? `<b class="badge b-warn">${fmtMinsH(s.met.early)}</b>` : '—'}</td><td><b>${fmtDur(s.met.net * 60000)}</b></td><td>${s.met.otMin ? `${(s.met.otMin / 60).toFixed(1)} س × ${s.met.otRate} = <b>${s.met.otEq.toFixed(1)}</b>` : '—'}</td></tr>`).join('') || '<tr><td colspan="9" class="muted">لا توجد بيانات</td></tr>'}
     </tbody></table></div></div>
+    <div class="card">${ch('report', 'مسير الرواتب الآلي')}${(() => {
+      const rows = pay.filter(r => r.pm !== 'none');
+      if (!rows.length) return '<p class="muted">لا يوجد موظف علِيّ راتباً بعد — حدد طريقة الأجر وقيمته من تعديل بيانات الموظف ليظهر المسير.</p>';
+      const m = v => (Math.round(v * 100) / 100).toString();
+      const T = rows.reduce((a, r) => ({ base: a.base + r.base, otPay: a.otPay + r.otPay, dl: a.dl + r.dedLate, de: a.de + r.dedEarly, da: a.da + r.dedAbs, net: a.net + r.net }), { base: 0, otPay: 0, dl: 0, de: 0, da: 0, net: 0 });
+      return `<p class="hint">محسوبة من الفترة المحددة أعلاه. الشهري: يوم الأجر = الراتب÷30 (خصم الغياب يوماً كاملاً) وساعة العمل = اليوم÷8. بالساعة: استحقاق الساعات العادية + الإضافي المكافئ. القيم بالوحدة المحلية للمنشأة.</p><div class="tw"><table><thead><tr><th>الموظف</th><th>الأجر</th><th>ساعات عادية</th><th>الأساسي</th><th>قيمة الإضافي</th><th>خصم التأخير</th><th>خصم المبكر</th><th>خصم الغياب</th><th>الصافي</th></tr></thead><tbody>
+      ${rows.map(r => `<tr><td><div class="who"><span class="av">${ini(r.name)}</span>${esc(r.name)}</div></td><td><span class="badge ${r.pm === 'monthly' ? 'b-pri' : 'b-ok'}">${r.pm === 'monthly' ? 'شهري ' + m(r.amt) : 'بالساعة ' + m(r.amt)}</span></td><td>${r.paidH.toFixed(1)}</td><td>${m(r.base)}</td><td><b>${m(r.otPay)}</b></td><td class="muted">${m(r.dedLate)}</td><td class="muted">${m(r.dedEarly)}</td><td class="muted">${m(r.dedAbs)}</td><td><b>${m(r.net)}</b></td></tr>`).join('')}
+      </tbody><tfoot><tr><td colspan="3">الإجمالي</td><td>${m(T.base)}</td><td>${m(T.otPay)}</td><td>${m(T.dl)}</td><td>${m(T.de)}</td><td>${m(T.da)}</td><td><b>${m(T.net)}</b></td></tr></tfoot></table></div>`;
+    })()}</div>
     <div class="card">${ch('report', `كل العمليات (${filtered().length})`)}<div class="tw"><table><thead><tr><th>الموظف</th><th>العملية</th><th>التاريخ</th><th>الوقت</th><th>الموقع</th><th>البعد</th><th>الخريطة</th></tr></thead><tbody>
     ${filtered().map(r => `<tr><td>${esc(r.empName)}</td><td><span class="badge ${r.type === 'in' ? 'b-ok' : 'b-bad'}">${r.type === 'in' ? 'حضور' : 'انصراف'}</span></td><td>${fmtDate(r.t)}</td><td>${fmtTime(r.t, true)}</td><td>${esc(r.locationName)}</td><td>${r.distance} م</td><td><a href="${mapLink(r.lat, r.lng)}" target="_blank">عرض</a></td></tr>`).join('') || '<tr><td colspan="7" class="muted">لا توجد بيانات</td></tr>'}
     </tbody></table></div></div>`;
@@ -1367,6 +1581,10 @@ function adminApp(db, auth) {
       if (act === 'delSched') { const n = S.emps.filter(e => e.scheduleId === id).length; if (confirm(n ? `هذا الجدول مرتبط بـ ${n} موظف وسيصبحون بدون جدول. هل تريد حذفه؟` : 'حذف هذا الجدول؟')) { await deleteDoc(doc(db, 'schedules', id)); await loadAll(); } }
       if (act === 'editEmp') employeeEditor(S.emps.find(x => x.id === id));
       if (act === 'delLoc') { if (confirm('حذف هذا الموقع؟')) { await deleteDoc(doc(db, 'locations', id)); await loadAll(); } }
+      if (act === 'mapLoc') return locEditor(null);
+      if (act === 'editLoc') { const x = S.locs.find(y => y.id === id); if (x) return locEditor(x); }
+      if (act === 'xlsx') { toast('جاري تجهيز ملف Excel…'); await exportExcel(); return; }
+      if (act === 'print') { toast('جاري تجهيز كشف الطباعة…'); printReport(); return; }
       if (act === 'addHol') {
         const d = $('#hDay').value, n = $('#hName').value.trim();
         if (!d || !n) return toast('حدد تاريخ العطلة واسمها', 'err');
