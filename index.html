@@ -4,7 +4,10 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#0d4fa8">
-<title>نظام الحضور والانصراف</title>
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="ميقات">
+<title>مِيقَاتْ | الحضور والانصراف</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800&display=swap" rel="stylesheet">
@@ -28,7 +31,7 @@ button,input,select,textarea{font:inherit}
 .top::after{width:170px;height:170px;bottom:-90px;right:22%}
 .top-in{max-width:1100px;margin:0 auto;display:flex;align-items:center;justify-content:space-between;gap:12px;position:relative;z-index:1}
 .brand{display:flex;align-items:center;gap:12px}
-.brand b{display:block;font-size:19px;font-weight:800;line-height:1.2}
+.brand b{display:block;font-size:23px;font-weight:800;line-height:1.35}
 .brand small{opacity:.8;font-size:12.5px}
 .logo{width:46px;height:46px;border-radius:14px;background:rgba(255,255,255,.18);border:1px solid rgba(255,255,255,.35);display:grid;place-items:center;backdrop-filter:blur(4px);color:#fff}
 .logo.big{width:74px;height:74px;border-radius:22px;background:var(--grad);border:0;box-shadow:0 10px 26px rgba(27,126,230,.4);margin:0 auto 12px}
@@ -104,7 +107,10 @@ tbody tr:hover td{background:#f8fbff}
 .auth-bg::before{width:380px;height:380px;top:-160px;right:-120px}
 .auth-bg::after{width:300px;height:300px;bottom:-130px;left:-90px}
 .login{width:100%;max-width:390px;background:#fff;border-radius:26px;padding:28px 24px;box-shadow:0 24px 60px rgba(8,40,100,.35);position:relative;z-index:1}
-.login h1{font-size:21px;margin-bottom:2px}
+.login h1{font-size:30px;margin-bottom:0;line-height:1.5;color:var(--navy)}
+.mk{display:block}
+.emp-brand{display:flex;align-items:center;gap:8px;color:#fff;font-weight:800;font-size:19px;margin-bottom:14px}
+.emp-brand .mk{filter:drop-shadow(0 2px 4px rgba(0,0,0,.18))}
 
 /* ---------- واجهة الموظف ---------- */
 .emp-bg{min-height:100vh;background:var(--grad) top/100% 300px no-repeat,var(--bg)}
@@ -138,7 +144,7 @@ a{color:var(--pri-d)}
   .tabs{position:fixed;bottom:0;left:0;right:0;margin:0;border-radius:22px 22px 0 0;padding:6px 6px calc(6px + env(safe-area-inset-bottom));justify-content:space-around;gap:2px;box-shadow:0 -8px 28px rgba(15,80,160,.18);z-index:50;overflow:visible}
   .tab{flex:1;flex-direction:column;gap:2px;font-size:11.5px;padding:8px 2px;border-radius:14px}
   .tab.on{background:var(--pri-l);color:var(--pri-d);box-shadow:none}
-  .wrap.main{padding-bottom:100px}
+  .wrap.main{padding-bottom:100px;padding-top:14px}
   .toast{bottom:100px}
   .stat{padding:12px}.stat b{font-size:24px}.st-ic{width:44px;height:44px}
   .clock{font-size:42px}
@@ -223,6 +229,27 @@ const params = new URLSearchParams(location.search);
 const empToken = params.get('e');
 const root = $('#app');
 
+/* ---------- الهوية: الاسم والشعار ---------- */
+const BRAND = 'مِيقَاتْ';
+const logoMark = (s = 30) => `<svg class="mk" width="${s}" height="${s}" viewBox="70 73 372 372" aria-hidden="true"><path d="M256 88C181 88 122 147 122 222c0 96 134 208 134 208s134-112 134-208C390 147 331 88 256 88z" fill="#fff"/><circle cx="256" cy="222" r="78" fill="#1b7ee6"/><path d="M256 170v54l36 22" fill="none" stroke="#fff" stroke-width="16" stroke-linecap="round" stroke-linejoin="round"/><circle cx="256" cy="224" r="9" fill="#fff"/></svg>`;
+const ICON_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512"><defs><linearGradient id="a" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#0d4fa8"/><stop offset=".55" stop-color="#1b7ee6"/><stop offset="1" stop-color="#43b0f5"/></linearGradient></defs><rect width="512" height="512" rx="116" fill="url(#a)"/><circle cx="420" cy="92" r="130" fill="#fff" opacity=".08"/><circle cx="70" cy="470" r="110" fill="#fff" opacity=".07"/><ellipse cx="256" cy="440" rx="74" ry="13" fill="#0b3c7d" opacity=".35"/><path d="M256 88C181 88 122 147 122 222c0 96 134 208 134 208s134-112 134-208C390 147 331 88 256 88z" fill="#fff"/><circle cx="256" cy="222" r="78" fill="#1b7ee6"/><path d="M256 170v54l36 22" fill="none" stroke="#fff" stroke-width="16" stroke-linecap="round" stroke-linejoin="round"/><circle cx="256" cy="224" r="9" fill="#fff"/></svg>`;
+function setupIcons() {
+  const link = (rel, href, extra = {}) => { const l = document.createElement('link'); l.rel = rel; l.href = href; Object.assign(l, extra); document.head.appendChild(l); return l; };
+  try {
+    const uri = 'data:image/svg+xml,' + encodeURIComponent(ICON_SVG);
+    link('icon', uri, { type: 'image/svg+xml' });
+    const img = new Image();
+    img.onload = () => { try {
+      const png = n => { const c = document.createElement('canvas'); c.width = c.height = n; c.getContext('2d').drawImage(img, 0, 0, n, n); return c.toDataURL('image/png'); };
+      link('apple-touch-icon', png(180));
+      const man = { name: BRAND + ' للحضور والانصراف', short_name: 'ميقات', lang: 'ar', dir: 'rtl', start_url: location.href, scope: location.origin + location.pathname.replace(/[^/]*$/, ''), display: 'standalone', background_color: '#eaf2fb', theme_color: '#0d4fa8', icons: [{ src: png(192), sizes: '192x192', type: 'image/png' }, { src: png(512), sizes: '512x512', type: 'image/png', purpose: 'any' }] };
+      link('manifest', URL.createObjectURL(new Blob([JSON.stringify(man)], { type: 'application/manifest+json' })));
+    } catch {} };
+    img.src = uri;
+  } catch {}
+}
+setupIcons();
+
 /* ---------- صفحة الإعداد ---------- */
 function rulesText(email) {
 return `rules_version = '2';
@@ -303,7 +330,7 @@ service cloud.firestore {
 }`;
 }
 function setupPage() {
-  root.innerHTML = `<div class="top"><div class="top-in"><div class="brand"><div class="logo">${ic('clock', 26)}</div><div><b>نظام الحضور والانصراف</b><small>إعداد أولي</small></div></div></div></div>
+  root.innerHTML = `<div class="top"><div class="top-in"><div class="brand"><div class="logo">${logoMark(30)}</div><div><b>${BRAND}</b><small>إعداد أولي</small></div></div></div></div>
   <div class="wrap" style="margin-top:-34px;position:relative;z-index:2"><div class="card">
   <div class="ch"><span class="chi">${ic('check', 18)}</span><h3>إعداد النظام (مرة واحدة فقط)</h3></div>
   <p class="muted">النظام يحتاج قاعدة بيانات مجانية لمزامنة الإدارة مع الموظفين. الخطوات كلها مجانية ولا تتطلب بطاقة بنكية.</p>
@@ -366,6 +393,7 @@ async function employeeApp(db, token) {
   const now = () => new Date(Date.now() + offset);
 
   root.innerHTML = `<div class="emp-bg"><div class="emp-wrap">
+    <div class="emp-brand">${logoMark(28)}<span>${BRAND}</span></div>
     <div class="emp-head"><div class="av lg">${ini(emp.name)}</div><div><small>مرحباً بك</small><h1>${esc(emp.name)}</h1></div></div>
     <div class="card clockcard">
       <div class="live">الوقت الرسمي</div>
@@ -440,9 +468,9 @@ async function employeeApp(db, token) {
    ===================================================================== */
 function loginPage(auth) {
   root.innerHTML = `<div class="auth-bg"><div class="login">
-    <div class="logo big">${ic('clock', 38)}</div>
-    <h1 class="center">نظام الحضور والانصراف</h1>
-    <p class="muted center" style="margin:0 0 18px">تسجيل دخول الإدارة</p>
+    <div class="logo big">${logoMark(48)}</div>
+    <h1 class="center">${BRAND}</h1>
+    <p class="muted center" style="margin:0 0 18px">نظام الحضور والانصراف · دخول الإدارة</p>
     <div class="field"><label>البريد الإلكتروني</label><input id="em" type="email" dir="ltr" autocomplete="username"></div>
     <div class="field" style="margin-top:12px"><label>كلمة المرور</label><input id="pw" type="password" dir="ltr" autocomplete="current-password"></div>
     <button class="btn" id="go" style="width:100%;margin-top:18px;padding:13px">دخول</button>
@@ -499,7 +527,7 @@ function adminApp(db, auth) {
   function render() {
     const tabs = [['today', 'اليوم', 'today'], ['emps', 'الموظفون', 'users'], ['locs', 'المواقع', 'pin'], ['recs', 'التقارير', 'report']];
     root.innerHTML = `<div class="top"><div class="top-in">
-        <div class="brand"><div class="logo">${ic('clock', 26)}</div><div><b>نظام الحضور والانصراف</b><small>لوحة الإدارة</small></div></div>
+        <div class="brand"><div class="logo">${logoMark(30)}</div><div><b>${BRAND}</b><small>للحضور والانصراف · لوحة الإدارة</small></div></div>
         <div class="top-act"><button class="ib" data-act="reload" title="تحديث">${ic('refresh', 20)}</button><button class="ib" data-act="logout" title="خروج">${ic('logout', 20)}</button></div>
       </div></div>
       <div class="wrap main">
@@ -623,7 +651,7 @@ function adminApp(db, auth) {
       if (act === 'copy') { await navigator.clipboard.writeText(linkOf(id)); toast('تم نسخ الرابط', 'good'); }
       if (act === 'wa') {
         const e = S.emps.find(x => x.id === id);
-        const msg = `مرحباً ${e.name}، هذا رابطك الشخصي لتسجيل الحضور والانصراف (لا تشاركه مع أحد):\n${linkOf(id)}`;
+        const msg = `مرحباً ${e.name}، هذا رابطك الشخصي في «${BRAND}» لتسجيل الحضور والانصراف (لا تشاركه مع أحد):\n${linkOf(id)}`;
         window.open(`https://wa.me/${e.phone || ''}?text=${encodeURIComponent(msg)}`, '_blank');
       }
       if (act === 'resetDev') { if (confirm('إعادة ضبط الجهاز المرتبط بهذا الموظف؟')) { await updateDoc(doc(db, 'employees', id), { deviceId: null }); await loadAll(); toast('تمت إعادة الضبط', 'good'); } }
@@ -654,7 +682,7 @@ function adminApp(db, auth) {
         const rows = [['الموظف', 'العملية', 'التاريخ', 'الوقت', 'الموقع', 'البعد (م)', 'خط العرض', 'خط الطول']];
         filtered().forEach(r => rows.push([r.empName, r.type === 'in' ? 'حضور' : 'انصراف', fmtDate(r.t), fmtTime(r.t, true), r.locationName, r.distance, r.lat, r.lng]));
         const csv = '\ufeff' + rows.map(r => r.map(c => `"${String(c ?? '').replace(/"/g, '""')}"`).join(',')).join('\n');
-        const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' })); a.download = `attendance_${S.from}_${S.to}.csv`; a.click();
+        const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' })); a.download = `meqat_${S.from}_${S.to}.csv`; a.click();
       }
     } catch (err) { console.error(err); toast('حدث خطأ — تحقق من الاتصال وصلاحيات Firestore', 'err'); }
   };
