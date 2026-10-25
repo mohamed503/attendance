@@ -273,7 +273,7 @@ const licBadgeHtml = () => {
   if (LICENSE.status === 'demo') return '<span class="badge b-pri" style="font-size:11px">نسخة عرض</span>';
   if (d < 0) return '<span class="badge b-bad" style="font-size:11px">انتهت — للتجديد</span>';
   if (LICENSE.status === 'trial') return `<span class="badge b-warn" style="font-size:11px">تجربة · متبقٍ ${d} يوم</span>`;
-  return `<span class="badge b-ok" style="font-size:11px">${esc(LICENSE.planName || 'مفعّلة')} · متبقٍ ${d} يوم</span>`;
+  return `<span class="badge b-ok" style="font-size:11px">${esc(LICENSE.planName || 'مفعّلة')} · ${Number.isFinite(d) ? 'متبقٍ ' + d + ' يوم' : 'دائمة'}</span>`;
 };
 
 const licBannerHtml = () => {

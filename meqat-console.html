@@ -126,6 +126,59 @@ const fmtD = k => k ? k.split('-').reverse().join('/') : '—';
 function toast(msg, type = '') { const t = document.createElement('div'); t.className = 'toast ' + type; t.textContent = msg; document.body.appendChild(t); setTimeout(() => t.remove(), 3200); }
 function download(content, name, type = 'text/html;charset=utf-8') { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([content], { type })); a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 800); }
 
+/* ===== حزمة التسليم: ZIP كامل (بدون مكتبات خارجية) ===== */
+const _crcT = (() => { const t = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
+const crc32 = u8 => { let c = 0xFFFFFFFF; for (let i = 0; i < u8.length; i++) c = _crcT[(c ^ u8[i]) & 255] ^ (c >>> 8); return (c ^ 0xFFFFFFFF) >>> 0; };
+function makeZip(files) { // files: [{name, data: string|Uint8Array}] — تخزين بلا ضغط، أسماء UTF-8
+  const enc = new TextEncoder(), parts = [], cen = []; let off = 0;
+  const d = new Date(), dosT = (d.getHours() << 11) | (d.getMinutes() << 5) | (d.getSeconds() >> 1), dosD = ((d.getFullYear() - 1980) << 9) | ((d.getMonth() + 1) << 5) | d.getDate();
+  for (const f of files) {
+    const nm = enc.encode(f.name), data = typeof f.data === 'string' ? enc.encode(f.data) : f.data, crc = crc32(data);
+    const lh = new DataView(new ArrayBuffer(30)); lh.setUint32(0, 0x04034b50, true); lh.setUint16(4, 20, true); lh.setUint16(6, 0x0800, true); lh.setUint16(8, 0, true); lh.setUint16(10, dosT, true); lh.setUint16(12, dosD, true); lh.setUint32(14, crc, true); lh.setUint32(18, data.length, true); lh.setUint32(22, data.length, true); lh.setUint16(26, nm.length, true); lh.setUint16(28, 0, true);
+    parts.push(new Uint8Array(lh.buffer), nm, data);
+    const ch = new DataView(new ArrayBuffer(46)); ch.setUint32(0, 0x02014b50, true); ch.setUint16(4, 20, true); ch.setUint16(6, 20, true); ch.setUint16(8, 0x0800, true); ch.setUint16(10, 0, true); ch.setUint16(12, dosT, true); ch.setUint16(14, dosD, true); ch.setUint32(16, crc, true); ch.setUint32(20, data.length, true); ch.setUint32(24, data.length, true); ch.setUint16(28, nm.length, true); ch.setUint32(42, off, true);
+    cen.push(new Uint8Array(ch.buffer), nm);
+    off += 30 + nm.length + data.length;
+  }
+  const cenLen = cen.reduce((a, b) => a + b.length, 0), end = new DataView(new ArrayBuffer(22));
+  end.setUint32(0, 0x06054b50, true); end.setUint16(8, files.length, true); end.setUint16(10, files.length, true); end.setUint32(12, cenLen, true); end.setUint32(16, off, true);
+  return new Blob([...parts, ...cen, new Uint8Array(end.buffer)], { type: 'application/zip' });
+}
+async function fetchSiblings(tplUrl) { // manifest + sw + icon من نفس موقع القالب
+  const base = new URL('.', tplUrl).href, out = [], missing = [];
+  for (const n of ['manifest.json', 'sw.js', 'icon.svg']) {
+    try { const r = await fetch(base + n, { cache: 'no-store' }); if (!r.ok) throw 0; out.push({ name: n, data: new Uint8Array(await r.arrayBuffer()) }); } catch { missing.push(n); }
+  }
+  return { files: out, missing };
+}
+function readmeFor(c, s, isDemo) {
+  const L = [];
+  L.push(`حزمة تسليم «مِيقَاتْ» — ${c.company}`, '='.repeat(40), '',
+    `الباقة: ${s.planName} | النوع: ${s.status === 'trial' ? 'تجربة' : s.status === 'demo' ? 'ديمو' : 'مدفوع'} | حد الموظفين: ${s.maxEmployees || 'بلا حدود'} | تنتهي: ${expTxt(s)}`, '',
+    'قائمة التحقق (ضع علامة × عند الإنجاز):',
+    '[ ] 1. Firebase ← Authentication ← Sign-in method: فعّل Email/Password ثم Anonymous',
+    '[ ] 2. Firebase ← Firestore Database: أنشئ قاعدة (Production mode)',
+    '[ ] 3. Firestore ← Rules: الصق محتوى الملف firestore.rules.txt ثم Publish',
+    '[ ] 4. Authentication ← Authorized domains: أضف نطاق الموقع (مثل xxx.pages.dev أو الدومين الخاص)',
+    '[ ] 5. Authentication ← Users: أضف مستخدماً ببريد المالك: ' + (c.ownerEmail || '(غير مسجّل)'),
+    '[ ] 6. ارفع محتويات مجلد site/ (وليس المجلد نفسه) على Cloudflare Pages أو Netlify — يجب أن يكون index.html في الجذر',
+    '[ ] 7. افتح الموقع ← «الإعداد الأول» ← أنشئ المشرف بنفس البريد',
+    '[ ] 8. أضف مواقع العمل وأنماط الدوام والموظفين ثم أرسل روابطهم عبر واتساب',
+    '[ ] 9. سجّل رابط الموقع في أرشيف العميل داخل اللوحة', '',
+    'ملاحظة: بعد أي رفع جديد افتح الموقع مرتين لتحديث الـ Service Worker.', '',
+    'إعدادات Firebase المضمّنة:', cfgPreview(c));
+  return L.join('\n');
+}
+async function buildPack(c, html, tplUrl, isDemo) {
+  const safe = String(c.company || 'client').replace(/[\\/:*?"<>| ]+/g, '_'), s = licFor(c);
+  const sib = await fetchSiblings(tplUrl);
+  const files = [{ name: 'site/index.html', data: html }, ...sib.files.map(f => ({ name: 'site/' + f.name, data: f.data })),
+    { name: 'firestore.rules.txt', data: rulesText(c.ownerEmail || '') }, { name: 'README_التسليم.txt', data: '﻿' + readmeFor(c, s, isDemo) }];
+  const zname = (isDemo ? 'demo_' : 'meqat_') + safe + '_' + todayKey() + '.zip';
+  download(makeZip(files), zname, 'application/zip');
+  return { zname, missing: sib.missing };
+}
+
 /* ============ الثيم ============ */
 if (localStorage.getItem('mc_theme') === 'dark') document.documentElement.setAttribute('data-theme', 'dark');
 const setTheme = () => { const on = document.documentElement.getAttribute('data-theme') === 'dark'; $('#themeBtn').textContent = on ? '☀️' : '🌙'; };
@@ -134,10 +187,12 @@ setTheme();
 
 /* ============ الباقات الافتراضية (3 باقات) ============ */
 const DEF_PLANS = [
-  { id: 'shop', name: 'باقة المحل', maxEmp: 10, trialDays: 14, price: '900 د.ل / سنة', payroll: false, tasks: false, tag: 'محلات ومكاتب صغيرة' },
-  { id: 'company', name: 'باقة الشركة', maxEmp: 50, trialDays: 15, price: '1,800 د.ل / سنة', payroll: true, tasks: true, tag: 'الأنسب لمعظم الشركات' },
-  { id: 'enterprise', name: 'باقة المنشأة', maxEmp: 0, trialDays: 7, price: '3,500 د.ل / سنة', payroll: true, tasks: true, tag: 'بلا حدود + دعم أولوية' }
+  { id: 'shop', name: 'باقة المحل', maxEmp: 10, trialDays: 14, price: '900 د.ل / سنة', payroll: false, tasks: false, tag: 'محلات ومكاتب صغيرة', permanent: false },
+  { id: 'company', name: 'باقة الشركة', maxEmp: 50, trialDays: 15, price: '1,800 د.ل / سنة', payroll: true, tasks: true, tag: 'الأنسب لمعظم الشركات', permanent: false },
+  { id: 'enterprise', name: 'باقة المنشأة', maxEmp: 0, trialDays: 7, price: '3,500 د.ل / سنة', payroll: true, tasks: true, tag: 'بلا حدود + دعم أولوية', permanent: false }
 ];
+const isPerm = c => !!c && c.kind !== 'trial' && c.kind !== 'demo' && !!(c.permanent || planOf(c.planId).permanent);
+const expTxt = s => s.permanent ? 'دائم (بلا انتهاء)' : fmtD(s.expires);
 const getPlans = () => store.get('mc_plans', DEF_PLANS);
 const planOf = id => getPlans().find(p => p.id === id) || DEF_PLANS[0];
 
@@ -149,6 +204,7 @@ const fbConsole = (projectId, path) => projectId ? `https://console.firebase.goo
 function cliStatus(c) {
   const p = planOf(c.planId);
   const dur = c.kind === 'trial' ? (p.trialDays || 14) : (+c.durationDays || 365);
+  if (isPerm(c)) return { left: Infinity, dur, perm: true, expired: false, soon: false, badge: ['b-ok', 'دائم ∞'] };
   const left = (c.start ? dur - 1 - daysBetween(c.start, todayKey()) : 999); // آخر يوم صالح = start + dur - 1 (نفس حساب النظام)
   return { left, dur, expired: left < 0, soon: left >= 0 && left <= 7, badge: left < 0 ? ['b-bad', 'منتهٍ'] : c.kind === 'trial' ? ['b-warn', `تجربة · ${left} يوم`] : ['b-ok', `مفعّل · ${left} يوم`] };
 }
@@ -195,6 +251,7 @@ function renderClients(el, sub = 'list') {
       <div class="field"><label>نوع الاشتراك</label><select id="cKind"><option value="paid">مدفوع</option><option value="trial">تجريبي</option></select></div>
       <div class="field"><label>تاريخ البداية</label><input id="cStart" type="date" value="${todayKey()}"></div>
       <div class="field"><label>مدة الاشتراك (يوم) للمدفوع</label><input id="cDur" type="number" value="365" min="1"></div>
+      <div class="field"><label>اشتراك دائم</label><label style="display:flex;gap:8px;align-items:center;font-weight:700"><input id="cPerm" type="checkbox"> بلا تاريخ انتهاء</label></div>
     </div>
     <div class="row" style="margin-top:8px">
       <div class="field"><label>رابط الموقع (الدومين)</label><input id="cDomain" dir="ltr" placeholder="https://norour.netlify.app"></div>
@@ -215,14 +272,15 @@ function renderClients(el, sub = 'list') {
       <tbody>
       ${list.map(c => { const s = cliStatus(c); const p = planOf(c.planId);
         return `<tr>
-          <td><b>${esc(c.company)}</b>${c.contact ? `<div class="muted" style="font-size:12px">${esc(c.contact)}${c.phone ? ' · ' + esc(c.phone) : ''}</div>` : ''}</td>
+          <td><b>${esc(c.company)}</b> ${checkBadge(c)}${c.contact ? `<div class="muted" style="font-size:12px">${esc(c.contact)}${c.phone ? ' · ' + esc(c.phone) : ''}</div>` : ''}</td>
           <td><span class="badge b-pri">${esc(p.name)}</span></td>
           <td>${c.kind === 'trial' ? '<span class="badge b-warn">تجربة</span>' : '<span class="badge b-mute">مدفوع</span>'}</td>
           <td><span class="badge ${s.badge[0]}">${s.badge[1]}</span></td>
-          <td class="muted">${fmtD(addDays(c.start, s.dur - 1))}</td>
+          <td class="muted">${s.perm ? 'دائم ∞' : fmtD(addDays(c.start, s.dur - 1))}</td>
           <td>${c.domain ? `<a href="${esc(c.domain)}" target="_blank" class="badge b-mute" style="text-decoration:none">فتح العرض ↗</a>` : '<span class="muted">—</span>'}</td>
           <td><div style="display:flex;gap:6px;flex-wrap:wrap">
             ${quickLinks(c)}
+            <button class="btn sm sec" data-cli="${esc(c.id)}" data-act="checkCli">☑️ التسليم</button>
             <button class="btn sm sec" data-cli="${esc(c.id)}" data-act="rulesGen">📜 القواعد</button>
             <button class="btn sm sec" data-cli="${esc(c.id)}" data-act="licGen">🪪 توليد النسخة</button>
             <button class="btn sm sec" data-cli="${esc(c.id)}" data-act="editCli">✏️ تعديل</button>
@@ -236,7 +294,7 @@ function renderClients(el, sub = 'list') {
   $('#cAdd').onclick = () => {
     const g = id => $(id).value.trim();
     const company = g('#cCompany'); if (!company) return toast('اكتب اسم الشركة', 'err');
-    const c = { id: uid(), company, contact: g('#cContact'), phone: g('#cPhone').replace(/\D/g, ''), ownerEmail: g('#cOwnerEmail').toLowerCase(), planId: $('#cPlan').value, kind: $('#cKind').value, start: $('#cStart').value || todayKey(), durationDays: +$('#cDur').value || 365, domain: g('#cDomain'), projectId: g('#cProjectId'), apiKey: g('#cApiKey'), appId: g('#cAppId'), support: g('#cSupport'), notes: g('#cNotes'), createdAt: todayKey() };
+    const c = { id: uid(), company, contact: g('#cContact'), phone: g('#cPhone').replace(/\D/g, ''), ownerEmail: g('#cOwnerEmail').toLowerCase(), planId: $('#cPlan').value, kind: $('#cKind').value, start: $('#cStart').value || todayKey(), durationDays: +$('#cDur').value || 365, domain: g('#cDomain'), projectId: g('#cProjectId'), apiKey: g('#cApiKey'), appId: g('#cAppId'), support: g('#cSupport'), notes: g('#cNotes'), createdAt: todayKey(), permanent: $('#cPerm').checked };
     const l = getClients(); l.unshift(c); saveClients(l); toast('حُفظ العميل في الأرشيف ✅', 'good'); go('clients');
   };
   el.querySelectorAll('[data-cli]').forEach(b => b.onclick = () => {
@@ -244,9 +302,50 @@ function renderClients(el, sub = 'list') {
     const act = b.dataset.act;
     if (act === 'delCli') { if (!confirm(`حذف «${c.company}» من الأرشيف؟`)) return; saveClients(list2.filter(x => x.id !== id)); toast('حُذف', 'good'); go('clients'); }
     if (act === 'editCli') { editClient(c); }
+    if (act === 'checkCli') { openChecklist(c); }
     if (act === 'rulesGen') { go('generator'); setTimeout(() => { const c = $('#rClient'); if (c) { c.value = id; c.dispatchEvent(new Event('change')); } }, 80); }
     if (act === 'licGen') { go('generator'); setTimeout(() => { $('#gClient').value = id; genFile(); }, 50); }
   });
+}
+
+
+/* ============ قائمة تحقق التسليم لكل عميل ============ */
+const CHECK_STEPS = [
+  ['fbProject', 'إنشاء مشروع Firebase وتسجيل تطبيق الويب', 'تبويب «قواعد البيانات» ← الخطوتان 1 و2'],
+  ['keys', 'تسجيل apiKey وprojectId وappId في بطاقة العميل', 'زر «✏️ تعديل»'],
+  ['auth', 'تفعيل Email/Password وAnonymous', 'Authentication ← Sign-in method'],
+  ['firestore', 'إنشاء قاعدة Firestore (Production)', 'اختر الموقع بعناية، فلا يتغير'],
+  ['rules', 'نشر قواعد Firestore ببريد المالك', 'زر «📜 القواعد» ثم Publish'],
+  ['gen', 'توليد حزمة العميل (ZIP)', 'زر «🪪 توليد النسخة» واحتفظ بنسخة منها'],
+  ['upload', 'رفع مجلد site على الاستضافة', 'index.html في الجذر'],
+  ['domain', 'إضافة نطاق الموقع إلى Authorized domains', 'بدونها يفشل تسجيل الدخول'],
+  ['admin', 'إضافة مستخدم المالك وإنشاء حساب المشرف', 'من «الإعداد الأول» بنفس البريد'],
+  ['links', 'إدخال المواقع والأنماط والموظفين وإرسال الروابط', 'واتساب من الأرشيف']
+];
+const checkDone = c => CHECK_STEPS.filter(([k]) => (c.checks || {})[k]).length;
+const checkBadge = c => { const n = checkDone(c), t = CHECK_STEPS.length; return `<span class="badge ${n === t ? 'b-ok' : n ? 'b-warn' : 'b-mute'}" style="font-size:11px">التسليم ${n}/${t}</span>`; };
+function openChecklist(c) {
+  const ov = document.createElement('div'); document.body.appendChild(ov);
+  const draw = () => {
+    const n = checkDone(c), t = CHECK_STEPS.length;
+    ov.innerHTML = `<div style="position:fixed;inset:0;background:rgba(7,16,34,.6);display:grid;place-items:center;padding:16px;z-index:100">
+    <div style="background:var(--card);border:1px solid var(--line);border-radius:20px;max-width:620px;width:100%;max-height:90vh;overflow:auto;padding:22px">
+      <h3 style="margin-top:0">☑️ تسليم «${esc(c.company)}» — ${n} من ${t}</h3>
+      <div style="height:8px;background:var(--line);border-radius:6px;overflow:hidden;margin-bottom:12px"><div style="height:100%;width:${Math.round(n / t * 100)}%;background:var(--ok);transition:.2s"></div></div>
+      ${CHECK_STEPS.map(([k, l, h]) => `<label style="display:flex;gap:10px;align-items:flex-start;padding:9px 0;border-bottom:1px dashed var(--line);cursor:pointer">
+        <input type="checkbox" data-k="${k}" ${(c.checks || {})[k] ? 'checked' : ''} style="margin-top:4px;width:18px;height:18px">
+        <span><b style="${(c.checks || {})[k] ? 'text-decoration:line-through;opacity:.6' : ''}">${l}</b><span class="hint" style="display:block">${h}</span></span></label>`).join('')}
+      <div class="row" style="margin-top:14px"><button class="btn" id="ckClose">إغلاق</button><button class="btn sec" id="ckReset">↩️ تصفير القائمة</button></div>
+    </div></div>`;
+    ov.querySelectorAll('input[data-k]').forEach(i => i.onchange = () => {
+      c.checks = { ...(c.checks || {}), [i.dataset.k]: i.checked };
+      const l = getClients(), x = l.findIndex(y => y.id === c.id); if (x >= 0) { l[x].checks = c.checks; saveClients(l); }
+      draw();
+    });
+    $('#ckClose', ov).onclick = () => { ov.remove(); if (CUR === 'clients') go('clients'); };
+    $('#ckReset', ov).onclick = () => { if (!confirm('تصفير كل العلامات لهذا العميل؟')) return; c.checks = {}; const l = getClients(), x = l.findIndex(y => y.id === c.id); if (x >= 0) { l[x].checks = {}; saveClients(l); } draw(); };
+  };
+  draw();
 }
 
 function editClient(c) {
@@ -267,6 +366,7 @@ function editClient(c) {
       <div class="field"><label>النوع</label><select id="mKind"><option value="paid" ${c.kind !== 'trial' ? 'selected' : ''}>مدفوع</option><option value="trial" ${c.kind === 'trial' ? 'selected' : ''}>تجريبي</option></select></div>
       <div class="field"><label>البداية</label><input id="mStart" type="date" value="${sN(c.start)}"></div>
       <div class="field"><label>المدة (يوم)</label><input id="mDur" type="number" value="${c.durationDays || 365}"></div>
+      <div class="field"><label>دائم</label><label style="display:flex;gap:8px;align-items:center;font-weight:700"><input id="mPerm" type="checkbox" ${c.permanent ? 'checked' : ''}> بلا انتهاء</label></div>
     </div>
     <div class="row" style="margin-top:10px">
       <div class="field"><label>الدومين</label><input id="mDomain" dir="ltr" value="${sN(c.domain)}"></div>
@@ -288,7 +388,7 @@ function editClient(c) {
     const g = id => $('#id'.replace('id', 'mContact') && id, overlay).value.trim();
     const list = getClients(); const i = list.findIndex(x => x.id === c.id); if (i < 0) return close();
     const gv = (sel, overlay2) => { const e = overlay.querySelector(sel); return e ? e.value.trim() : ''; };
-    list[i] = { ...c, company: gv('#mCompany'), contact: gv('#mContact'), phone: gv('#mPhone').replace(/\D/g, ''), ownerEmail: gv('#mOwnerEmail').toLowerCase(), planId: gv('#mPlan'), kind: gv('#mKind'), start: gv('#mStart'), durationDays: +gv('#mDur') || 365, domain: gv('#mDomain'), projectId: gv('#mPid'), apiKey: gv('#mKey'), appId: gv('#mApp'), support: gv('#mSupport'), notes: gv('#mNotes') };
+    list[i] = { ...c, company: gv('#mCompany'), contact: gv('#mContact'), phone: gv('#mPhone').replace(/\D/g, ''), ownerEmail: gv('#mOwnerEmail').toLowerCase(), planId: gv('#mPlan'), kind: gv('#mKind'), start: gv('#mStart'), durationDays: +gv('#mDur') || 365, permanent: overlay.querySelector('#mPerm').checked, domain: gv('#mDomain'), projectId: gv('#mPid'), apiKey: gv('#mKey'), appId: gv('#mApp'), support: gv('#mSupport'), notes: gv('#mNotes') };
     if (!list[i].company) return toast('الاسم مطلوب', 'err');
     saveClients(list); close(); toast('تم التحديث ✅', 'good'); go('clients');
   };
@@ -325,7 +425,7 @@ $('#impFile').onchange = e => {
 
 
 /* ============ نظام التبويبات ============ */
-const TABS = [['clients', '👥 العملاء والأرشيف'], ['generator', '🛠️ مولّد النسخ والقواعد'], ['plans', '🏷️ الباقات الثلاث'], ['demo', '🧪 الديمو والبذر'], ['msgs', '💬 رسائل واتساب'], ['hosting', '🌐 الاستضافة خطوة بخطوة'], ['guide', '📘 الدليل الاحترافي']];
+const TABS = [['clients', '👥 العملاء والأرشيف'], ['generator', '🛠️ مولّد النسخ والقواعد'], ['plans', '🏷️ الباقات الثلاث'], ['demo', '🧪 الديمو والبذر'], ['msgs', '💬 رسائل واتساب'], ['databases', '🗄️ قواعد البيانات'], ['hosting', '🌐 الاستضافة خطوة بخطوة'], ['guide', '📘 الدليل الاحترافي']];
 let CUR = 'clients';
 function go(t) {
   CUR = t;
@@ -339,6 +439,7 @@ function go(t) {
   if (t === 'plans') renderPlans(c);
   if (t === 'demo') renderDemo(c);
   if (t === 'msgs') renderMsgs(c);
+  if (t === 'databases') renderDatabases(c);
   if (t === 'hosting') renderHosting(c);
 }
 
@@ -348,9 +449,9 @@ function renderPlans(el) {
   el.innerHTML = `
   <div class="card">
     <h2>🏷️ الباقات الثلاث (قابلة للتعديل)</h2>
-    <p class="hint">تُطبَّق هذه الحدود تلقائياً على نسخة كل عميل عند التوليد: حد الموظفين وميزة الرواتب وميزة المهام. عدِّل الأسعار والحدود ثم اضغط «حفظ». القيمة «0» في حد الموظفين تعني بلا حدود.</p>
+    <p class="hint">تُطبَّق هذه الحدود تلقائياً على نسخة كل عميل عند التوليد: حد الموظفين وميزة الرواتب وميزة المهام. عدِّل الأسعار والحدود ثم اضغط «حفظ». علامة «دائمة ♾️» تجعل كل عملاء هذه الباقة المدفوعين بلا تاريخ انتهاء (التجربة تبقى محدودة)، ويمكنك أيضًا جعل عميل بعينه دائمًا من بطاقته. القيمة «0» في حد الموظفين تعني بلا حدود.</p>
     <div class="tw"><table>
-      <thead><tr><th>الباقة</th><th>الفئة المستهدفة</th><th>حد الموظفين</th><th>أيام التجربة</th><th>السعر</th><th>الرواتب</th><th>المهام</th></tr></thead>
+      <thead><tr><th>الباقة</th><th>الفئة المستهدفة</th><th>حد الموظفين</th><th>أيام التجربة</th><th>السعر</th><th>الرواتب</th><th>المهام</th><th>دائمة ♾️</th></tr></thead>
       <tbody>
       ${ps.map(p => `<tr>
         <td><input id="pName_${p.id}" value="${esc(p.name)}" style="width:150px;font-weight:800"></td>
@@ -360,6 +461,7 @@ function renderPlans(el) {
         <td><input id="pPrice_${p.id}" value="${esc(p.price)}" style="width:150px"></td>
         <td><input id="pPay_${p.id}" type="checkbox" ${p.payroll ? 'checked' : ''}></td>
         <td><input id="pTask_${p.id}" type="checkbox" ${p.tasks ? 'checked' : ''}></td>
+        <td><input id="pPerm_${p.id}" type="checkbox" ${p.permanent ? 'checked' : ''}></td>
       </tr>`).join('')}
       </tbody>
     </table></div>
@@ -377,7 +479,8 @@ function renderPlans(el) {
       trialDays: Math.max(0, +$(`#pTrial_${p.id}`).value || 0),
       price: $(`#pPrice_${p.id}`).value.trim(),
       payroll: $(`#pPay_${p.id}`).checked,
-      tasks: $(`#pTask_${p.id}`).checked
+      tasks: $(`#pTask_${p.id}`).checked,
+      permanent: $(`#pPerm_${p.id}`).checked
     }));
     store.set('mc_plans', ps2); toast('حُفظت الباقات ✅', 'good'); go('plans');
   };
@@ -400,7 +503,8 @@ function licFor(c) {
     features: isDemo ? { payroll: true, tasks: true } : { payroll: !!p.payroll, tasks: !!p.tasks },
     issued: c.createdAt || start,
     start,
-    expires: addDays(start, Math.max(1, dur) - 1),
+    expires: (!isDemo && isPerm(c)) ? '' : addDays(start, Math.max(1, dur) - 1),
+    permanent: !isDemo && isPerm(c),
     support: c.support || ''
   };
   if (isDemo && demo.email && demo.pass) lic.demoCreds = { email: demo.email, pass: demo.pass };
@@ -682,23 +786,25 @@ async function genFile() {
     const lic = licFor(c);
     html = html.slice(0, si) + '<script>window.MEQAT_LICENSE = ' + JSON.stringify(lic, null, 1) + ';</scr' + 'ipt>\n' + html.slice(si);
     const fname = (isDemo ? 'demo_' : 'index_') + String(c.company || 'client').replace(/[\\/:*?"<>| ]+/g, '_') + '.html';
-    download(html, fname);
+    const pk = await buildPack(c, html, url, isDemo);
     const p = planOf(c.planId);
     const s = licFor(c);
     out.hidden = false;
     out.innerHTML = `<div class="card" style="border:2px solid var(--ok)">
-      <h3 style="color:var(--ok)">✅ وُلِّدت نسخة «${esc(c.company)}» ونُزِّل الملف: <span dir="ltr">${esc(fname)}</span></h3>
+      <h3 style="color:var(--ok)">✅ وُلِّدت نسخة «${esc(c.company)}» ونُزِّلت الحزمة: <span dir="ltr">${esc(pk.zname)}</span></h3>
+      ${pk.missing.length ? `<p class="hint" style="color:var(--bad)">⚠️ تعذّر جلب: <span dir="ltr">${esc(pk.missing.join(', '))}</span> من موقع القالب — أضفها يدويًا بجانب index.html.</p>` : ''}
+      <p class="hint">داخل الـ ZIP: مجلد <b>site</b> (index.html + manifest + sw + icon جاهزة للرفع)، وملف <b>firestore.rules.txt</b> ببريد المالك، وملف <b>README_التسليم</b> بقائمة التحقق.</p>
       <div class="tw"><table><thead><tr><th>البند</th><th>القيمة</th></tr></thead><tbody>
         <tr><td>الباقة</td><td><b>${esc(s.planName)}</b></td></tr>
         <tr><td>النوع</td><td>${s.status === 'trial' ? 'تجربة' : s.status === 'demo' ? 'ديمو' : 'مدفوع'}</td></tr>
         <tr><td>حد الموظفين</td><td>${s.maxEmployees || 'بلا حدود'}</td></tr>
         <tr><td>الرواتب / المهام</td><td>${s.features.payroll ? '✅' : '❌'} / ${s.features.tasks ? '✅' : '❌'}</td></tr>
-        <tr><td>تنتهي في</td><td>${fmtD(s.expires)}</td></tr>
+        <tr><td>تنتهي في</td><td>${expTxt(s)}</td></tr>
       </tbody></table></div>
       <p class="hint" style="margin-top:10px"><b>ما بعد التوليد — خطوات التسليم:</b><br>
       1️⃣ انشر مشروع Firebase للعميل (Auth ← فعّل Email + Anonymous، أنشئ Firestore).<br>
-      2️⃣ انشر القواعد: تبويب «القواعد» في هذه اللوحة بنفس بريد المالك.<br>
-      3️⃣ ارفع الملف على الاستضافة (Netlify Drop: اسحب الملف وأفلته).<br>
+      2️⃣ الصق القواعد من firestore.rules.txt في Firestore ← Rules ← Publish.<br>
+      3️⃣ فكّ الـ ZIP وارفع <b>محتويات مجلد site</b> على الاستضافة (index.html في الجذر).<br>
       4️⃣ افتح موقع العميل ← أكمل الإعداد ← أنشئ المشرف ببريد المالك نفسه.<br>
       5️⃣ أضف المواقع والأنماط ثم أرسل روابط الموظفين عبر واتساب من الأرشيف.</p>
     </div>`;
@@ -785,10 +891,91 @@ async function genFileFor(c, url, out) {
     const lic = licFor(c);
     if (si < 0) throw new Error('قالب غير صالح');
     html = html.slice(0, si) + '<script>window.MEQAT_LICENSE = ' + JSON.stringify(lic, null, 1) + ';</scr' + 'ipt>\n' + html.slice(si);
-    download(html, 'demo_' + String(c.company).replace(/[\\/:*?"<>| ]+/g, '_') + '.html');
-    out.innerHTML = `<div class="card" style="border:2px solid var(--ok)"><b style="color:var(--ok)">✅ نزلت ملف الديمو</b> — الخطوات 3-6 أعلاه.</div>`;
+    const pk = await buildPack(c, html, url, true);
+    out.innerHTML = `<div class="card" style="border:2px solid var(--ok)"><b style="color:var(--ok)">✅ نزلت حزمة الديمو (${esc(pk.zname)})</b>${pk.missing.length ? ' — ⚠️ تعذّر جلب: ' + esc(pk.missing.join(', ')) : ''} — الخطوات 3-6 أعلاه.</div>`;
     toast('نزلت نسخة الديمو ✅', 'good');
   } catch (e) { out.innerHTML = `<div class="card" style="border:2px solid var(--bad)"><b>❌:</b> ${esc(e.message || String(e))}</div>`; }
+}
+
+/* ============ قواعد البيانات خطوة بخطوة ============ */
+function renderDatabases(el) {
+  const list = getClients();
+  const st = (n, title, url, desc, undo) => `<div class="step-row">
+    <div class="s-num">${n}</div>
+    <div class="s-body"><b>${title}</b><div class="hint">${desc}</div>${undo || ''}</div>
+    ${url ? `<div class="s-link"><a class="btn sm sec" href="${esc(url)}" target="_blank" rel="noopener">🔗 افتح المكان</a></div>` : ''}
+  </div>`;
+  const undoBox = txt => `<details class="undo"><summary>↩️ التراجع عن هذه الخطوة</summary><div>${txt}</div></details>`;
+  const pid0 = store.get('mc_db_pid', '');
+  const F = (path) => pid0 ? fbConsole(pid0, path) : 'https://console.firebase.google.com/';
+  const warnBox = `<div class="notice" style="margin:8px 0">⚠️ <b>مهم:</b> نظام «ميقات» الحالي مبني على <b>Firebase (Firestore + Authentication)</b> فقط. المواقع البديلة أدناه تعمل كقواعد بيانات حقيقية ومجانية، لكنها <b>لا تعمل مع ميقات دون إعادة كتابة طبقة البيانات</b> في التطبيق. الحل العملي للتوسّع المجاني الآن: <b>مشروع Firebase مستقل لكل عميل</b> (الخيار الأول).</div>`;
+
+  el.innerHTML = `
+  <div class="card">
+    <h2>🗄️ إنشاء قواعد البيانات خطوة بخطوة — روابط مباشرة وتراجع لكل خطوة</h2>
+    <p class="hint">اكتب معرّف مشروع Firebase (أو اختر عميلًا) فتتحول أزرار «🔗 افتح المكان» لتفتح الصفحة المحددة داخل مشروعه مباشرة. ولكل خطوة صندوق «↩️ التراجع» يشرح كيف تُلغيها.</p>
+    <div class="row">
+      <div class="field" style="min-width:250px"><label>العميل</label>
+        <select id="dClient"><option value="">— أدخل المعرّف يدويًا —</option>${list.map(c => `<option value="${esc(c.id)}">${esc(c.company)}</option>`).join('')}</select></div>
+      <div class="field" style="min-width:230px"><label>projectId لمشروع Firebase</label><input id="dPid" dir="ltr" placeholder="norour-app" value="${esc(pid0)}"></div>
+      <button class="btn sec" id="dApply">🔄 تحديث الروابط</button>
+    </div>
+    ${warnBox}
+  </div>
+
+  <details class="fold" open>
+    <summary><span>🥇 Firebase Firestore — الوحيد المتوافق مع ميقات (موصى به)</span><span class="badge b-ok">15 دقيقة · مجاني (Spark)</span></summary>
+    ${st(1, 'أنشئ مشروعًا جديدًا (مشروع لكل عميل)', 'https://console.firebase.google.com/', 'من Firebase Console ← <b>Create a project</b> (أو Add project) ← اكتب اسم الشركة ← يمكنك <b>تعطيل Google Analytics</b> فهو غير مطلوب ← Create. المعرّف الناتج (projectId) سجّله في أرشيف العميل. الحساب المجاني يسمح بعدة مشاريع.', undoBox('<b>Project settings ← General ← Delete project</b>. يبقى المشروع قابلًا للاستعادة نحو 30 يومًا من صفحة الحذف ثم يُمحى نهائيًا.'))}
+    ${st(2, 'سجّل تطبيق ويب وانسخ المفاتيح', F('/settings/general'), 'في <b>Project settings ← General ← Your apps</b> اضغط أيقونة الويب <span dir="ltr">&lt;/&gt;</span> ← سمِّ التطبيق ← Register app. انسخ <b>apiKey</b> و<b>appId</b> وضعهما في بطاقة العميل في تبويب «العملاء». لا تحتاج Firebase Hosting هنا.', undoBox('من نفس الصفحة ← التطبيق ← «⋮» ← <b>Delete this app</b>. مفاتيح التطبيق المحذوف تتوقف، وتسجّل غيره وتولّد نسخة جديدة.'))}
+    ${st(3, 'فعّل تسجيل الدخول: Email/Password ثم Anonymous', F('/authentication/providers'), '<b>Build ← Authentication ← Get started ← Sign-in method</b>: فعّل <b>Email/Password</b> ثم أضف <b>Anonymous</b> وفعّله. بدون الاثنين لن يعمل دخول المشرف ولا ربط أجهزة الموظفين.', undoBox('من نفس الصفحة اضغط المزوّد ← أطفئ <b>Enable</b> ← Save. لا يُحذف المستخدمون، ويعود كل شيء بإعادة التفعيل.'))}
+    ${st(4, 'أنشئ قاعدة Firestore (Production mode)', F('/firestore'), '<b>Build ← Firestore Database ← Create database</b>: اختر <b>Production mode</b>. اختر موقعًا قريبًا من المستخدمين (مثل <span dir="ltr">eur3</span> أو <span dir="ltr">europe-west</span> لليبيا). <b>الموقع لا يمكن تغييره لاحقًا</b>، فاختره بعناية.', undoBox('الموقع نهائي: لتغييره احذف القاعدة (تبويب Data ← «⋮» ← <b>Delete database</b>) ثم أنشئ غيرها، أو أنشئ مشروعًا جديدًا. الحذف يمسح كل البيانات، فتأكد أنها فارغة.'))}
+    ${st(5, 'انشر قواعد الأمان ببريد المالك', F('/firestore/rules'), 'من تبويب «مولّد النسخ والقواعد» ولّد القواعد ببريد مالك العميل وانسخها، ثم الصقها في <b>Firestore ← Rules</b> وامسح القديم ← <b>Publish</b>. هذه الخطوة هي حماية بياناتك الحقيقية، لا تتركها على القاعدة الافتراضية.', undoBox('<b>احفظ نسخة من القواعد القديمة قبل اللصق</b>. للتراجع الصق القديمة ← Publish. وبعض الإصدارات تعرض سجلًا للقواعد المنشورة سابقًا في نفس الصفحة.'))}
+    ${st(6, 'أضف نطاق الموقع إلى Authorized domains', F('/authentication/settings'), '<b>Authentication ← Settings ← Authorized domains ← Add domain</b>: أضف نطاق موقع العميل (مثل <span dir="ltr">norour.pages.dev</span> أو دومينه الخاص). بدونها يفشل تسجيل الدخول على الموقع المنشور.', undoBox('من نفس القائمة اضغط أيقونة الحذف بجانب النطاق. لا يتأثر غيره.'))}
+    ${st(7, 'أضف مستخدم المالك', F('/authentication/users'), '<b>Authentication ← Users ← Add user</b> ببريد المالك نفسه المكتوب في القواعد وكلمة سر قوية. ثم من شاشة «الإعداد الأول» في الموقع أنشئ حساب المشرف بنفس البريد.', undoBox('اضغط «⋮» بجانب المستخدم ← <b>Delete account</b>، أو <b>Reset password</b> لتغيير كلمة السر فقط.'))}
+    ${st(8, 'راقب الاستهلاك واحمِ نفسك من الفواتير', F('/usage'), 'الخطة المجانية (Spark) تتوقف عند تجاوز حصتها ولا تُصدر فواتير ما دمت لم تُرقِّ إلى Blaze. الحصة اليومية التقريبية: 50 ألف قراءة و20 ألف كتابة و1 جيجابايت تخزين — تحقق من صفحة الأسعار الحالية. شركة بعشرات الموظفين تكفيها عادةً.', undoBox('هذه الخطوة للمراقبة فقط ولا تغيّر شيئًا. لا ترقِّ إلى Blaze إلا عند الحاجة، وإن فعلت فأنشئ <b>Budget alerts</b> من Google Cloud Billing فورًا لتتجنب فواتير مفاجئة.'))}
+  </details>
+
+  <details class="fold">
+    <summary><span>🥈 مشروع Firebase احتياطي / ثانٍ (نفس القوة تمامًا)</span><span class="badge b-pri">متوافق · 5 دقائق</span></summary>
+    ${st(1, 'متى تحتاجه؟', 'https://console.firebase.google.com/', 'لتوزيع الحمل: إذا اقتربت منشأة كبيرة من حصة اليوم أنشئ لها مشروعًا خاصًا بحساب Google منفصل (حساب العميل نفسه أفضل). كل مشروع حصته المجانية مستقلة، وبياناته وملكيته عند صاحبه. اتّبع نفس خطوات الاستمارة الأولى بالضبط.', '')}
+    ${st(2, 'انقل عميلًا إلى مشروع جديد', 'https://console.firebase.google.com/', 'أنشئ المشروع الجديد (الخطوات 1–7 أعلاه) ← سجّل المفاتيح الجديدة في بطاقة العميل ← أعد «توليد الحزمة» ← ارفع الموقع الجديد. البيانات القديمة لا تنتقل تلقائيًا: صدّرها من النظام (Excel) أو أعد إدخالها.', undoBox('المشروع القديم لم يُمسّ: أعد رفع الحزمة القديمة المحفوظة فيعود العميل لمشروعه الأول فورًا. لا تحذف المشروع القديم قبل أسبوع من الاستقرار.'))}
+  </details>
+
+  <div class="card"><h3>🧰 بدائل مجانية أخرى (غير متوافقة مع ميقات الحالي)</h3>
+    <p class="hint" style="margin:4px 0 10px">هي قواعد بيانات حقيقية بقوة مماثلة، لكن ميقات يستدعي واجهة Firebase مباشرة، فاستخدام أي منها يعني إعادة كتابة ملف التطبيق لطبقة البيانات والمصادقة والقواعد. أرقام الحصص تقريبية وتتغير، فتحقق من صفحة أسعار كل موقع قبل الاعتماد.</p>
+  </div>
+
+  <details class="fold">
+    <summary><span>🥉 Supabase — PostgreSQL + تسجيل دخول + قواعد أمان (RLS)</span><span class="badge b-warn">غير متوافق · أقرب بديل في القوة</span></summary>
+    ${st(1, 'أنشئ حسابًا ومشروعًا', 'https://supabase.com/dashboard', 'سجّل بحساب GitHub ← <b>New project</b> ← اختر المنطقة وكلمة سر قاعدة البيانات واحفظها. الخطة المجانية تتيح مشروعين تقريبًا، وتتوقف المشاريع الخاملة أسبوعًا حتى تُستأنف يدويًا.', undoBox('<b>Project Settings ← General ← Delete project</b>.'))}
+    ${st(2, 'أنشئ الجداول', 'https://supabase.com/dashboard', 'من <b>SQL Editor</b> الصق أوامر <span dir="ltr">CREATE TABLE</span> للموظفين والحضور والإجازات والمواقع، ثم فعّل <b>Row Level Security</b> لكل جدول وأضف سياسات تقتصر على المالك.', undoBox('احذف الجدول بـ <span dir="ltr">DROP TABLE اسم_الجدول;</span> أو من Table Editor ← Delete table. صدّر نسخة CSV قبل أي حذف.'))}
+    ${st(3, 'انسخ مفاتيح الاتصال', 'https://supabase.com/dashboard', 'من <b>Project Settings ← API</b> انسخ <span dir="ltr">Project URL</span> و<span dir="ltr">anon key</span> (علني) ولا تنشر <span dir="ltr">service_role</span> أبدًا.', undoBox('<b>Settings ← API ← Roll</b> للمفتاح لإبطال القديم.'))}
+  </details>
+
+  <details class="fold">
+    <summary><span>🏅 Appwrite Cloud — قاعدة بيانات + مصادقة + تخزين</span><span class="badge b-warn">غير متوافق</span></summary>
+    ${st(1, 'أنشئ مشروعًا', 'https://cloud.appwrite.io/', 'سجّل ← <b>Create project</b> ← <b>Add platform ← Web</b> وأدخل نطاق موقعك. خطة Free تكفي مشاريع صغيرة.', undoBox('<b>Settings ← Delete project</b>.'))}
+    ${st(2, 'أنشئ Database وCollections', 'https://cloud.appwrite.io/', 'من <b>Databases ← Create database</b> ثم Collection لكل كيان مع تحديد الصلاحيات (Permissions) لكل مجموعة.', undoBox('احذف المجموعة أو القاعدة من «⋮» ← Delete (تمسح بياناتها).'))}
+  </details>
+
+  <details class="fold">
+    <summary><span>🍃 MongoDB Atlas (M0) — قاعدة وثائق مجانية</span><span class="badge b-warn">غير متوافق · تحتاج خادمًا وسيطًا</span></summary>
+    ${st(1, 'أنشئ Cluster مجاني', 'https://cloud.mongodb.com/', 'سجّل ← <b>Create ← M0 Free</b> ← اختر المنطقة ← أنشئ مستخدم قاعدة بيانات. لا يصلح استدعاؤه مباشرة من المتصفح بأمان؛ يلزم خادم/وظيفة وسيطة (مثل Cloudflare Workers) بين التطبيق والقاعدة.', undoBox('<b>Cluster ← ⋮ ← Terminate</b> لحذفه (يمسح البيانات).'))}
+  </details>
+
+  <details class="fold">
+    <summary><span>☁️ Cloudflare D1 — SQLite على حافة Cloudflare</span><span class="badge b-warn">غير متوافق · يعمل مع Workers</span></summary>
+    ${st(1, 'أنشئ قاعدة D1', 'https://dash.cloudflare.com/?to=/:account/workers/d1', 'من <b>Workers &amp; Pages ← D1 SQL Database ← Create</b>. تحتاج Worker يستقبل طلبات التطبيق ويكتب في القاعدة، وهو مناسب إن كنت تستضيف على Cloudflare أصلًا.', undoBox('صفحة القاعدة ← <b>Settings ← Delete</b> (يمسح البيانات).'))}
+  </details>
+
+  <div class="card" style="border:2px solid var(--ok)">
+    <h3>💡 التوصية العملية باختصار</h3>
+    <p class="hint" style="margin:4px 0 0">لكل عميل <b>مشروع Firebase مستقل</b> (مجاني وبحصة مستقلة وبياناته عنده). لا تحوّل لبديل آخر إلا لو قررت إعادة كتابة التطبيق، وقتها أجهّز لك خطة ترحيل كاملة.</p>
+  </div>`;
+
+  const apply = () => { const pid = ($('#dPid').value || '').trim(); store.set('mc_db_pid', pid); renderDatabases(el); };
+  $('#dApply').onclick = apply;
+  $('#dClient').onchange = () => { const c = getClients().find(x => x.id === $('#dClient').value); if (c) { $('#dPid').value = c.projectId || ''; apply(); } };
 }
 
 function renderHosting(el) {
@@ -1031,7 +1218,7 @@ function renderMsgs(el) {
       .replace(/\{رابط الموقع\}/g, c.domain || '{رابط الموقع}')
       .replace(/\{بريد المالك\}/g, c.ownerEmail || '{بريد المالك}')
       .replace(/\{تاريخ الانتهاء\}/g, fmtD(addDays(c.start, st.dur - 1)))
-      .replace(/\{الأيام المتبقية\}/g, st.left >= 0 ? st.left : 0);
+      .replace(/\{الأيام المتبقية\}/g, st.perm ? 'دائم' : (st.left >= 0 ? st.left : 0));
   };
 
   const waNum = p => { let d = String(p || '').replace(/\D/g, ''); if (d.startsWith('00')) d = d.slice(2); if (/^09\d{8}$/.test(d)) d = '218' + d.slice(1); return d; };
