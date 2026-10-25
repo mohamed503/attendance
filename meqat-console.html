@@ -1,0 +1,1164 @@
+﻿<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>لوحة تسليم «مِيقَاتْ» — إدارة العملاء والباقات والتراخيص</title>
+<link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800;900&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#f0f5fc;--card:#fff;--surface:#f7faff;--ink:#0f2544;--mute:#64748b;--line:#e2e8f0;--pri:#1b7ee6;--pri-l:#e0effe;--navy:#0b3c7d;--ok:#10b981;--bad:#ef4444;--warn:#f59e0b;--grad:linear-gradient(135deg,#09397c,#1568c7 52%,#329ef2);--sh:0 4px 20px -2px rgba(15,37,68,.06);--sh-lg:0 16px 36px -6px rgba(15,37,68,.12)}
+[data-theme="dark"]{--bg:#0b1120;--card:#131c31;--surface:#19253f;--ink:#f1f5f9;--mute:#94a3b8;--line:#233252;--pri:#3898ff;--pri-l:rgba(56,152,255,.15);--navy:#93c5fd;--sh:0 6px 24px rgba(0,0,0,.35);--sh-lg:0 20px 44px rgba(0,0,0,.55)}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font-family:"Tajawal",Tahoma,Arial,sans-serif;font-size:15px;line-height:1.65}
+button,input,select,textarea{font:inherit}
+.top{background:var(--grad);color:#fff;padding:18px 20px 58px;border-radius:0 0 30px 30px;box-shadow:0 8px 28px rgba(11,60,125,.2)}
+.top-in{max-width:1180px;margin:0 auto;display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+.brand{display:flex;align-items:center;gap:12px}
+.logo{width:46px;height:46px;border-radius:14px;background:rgba(255,255,255,.16);border:1px solid rgba(255,255,255,.3);display:grid;place-items:center;font-weight:900;font-size:20px}
+.brand b{font-size:20px;display:block;font-weight:900}.brand small{opacity:.85;font-size:12.5px}
+.wrap{max-width:1180px;margin:0 auto;padding:0 16px 40px}
+.tabs{display:flex;gap:6px;background:var(--card);padding:8px;border-radius:20px;box-shadow:var(--sh-lg);margin:-36px 0 20px;position:relative;z-index:2;overflow-x:auto}
+.tab{padding:10px 18px;border-radius:13px;border:0;background:transparent;color:var(--mute);font-weight:800;cursor:pointer;white-space:nowrap}
+.tab:hover{background:var(--pri-l)}.tab.on{background:var(--grad);color:#fff}
+.card{background:var(--card);border:1px solid var(--line);border-radius:20px;padding:20px;margin-bottom:16px;box-shadow:var(--sh)}
+h2{margin:0 0 10px;font-size:18px;font-weight:800}h3{margin:0 0 8px;font-size:16px;font-weight:800}
+.muted{color:var(--mute)}.hint{font-size:13px;color:var(--mute);margin:4px 0 12px}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end}
+.field{display:flex;flex-direction:column;gap:5px;flex:1;min-width:150px}
+.field label{font-size:12.5px;color:var(--mute);font-weight:700}
+input,select,textarea{border:1.5px solid var(--line);border-radius:12px;padding:10px 12px;background:var(--surface);color:var(--ink);width:100%}
+input:focus,select:focus,textarea:focus{outline:none;border-color:var(--pri);box-shadow:0 0 0 3px rgba(27,126,230,.15)}
+.btn{display:inline-flex;align-items:center;gap:7px;border:0;background:var(--grad);color:#fff;padding:10px 18px;border-radius:12px;cursor:pointer;font-weight:800;font-size:14px}
+.btn:hover{filter:brightness(1.07)}.btn:disabled{opacity:.45;cursor:not-allowed}
+.btn.sec{background:var(--pri-l);color:var(--pri)}.btn.ok{background:linear-gradient(135deg,#059669,#10b981)}
+.btn.bad{background:linear-gradient(135deg,#dc2626,#ef4444)}.btn.sm{padding:6px 12px;font-size:12.5px;border-radius:10px}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:16px}
+.stat{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:14px;box-shadow:var(--sh)}
+.stat b{display:block;font-size:26px;font-weight:900}
+.stat span{color:var(--mute);font-size:12.5px;font-weight:700}
+.tw{overflow-x:auto;border:1px solid var(--line);border-radius:14px;background:var(--card)}
+table{width:100%;border-collapse:collapse;font-size:13.5px}
+th,td{padding:11px 13px;text-align:right;border-bottom:1px solid var(--line);white-space:nowrap}
+th{background:var(--surface);color:var(--navy);font-weight:800;font-size:12.5px}
+tbody tr:last-child td{border-bottom:0}
+.badge{display:inline-flex;align-items:center;gap:4px;padding:3px 10px;border-radius:9px;font-size:12px;font-weight:800}
+.b-ok{background:rgba(16,185,129,.14);color:#10b981}.b-bad{background:rgba(239,68,68,.14);color:#ef4444}
+.b-warn{background:rgba(245,158,11,.16);color:#f59e0b}.b-mute{background:var(--surface);color:var(--mute);border:1px solid var(--line)}
+.b-pri{background:var(--pri-l);color:var(--pri)}
+details.fold{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:14px 18px;margin-bottom:14px;box-shadow:var(--sh)}
+details.fold summary{list-style:none;cursor:pointer;font-weight:800;display:flex;justify-content:space-between;align-items:center}
+details.fold summary::-webkit-details-marker{display:none}
+details.fold[open] summary{margin-bottom:12px;padding-bottom:10px;border-bottom:1px solid var(--line)}
+.act-menu{position:relative;display:inline-block}
+.act-menu summary{list-style:none;cursor:pointer;padding:6px 12px;border-radius:10px;background:var(--surface);border:1px solid var(--line);font-weight:700;font-size:12.5px}
+.act-menu summary::-webkit-details-marker{display:none}
+.act-drop{position:absolute;left:0;top:calc(100% + 6px);background:var(--card);border:1px solid var(--line);border-radius:14px;padding:6px;box-shadow:var(--sh-lg);z-index:30;min-width:230px;display:flex;flex-direction:column;gap:2px}
+.act-drop button,.act-drop a{width:100%;text-align:right;background:transparent;border:0;color:var(--ink);padding:8px 12px;border-radius:10px;font-size:13px;font-weight:700;cursor:pointer;text-decoration:none;display:block}
+.act-drop button:hover,.act-drop a:hover{background:var(--pri-l)}
+pre.code{background:#0b1329;color:#dbeafe;padding:14px;border-radius:12px;overflow:auto;direction:ltr;text-align:left;font-size:12px;max-height:320px;border:1px solid #1e293b}
+.toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);background:#0f172a;color:#fff;padding:11px 22px;border-radius:14px;z-index:200;font-weight:700;box-shadow:0 12px 30px rgba(0,0,0,.35)}
+.toast.err{background:#dc2626}.toast.good{background:#059669}
+#themeBtn{background:rgba(255,255,255,.16);border:1px solid rgba(255,255,255,.3);color:#fff;border-radius:12px;padding:8px 12px;cursor:pointer;font-weight:700}
+.subtabs{display:inline-flex;gap:6px;background:var(--surface);padding:5px;border-radius:14px;border:1px solid var(--line);margin-bottom:14px;flex-wrap:wrap}
+.stab{padding:7px 14px;border-radius:10px;border:0;background:transparent;color:var(--mute);font-weight:700;cursor:pointer;font-size:13px}
+.stab.on{background:var(--card);color:var(--pri);box-shadow:var(--sh)}
+.chk{display:flex;align-items:center;gap:7px;font-weight:600}.chk input{width:auto}
+/* خطوات الاستضافة */
+.step-row{display:flex;gap:12px;padding:12px 0;border-bottom:1px dashed var(--line);align-items:flex-start}
+.step-row:last-child{border-bottom:0}
+.s-num{flex:0 0 30px;height:30px;border-radius:50%;background:var(--pri-l);color:var(--pri);font-weight:900;display:grid;place-items:center;font-size:14px}
+.s-body{flex:1;min-width:0}
+.s-body b{font-size:14.5px}
+.s-body .hint{margin:3px 0 0}
+.s-link{flex:0 0 auto}
+details.undo{margin-top:8px;background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.3);border-radius:12px;padding:8px 12px}
+details.undo summary{list-style:none;cursor:pointer;font-weight:800;font-size:12.5px;color:#b45309}
+details.undo summary::-webkit-details-marker{display:none}
+details.undo[open] summary{margin-bottom:5px}
+details.undo div{font-size:13px;color:var(--ink)}
+code.dir{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:2px 8px;font-size:12.5px;direction:ltr;display:inline-block}
+
+/* الدليل */
+#guide h2{color:var(--navy);margin-top:26px}
+#guide .gcard{background:var(--surface);border:1px solid var(--line);border-radius:16px;padding:16px;margin:10px 0}
+#guide ol li,#guide ul li{margin-bottom:6px}
+#guide .price{font-size:17px;font-weight:900;color:var(--pri)}
+#guidePrint{text-decoration:none}
+@media print{
+ .top,.tabs,.no-print,.toast{display:none!important}
+ body{background:#fff}
+ .wrap{max-width:none;padding:0}
+ #content{display:none!important}
+ #guide{display:block!important;padding:0}
+ #guide .gcard{border:1px solid #ccc;background:#f8f9fb}
+ #guide a{color:#0b3c7d}
+}
+</style>
+</head>
+<body>
+<div class="top"><div class="top-in">
+  <div class="brand"><div class="logo">م</div><div><b>لوحة تسليم «مِيقَاتْ»</b><small>إدارة العملاء · الباقات · مولّد النسخ والتراخيص · الدليل</small></div></div>
+  <div style="display:flex;gap:8px;align-items:center">
+    <button id="impBtn" class="btn sm sec" style="background:rgba(255,255,255,.16);color:#fff;border:1px solid rgba(255,255,255,.3)">📥 استيراد أرشيف</button>
+    <button id="expBtn" class="btn sm sec" style="background:rgba(255,255,255,.16);color:#fff;border:1px solid rgba(255,255,255,.3)">💾 تصدير أرشيف</button>
+    <button id="themeBtn">🌙</button>
+  </div>
+</div></div>
+<input type="file" id="impFile" accept=".json" style="display:none">
+<div class="wrap">
+  <div class="tabs" id="tabbar"></div>
+  <div id="content"></div>
+  <section id="guide" hidden></section>
+</div>
+<script>
+/* ============ أدوات أساسية ============ */
+const $ = (s, r = document) => r.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const pad = n => String(n).padStart(2, '0');
+const uid = () => Math.random().toString(36).slice(2, 10);
+const store = {
+  get(k, d) { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch { return d; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} }
+};
+const todayKey = () => { const d = new Date(); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; };
+const addDays = (key, n) => { const d = new Date(key + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
+const daysBetween = (a, b) => Math.round((Date.parse(b + 'T00:00:00Z') - Date.parse(a + 'T00:00:00Z')) / 86400000);
+const fmtD = k => k ? k.split('-').reverse().join('/') : '—';
+function toast(msg, type = '') { const t = document.createElement('div'); t.className = 'toast ' + type; t.textContent = msg; document.body.appendChild(t); setTimeout(() => t.remove(), 3200); }
+function download(content, name, type = 'text/html;charset=utf-8') { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([content], { type })); a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 800); }
+
+/* ============ الثيم ============ */
+if (localStorage.getItem('mc_theme') === 'dark') document.documentElement.setAttribute('data-theme', 'dark');
+const setTheme = () => { const on = document.documentElement.getAttribute('data-theme') === 'dark'; $('#themeBtn').textContent = on ? '☀️' : '🌙'; };
+$('#themeBtn').onclick = () => { const on = document.documentElement.getAttribute('data-theme') === 'dark'; if (on) document.documentElement.removeAttribute('data-theme'); else document.documentElement.setAttribute('data-theme', 'dark'); localStorage.setItem('mc_theme', on ? 'light' : 'dark'); setTheme(); };
+setTheme();
+
+/* ============ الباقات الافتراضية (3 باقات) ============ */
+const DEF_PLANS = [
+  { id: 'shop', name: 'باقة المحل', maxEmp: 10, trialDays: 14, price: '900 د.ل / سنة', payroll: false, tasks: false, tag: 'محلات ومكاتب صغيرة' },
+  { id: 'company', name: 'باقة الشركة', maxEmp: 50, trialDays: 15, price: '1,800 د.ل / سنة', payroll: true, tasks: true, tag: 'الأنسب لمعظم الشركات' },
+  { id: 'enterprise', name: 'باقة المنشأة', maxEmp: 0, trialDays: 7, price: '3,500 د.ل / سنة', payroll: true, tasks: true, tag: 'بلا حدود + دعم أولوية' }
+];
+const getPlans = () => store.get('mc_plans', DEF_PLANS);
+const planOf = id => getPlans().find(p => p.id === id) || DEF_PLANS[0];
+
+/* ============ العملاء (الأرشفة) ============ */
+const getClients = () => store.get('mc_clients', []);
+const saveClients = l => store.set('mc_clients', l);
+const fbConsole = (projectId, path) => projectId ? `https://console.firebase.google.com/project/${projectId}${path}` : '';
+
+function cliStatus(c) {
+  const p = planOf(c.planId);
+  const dur = c.kind === 'trial' ? (p.trialDays || 14) : (+c.durationDays || 365);
+  const left = (c.start ? dur - daysBetween(c.start, todayKey()) : 999);
+  return { left, dur, expired: left < 0, soon: left >= 0 && left <= 7, badge: left < 0 ? ['b-bad', 'منتهٍ'] : c.kind === 'trial' ? ['b-warn', `تجربة · ${left} يوم`] : ['b-ok', `مفعّل · ${left} يوم`] };
+}
+
+function quickLinks(c) {
+  const pid = c.projectId || '';
+  const items = [];
+  if (c.domain) items.push([c.domain, `🌐 موقع العميل`]);
+  if (pid) {
+    items.push([fbConsole(pid, '/authentication/users'), '🔐 مستخدمو Firebase']);
+    items.push([fbConsole(pid, '/firestore/data'), '🗄️ بيانات Firestore']);
+    items.push([fbConsole(pid, '/firestore/rules'), '📜 قواعد Firestore']);
+    items.push([fbConsole(pid, '/hosting'), '🚀 الاستضافة']);
+    items.push([fbConsole(pid, '/settings/general'), '⚙️ إعدادات المشروع']);
+  }
+  if (c.phone) items.push([`https://wa.me/${c.phone}`, '💬 واتساب جهة الاتصال']);
+  if (!items.length) return '<span class="muted">أضف رابط الموقع أو projectId لتظهر الروابط</span>';
+  return `<details class="act-menu"><summary>🔗 روابط سريعة</summary><div class="act-drop">${items.map(([u, t]) => `<a href="${esc(u)}" target="_blank" rel="noopener">${t}</a>`).join('')}</div></details>`;
+}
+
+function renderClients(el, sub = 'list') {
+  const list = getClients().slice().sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
+  const st = s => list.filter(c => (r => r.badge[0])(cliStatus(c)) === s).length;
+  const active = list.filter(c => !cliStatus(c).expired).length;
+  const expired = list.filter(c => cliStatus(c).expired).length;
+  const soon = list.filter(c => cliStatus(c).soon && !cliStatus(c).expired).length;
+  el.innerHTML = `
+  <div class="stats">
+    <div class="stat"><b>${list.length}</b><span>إجمالي العملاء</span></div>
+    <div class="stat"><b style="color:var(--ok)">${active}</b><span>اشتراك قائم</span></div>
+    <div class="stat"><b style="color:var(--warn)">${soon}</b><span>ينتهي خلال 7 أيام</span></div>
+    <div class="stat"><b style="color:var(--bad)">${expired}</b><span>منتهية — فرصة تجديد</span></div>
+  </div>
+  <details class="fold" ${list.length ? '' : 'open'}>
+    <summary><span>➕ إضافة عميل جديد</span><span class="badge b-pri">فتح النموذج</span></summary>
+    <div class="row">
+      <div class="field"><label>اسم الشركة / المحل *</label><input id="cCompany" placeholder="شركة النور"></div>
+      <div class="field"><label>جهة الاتصال</label><input id="cContact" placeholder="فلان الفلاني"></div>
+      <div class="field"><label>واتساب (دولي بدون +)</label><input id="cPhone" dir="ltr" placeholder="2189XXXXXXXX"></div>
+      <div class="field"><label>بريد المالك (للقواعد)</label><input id="cOwnerEmail" type="email" dir="ltr" placeholder="owner@example.com"></div>
+    </div>
+    <div class="row" style="margin-top:8px">
+      <div class="field"><label>الباقة</label><select id="cPlan">${getPlans().map(p => `<option value="${p.id}">${esc(p.name)} — ${esc(p.price)}</option>`).join('')}</select></div>
+      <div class="field"><label>نوع الاشتراك</label><select id="cKind"><option value="paid">مدفوع</option><option value="trial">تجريبي</option></select></div>
+      <div class="field"><label>تاريخ البداية</label><input id="cStart" type="date" value="${todayKey()}"></div>
+      <div class="field"><label>مدة الاشتراك (يوم) للمدفوع</label><input id="cDur" type="number" value="365" min="1"></div>
+    </div>
+    <div class="row" style="margin-top:8px">
+      <div class="field"><label>رابط الموقع (الدومين)</label><input id="cDomain" dir="ltr" placeholder="https://norour.netlify.app"></div>
+      <div class="field"><label>projectId من Firebase</label><input id="cProjectId" dir="ltr" placeholder="norour-app"></div>
+      <div class="field"><label>apiKey (اختياري)</label><input id="cApiKey" dir="ltr" placeholder="AIza..."></div>
+      <div class="field"><label>appId (اختياري)</label><input id="cAppId" dir="ltr" placeholder="1:123:web:abc"></div>
+    </div>
+    <div class="row" style="margin-top:8px">
+      <div class="field"><label>بيانات التواصل عند انتهاء اشتراك العميل</label><input id="cSupport" placeholder="واتساب: 0912345678 · للتجديد"></div>
+      <div class="field"><label>ملاحظات</label><input id="cNotes" placeholder="سدّد 50% والباقي عند التسليم"></div>
+      <button class="btn" id="cAdd">💾 حفظ العميل</button>
+    </div>
+  </details>
+  <div class="card">
+    <h2>📋 أرشيف العملاء (${list.length})</h2>
+    <div class="tw"><table>
+      <thead><tr><th>العميل</th><th>الباقة</th><th>النوع</th><th>الحالة</th><th>الانتهاء</th><th>الموقع</th><th>إجراءات</th></tr></thead>
+      <tbody>
+      ${list.map(c => { const s = cliStatus(c); const p = planOf(c.planId);
+        return `<tr>
+          <td><b>${esc(c.company)}</b>${c.contact ? `<div class="muted" style="font-size:12px">${esc(c.contact)}${c.phone ? ' · ' + esc(c.phone) : ''}</div>` : ''}</td>
+          <td><span class="badge b-pri">${esc(p.name)}</span></td>
+          <td>${c.kind === 'trial' ? '<span class="badge b-warn">تجربة</span>' : '<span class="badge b-mute">مدفوع</span>'}</td>
+          <td><span class="badge ${s.badge[0]}">${s.badge[1]}</span></td>
+          <td class="muted">${fmtD(addDays(c.start, s.dur - 1))}</td>
+          <td>${c.domain ? `<a href="${esc(c.domain)}" target="_blank" class="badge b-mute" style="text-decoration:none">فتح العرض ↗</a>` : '<span class="muted">—</span>'}</td>
+          <td><div style="display:flex;gap:6px;flex-wrap:wrap">
+            ${quickLinks(c)}
+            <button class="btn sm sec" data-cli="${esc(c.id)}" data-act="rulesGen">📜 القواعد</button>
+            <button class="btn sm sec" data-cli="${esc(c.id)}" data-act="licGen">🪪 توليد النسخة</button>
+            <button class="btn sm sec" data-cli="${esc(c.id)}" data-act="editCli">✏️ تعديل</button>
+            <button class="btn sm bad" data-cli="${esc(c.id)}" data-act="delCli">🗑️</button>
+          </div></td>
+        </tr>`; }).join('') || '<tr><td colspan="7" class="muted" style="text-align:center">لا يوجد عملاء بعد — أضف أول عميل من النموذج أعلاه</td></tr>'}
+      </tbody>
+    </table></div>
+    <p class="hint" style="margin-top:10px">💡 اضغط «🪪 توليد النسخة» للانتقال إلى مولّد ملف العميل الجاهز للرفع، و«📜 القواعد» لإخراج نص قواعد Firestore ببريد العميل.</p>
+  </div>`;
+  $('#cAdd').onclick = () => {
+    const g = id => $(id).value.trim();
+    const company = g('#cCompany'); if (!company) return toast('اكتب اسم الشركة', 'err');
+    const c = { id: uid(), company, contact: g('#cContact'), phone: g('#cPhone').replace(/\D/g, ''), ownerEmail: g('#cOwnerEmail').toLowerCase(), planId: $('#cPlan').value, kind: $('#cKind').value, start: $('#cStart').value || todayKey(), durationDays: +$('#cDur').value || 365, domain: g('#cDomain'), projectId: g('#cProjectId'), apiKey: g('#cApiKey'), appId: g('#cAppId'), support: g('#cSupport'), notes: g('#cNotes'), createdAt: todayKey() };
+    const l = getClients(); l.unshift(c); saveClients(l); toast('حُفظ العميل في الأرشيف ✅', 'good'); go('clients');
+  };
+  el.querySelectorAll('[data-cli]').forEach(b => b.onclick = () => {
+    const id = b.dataset.cli; const list2 = getClients(); const c = list2.find(x => x.id === id); if (!c) return;
+    const act = b.dataset.act;
+    if (act === 'delCli') { if (!confirm(`حذف «${c.company}» من الأرشيف؟`)) return; saveClients(list2.filter(x => x.id !== id)); toast('حُذف', 'good'); go('clients'); }
+    if (act === 'editCli') { editClient(c); }
+    if (act === 'rulesGen') { go('generator'); setTimeout(() => { const c = $('#rClient'); if (c) { c.value = id; c.dispatchEvent(new Event('change')); } }, 80); }
+    if (act === 'licGen') { go('generator'); setTimeout(() => { $('#gClient').value = id; genFile(); }, 50); }
+  });
+}
+
+function editClient(c) {
+  const sN = v => esc(v ?? '');
+  const overlay = document.createElement('div');
+  overlay.className = 'ov'; document.body.appendChild(overlay);
+  overlay.innerHTML = `<div style="position:fixed;inset:0;background:rgba(7,16,34,.6);display:grid;place-items:center;padding:16px;z-index:100">
+  <div style="background:var(--card);border:1px solid var(--line);border-radius:20px;max-width:760px;width:100%;max-height:90vh;overflow:auto;padding:22px">
+    <h3>✏️ تعديل بيانات: ${esc(c.company)}</h3>
+    <div class="row">
+      <div class="field"><label>الشركة</label><input id="mCompany" value="${sN(c.company)}"></div>
+      <div class="field"><label>جهة الاتصال</label><input id="mContact" value="${sN(c.contact)}"></div>
+      <div class="field"><label>واتساب</label><input id="mPhone" dir="ltr" value="${sN(c.phone)}"></div>
+      <div class="field"><label>بريد المالك</label><input id="mOwnerEmail" dir="ltr" value="${sN(c.ownerEmail)}"></div>
+    </div>
+    <div class="row" style="margin-top:10px">
+      <div class="field"><label>الباقة</label><select id="mPlan">${getPlans().map(p => `<option value="${p.id}" ${c.planId === p.id ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}</select></div>
+      <div class="field"><label>النوع</label><select id="mKind"><option value="paid" ${c.kind !== 'trial' ? 'selected' : ''}>مدفوع</option><option value="trial" ${c.kind === 'trial' ? 'selected' : ''}>تجريبي</option></select></div>
+      <div class="field"><label>البداية</label><input id="mStart" type="date" value="${sN(c.start)}"></div>
+      <div class="field"><label>المدة (يوم)</label><input id="mDur" type="number" value="${c.durationDays || 365}"></div>
+    </div>
+    <div class="row" style="margin-top:10px">
+      <div class="field"><label>الدومين</label><input id="mDomain" dir="ltr" value="${sN(c.domain)}"></div>
+      <div class="field"><label>projectId</label><input id="mPid" dir="ltr" value="${sN(c.projectId)}"></div>
+      <div class="field"><label>apiKey</label><input id="mKey" dir="ltr" value="${sN(c.apiKey)}"></div>
+      <div class="field"><label>appId</label><input id="mApp" dir="ltr" value="${sN(c.appId)}"></div>
+    </div>
+    <div class="row" style="margin-top:10px">
+      <div class="field"><label>تواصل الدعم (يظهر للعميل عند الانتهاء)</label><input id="mSupport" value="${sN(c.support)}"></div>
+      <div class="field"><label>ملاحظات</label><input id="mNotes" value="${sN(c.notes)}"></div>
+    </div>
+    <div style="display:flex;gap:10px;margin-top:16px;justify-content:flex-end">
+      <button class="btn sec" id="mCancel">إلغاء</button><button class="btn" id="mSave">💾 حفظ</button>
+    </div>
+  </div></div>`;
+  const close = () => overlay.remove();
+  $('#mCancel', overlay).onclick = close;
+  $('#mSave', overlay).onclick = () => {
+    const g = id => $('#id'.replace('id', 'mContact') && id, overlay).value.trim();
+    const list = getClients(); const i = list.findIndex(x => x.id === c.id); if (i < 0) return close();
+    const gv = (sel, overlay2) => { const e = overlay.querySelector(sel); return e ? e.value.trim() : ''; };
+    list[i] = { ...c, company: gv('#mCompany'), contact: gv('#mContact'), phone: gv('#mPhone').replace(/\D/g, ''), ownerEmail: gv('#mOwnerEmail').toLowerCase(), planId: gv('#mPlan'), kind: gv('#mKind'), start: gv('#mStart'), durationDays: +gv('#mDur') || 365, domain: gv('#mDomain'), projectId: gv('#mPid'), apiKey: gv('#mKey'), appId: gv('#mApp'), support: gv('#mSupport'), notes: gv('#mNotes') };
+    if (!list[i].company) return toast('الاسم مطلوب', 'err');
+    saveClients(list); close(); toast('تم التحديث ✅', 'good'); go('clients');
+  };
+}
+
+/* ============ استيراد / تصدير الأرشيف ============ */
+$('#expBtn').onclick = () => {
+  const data = { app: 'meqat-console', version: 1, exportedAt: todayKey(), clients: getClients(), plans: getPlans(), demo: store.get('mc_demo', null), tplUrl: store.get('mc_tpl', '') };
+  download(JSON.stringify(data, null, 2), `meqat_archive_${todayKey()}.json`, 'application/json');
+  toast('نُزّل ملف الأرشيف — احفظه في مكان آمن', 'good');
+};
+$('#impBtn').onclick = () => $('#impFile').click();
+$('#impFile').onchange = e => {
+  const f = e.target.files[0]; if (!f) return;
+  const r = new FileReader();
+  r.onload = () => {
+    try {
+      const d = JSON.parse(r.result);
+      if (d.app !== 'meqat-console') throw new Error('bad');
+      if (confirm(`استيراد أرشيف بتاريخ ${d.exportedAt || '?'} بـ ${(d.clients || []).length} عميل؟\nسيُدمَج مع الحالي (العميل بنفس الاسم ولا يُكرّر).`)) {
+        const cur = getClients();
+        (d.clients || []).forEach(c2 => { if (!cur.some(x => x.company === c2.company)) cur.push(c2); });
+        saveClients(cur);
+        if (d.plans && Array.isArray(d.plans) && d.plans.length) store.set('mc_plans', d.plans);
+        if (d.demo) store.set('mc_demo', d.demo);
+        if (d.tplUrl) store.set('mc_tpl', d.tplUrl);
+        toast('استُورد الأرشيف ودمج ✅', 'good'); go('clients');
+      }
+    } catch { toast('ملف غير صالح', 'err'); }
+  };
+  r.readAsText(f);
+  e.target.value = '';
+};
+
+
+/* ============ نظام التبويبات ============ */
+const TABS = [['clients', '👥 العملاء والأرشيف'], ['generator', '🛠️ مولّد النسخ والقواعد'], ['plans', '🏷️ الباقات الثلاث'], ['demo', '🧪 الديمو والبذر'], ['msgs', '💬 رسائل واتساب'], ['hosting', '🌐 الاستضافة خطوة بخطوة'], ['guide', '📘 الدليل الاحترافي']];
+let CUR = 'clients';
+function go(t) {
+  CUR = t;
+  $('#tabbar').innerHTML = TABS.map(([k, n]) => `<button class="tab ${CUR === k ? 'on' : ''}" data-t="${k}">${n}</button>`).join('');
+  $('#tabbar').querySelectorAll('button').forEach(b => b.onclick = () => go(b.dataset.t));
+  const c = $('#content'), g = $('#guide');
+  if (t === 'guide') { c.hidden = true; g.hidden = false; window.scrollTo(0, 0); return; }
+  g.hidden = true; c.hidden = false; window.scrollTo(0, 0);
+  if (t === 'clients') renderClients(c);
+  if (t === 'generator') renderGen(c);
+  if (t === 'plans') renderPlans(c);
+  if (t === 'demo') renderDemo(c);
+  if (t === 'msgs') renderMsgs(c);
+  if (t === 'hosting') renderHosting(c);
+}
+
+/* ============ الباقات ============ */
+function renderPlans(el) {
+  const ps = getPlans();
+  el.innerHTML = `
+  <div class="card">
+    <h2>🏷️ الباقات الثلاث (قابلة للتعديل)</h2>
+    <p class="hint">تُطبَّق هذه الحدود تلقائياً على نسخة كل عميل عند التوليد: حد الموظفين وميزة الرواتب وميزة المهام. عدِّل الأسعار والحدود ثم اضغط «حفظ». القيمة «0» في حد الموظفين تعني بلا حدود.</p>
+    <div class="tw"><table>
+      <thead><tr><th>الباقة</th><th>الفئة المستهدفة</th><th>حد الموظفين</th><th>أيام التجربة</th><th>السعر</th><th>الرواتب</th><th>المهام</th></tr></thead>
+      <tbody>
+      ${ps.map(p => `<tr>
+        <td><input id="pName_${p.id}" value="${esc(p.name)}" style="width:150px;font-weight:800"></td>
+        <td><input id="pTag_${p.id}" value="${esc(p.tag)}" style="width:200px"></td>
+        <td><input id="pMax_${p.id}" type="number" min="0" value="${p.maxEmp}" style="width:90px"></td>
+        <td><input id="pTrial_${p.id}" type="number" min="0" value="${p.trialDays}" style="width:90px"></td>
+        <td><input id="pPrice_${p.id}" value="${esc(p.price)}" style="width:150px"></td>
+        <td><input id="pPay_${p.id}" type="checkbox" ${p.payroll ? 'checked' : ''}></td>
+        <td><input id="pTask_${p.id}" type="checkbox" ${p.tasks ? 'checked' : ''}></td>
+      </tr>`).join('')}
+      </tbody>
+    </table></div>
+    <div class="row" style="margin-top:14px">
+      <button class="btn" id="pSave">💾 حفظ الباقات</button>
+      <button class="btn sec" id="pReset">↩️ استعادة الافتراضية</button>
+    </div>
+  </div>`;
+  $('#pSave').onclick = () => {
+    const ps2 = getPlans().map(p => ({
+      id: p.id,
+      name: $(`#pName_${p.id}`).value.trim() || p.name,
+      tag: $(`#pTag_${p.id}`).value.trim(),
+      maxEmp: Math.max(0, +$(`#pMax_${p.id}`).value || 0),
+      trialDays: Math.max(0, +$(`#pTrial_${p.id}`).value || 0),
+      price: $(`#pPrice_${p.id}`).value.trim(),
+      payroll: $(`#pPay_${p.id}`).checked,
+      tasks: $(`#pTask_${p.id}`).checked
+    }));
+    store.set('mc_plans', ps2); toast('حُفظت الباقات ✅', 'good'); go('plans');
+  };
+  $('#pReset').onclick = () => { store.set('mc_plans', DEF_PLANS); toast('رُجّعت الافتراضية', 'good'); go('plans'); };
+}
+
+/* ============ مولّد النسخ والقواعد ============ */
+function licFor(c) {
+  const p = planOf(c.planId);
+  const dur = c.kind === 'trial' ? (p.trialDays || 14) : (+c.durationDays || 365);
+  const start = c.start || todayKey();
+  const isDemo = c.kind === 'demo';
+  const demo = store.get('mc_demo', {});
+  const lic = {
+    plan: isDemo ? 'demo' : p.id,
+    planName: isDemo ? 'نسخة عرض' : p.name,
+    status: isDemo ? 'demo' : (c.kind === 'trial' ? 'trial' : 'paid'),
+    company: c.company || '',
+    maxEmployees: isDemo ? 12 : (p.maxEmp || 0),
+    features: isDemo ? { payroll: true, tasks: true } : { payroll: !!p.payroll, tasks: !!p.tasks },
+    issued: c.createdAt || start,
+    start,
+    expires: addDays(start, Math.max(1, dur) - 1),
+    support: c.support || ''
+  };
+  if (isDemo && demo.email && demo.pass) lic.demoCreds = { email: demo.email, pass: demo.pass };
+  return lic;
+}
+
+function rulesText(email0) {
+  const email = String(email0 || '').trim().toLowerCase().replace(/[^a-z0-9@._+\-]/g, '');
+  return `rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // الإدارة: البريد المكتوب هنا يبقى «المالك» دائماً (للاسترجاع) + أي مشرف مضاف في /admins
+    function isAdmin() {
+      return request.auth != null
+        && (request.auth.token.email == '${email}'
+            || exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+            || (request.auth.token.get('email_verified', false) == true
+                && exists(/databases/$(database)/documents/admins/$(request.auth.token.email))));
+    }
+
+    // صاحب الرابط: هوية مجهولة مرتبطة بوصف الموظف — تمنع نسخ att_dev أو انتحال الجهاز
+    function ownerOnly(empId) {
+      return request.auth != null
+        && get(/databases/$(database)/documents/employees/$(empId)).data.get('uid', null) == request.auth.uid;
+    }
+
+    match /admins/{uid} {
+      allow read, write: if isAdmin();
+    }
+
+    match /locations/{id} {
+      allow read: if request.auth != null;
+      allow write: if isAdmin();
+    }
+    match /schedules/{id} {
+      allow read: if request.auth != null;
+      allow write: if isAdmin();
+    }
+    match /holidays/{id} {
+      allow read: if request.auth != null;
+      allow write: if isAdmin();
+    }
+    match /settings/{id} {
+      allow read: if request.auth != null;
+      allow write: if isAdmin();
+    }
+    match /taskTypes/{id} {
+      allow read: if request.auth != null;
+      allow write: if isAdmin();
+    }
+
+    match /employees/{empId} {
+      allow get: if isAdmin() || ownerOnly(empId) || unclaimed();
+      allow list, create, delete: if isAdmin();
+      allow update: if isAdmin() || claimDevice() || bindUid() || rebindDevice() || punchState();
+
+      // الرابط لم يُربط بهوية بعد: يمكن قراءته لأجل ربطه
+      function unclaimed() {
+        return request.auth != null
+          && resource.data.get('uid', null) == null
+          && resource.data.active == true;
+      }
+
+      // أول فتح للرابط: ربط الجهاز + الهوية معاً
+      function claimDevice() {
+        return request.auth != null
+          && resource.data.get('deviceId', null) == null
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['deviceId', 'uid'])
+          && request.resource.data.uid == request.auth.uid;
+      }
+
+      // ترقية رابط قديم (جهاز فقط) إلى نظام الهوية
+      function bindUid() {
+        return request.auth != null
+          && resource.data.get('uid', null) == null
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['uid'])
+          && request.resource.data.uid == request.auth.uid;
+      }
+
+      // استعادة ربط نفس الجهاز (مثلاً عند مسح جلسة Auth المجهولة مع بقاء رمز الجهاز أو العكس)
+      function rebindDevice() {
+        return request.auth != null
+          && resource.data.active == true
+          && resource.data.get('deviceId', null) != null
+          && request.resource.data.get('deviceId', null) == resource.data.get('deviceId', null)
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['uid'])
+          && request.resource.data.uid == request.auth.uid;
+      }
+
+      // تحديث حالة الموظف مسموح فقط لصاحب الهوية ومع إنشاء سجل في نفس الدفعة (batch)
+      function punchState() {
+        let a = request.resource.data;
+        return ownerOnly(empId)
+          && resource.data.active == true
+          && a.diff(resource.data).affectedKeys().hasOnly(['state', 'lastAt', 'lastRecId'])
+          && a.state in ['in', 'out']
+          && a.lastAt == request.time
+          && a.lastRecId is string
+          && !exists(/databases/$(database)/documents/employees/$(empId)/records/$(a.lastRecId))
+          && existsAfter(/databases/$(database)/documents/employees/$(empId)/records/$(a.lastRecId));
+      }
+
+      match /records/{recId} {
+        allow read: if isAdmin() || ownerOnly(empId);
+        allow create: if isAdmin() || validRecord();
+        allow update, delete: if isAdmin();
+
+        function validRecord() {
+          let d = request.resource.data;
+          let e = get(/databases/$(database)/documents/employees/$(empId)).data;
+          let a = getAfter(/databases/$(database)/documents/employees/$(empId)).data;
+          let l = get(/databases/$(database)/documents/locations/$(d.locationId)).data;
+          let st = e.get('state', null);
+          let last = e.get('lastAt', null);
+          let dx = (d.lng - l.lng) * l.kx;
+          let dy = (d.lat - l.lat) * l.ky;
+          return request.auth != null
+            && e.get('uid', null) == request.auth.uid
+            && d.keys().hasOnly(['type','time','lat','lng','accuracy','distance','locationId','locationName','empName','deviceId'])
+            && d.keys().hasAll(['type','time','lat','lng','accuracy','distance','locationId','locationName','empName','deviceId'])
+            && d.time == request.time
+            && d.type in ['in', 'out']
+            && e.active == true
+            && d.empName == e.name
+            && d.deviceId == e.get('deviceId', null)
+            && d.lat is number && d.lng is number
+            && d.lat >= -90 && d.lat <= 90 && d.lng >= -180 && d.lng <= 180
+            && d.accuracy is number && d.accuracy >= 0 && d.accuracy <= 250
+            && d.distance is number
+            && d.locationId is string && d.locationName == l.name
+            && (!('locs' in e) || e.locs.size() == 0 || d.locationId in e.locs)
+            && l.get('active', true) != false
+            && math.sqrt(dx * dx + dy * dy) <= l.radius + 10
+            && a.get('lastRecId', null) == recId && a.get('state', null) == d.type
+            && (last == null || request.time.toMillis() - last.toMillis() >= 20000)
+            && ((d.type == 'in' && (st == null || st == 'out' || (last != null && request.time.toMillis() - last.toMillis() >= 50400000)))
+              || (d.type == 'out' && (st == null || st == 'in')));
+        }
+      }
+
+      // طلبات الإجازة والتصحيح — القراءة والكتابة لصاحب الهوية أو الإدارة فقط
+      match /requests/{rid} {
+        allow read: if isAdmin() || ownerOnly(empId);
+        allow create: if isAdmin() || validRequest();
+        allow update: if isAdmin();
+        allow delete: if isAdmin() || (ownerOnly(empId) && resource.data.status == 'pending');
+
+        function validRequest() {
+          let d = request.resource.data;
+          let e = get(/databases/$(database)/documents/employees/$(empId)).data;
+          return request.auth != null
+            && e.get('uid', null) == request.auth.uid
+            && d.keys().hasOnly(['kind','type','typeName','from','to','fixIn','fixOut','note','status','empName','createdAt','taskId','taskName','qty'])
+            && d.keys().hasAll(['kind','from','to','status','empName','createdAt'])
+            && e.active == true
+            && d.status == 'pending'
+            && d.kind in ['leave', 'fix', 'task']
+            && d.empName == e.name
+            && d.createdAt == request.time
+            && d.from is string && d.from.matches('[0-9]{4}-[0-9]{2}-[0-9]{2}')
+            && d.to is string && d.to.matches('[0-9]{4}-[0-9]{2}-[0-9]{2}')
+            && d.from <= d.to
+            && d.get('note', '') is string && d.get('note', '').size() <= 300
+            && d.get('type', '') is string && d.get('type', '').size() <= 40
+            && d.get('typeName', '') is string && d.get('typeName', '').size() <= 60
+            && d.get('fixIn', '') is string && d.get('fixIn', '').size() <= 5
+            && d.get('fixOut', '') is string && d.get('fixOut', '').size() <= 5
+            && (d.kind != 'task' || (e.get('empType', 'staff') == 'task'
+                && d.get('taskId', '') is string && d.get('taskId', '').size() > 0 && d.get('taskId', '').size() <= 40
+                && exists(/databases/$(database)/documents/taskTypes/$(d.get('taskId', '')))
+                && get(/databases/$(database)/documents/taskTypes/$(d.get('taskId', ''))).data.name == d.get('taskName', '')
+                && get(/databases/$(database)/documents/taskTypes/$(d.get('taskId', ''))).data.get('active', true) != false
+                && d.get('taskName', '').size() <= 80
+                && d.get('qty', 0) is number && d.get('qty', 0) >= 1 && d.get('qty', 0) <= 500));
+        }
+      }
+    }
+
+    match /{path=**}/records/{recId} {
+      allow read: if isAdmin();
+    }
+    match /{path=**}/requests/{rid} {
+      allow read: if isAdmin();
+    }
+  }
+}`;
+}
+
+function cfgPreview(c) {
+  const senderM = /1:([0-9]+):web:/.exec(c.appId || '');
+  return `const firebaseConfig = ${JSON.stringify({
+    apiKey: c.apiKey || 'YOUR_API_KEY',
+    authDomain: (c.projectId || 'PROJECT-ID') + '.firebaseapp.com',
+    projectId: c.projectId || 'PROJECT-ID',
+    storageBucket: (c.projectId || 'PROJECT-ID') + '.firebasestorage.app',
+    messagingSenderId: senderM ? senderM[1] : 'SENDER-ID',
+    appId: c.appId || 'YOUR_APP_ID'
+  }, null, 2)};`;
+}
+
+function renderGen(el) {
+  const list = getClients();
+  const tplUrl = store.get('mc_tpl', '');
+  el.innerHTML = `
+  <div class="card">
+    <h2>🪪 مولّد نسخة العميل الجاهزة للرفع</h2>
+    <p class="hint">يجلب قالب نظامك من الموقع المنشور، ويستبدل بيانات Firebase ببيانات العميل، ويضمّن الترخيص (الباقة وحد الموظفين وتاريخ الانتهاء) — ثم يعطيك ملف <b>index.html</b> جاهزاً لرفعه للعميل.</p>
+    <div class="row">
+      <div class="field" style="min-width:230px"><label>العميل</label>
+        <select id="gClient"><option value="">— اختر عميلاً من الأرشيف —</option>${list.map(c => `<option value="${esc(c.id)}">${esc(c.company)}${cliStatus(c).expired ? ' (منتهي)' : ''}</option>`).join('')}</select></div>
+      <div class="field" style="min-width:260px"><label>رابط قالب النظام المنشور (موقعك)</label><input id="tplUrl" dir="ltr" placeholder="https://meqat-app.netlify.app/" value="${esc(tplUrl)}"></div>
+      <button class="btn" id="gRun">⚙️ توليد الملف وتنزيله</button>
+    </div>
+    <p class="hint">💡 استضافة مجانية سريعة للتسليم: <b>Netlify Drop</b> (اسحب الملف وأفلته) أو Firebase Hosting.</p>
+    <div id="gOut" hidden></div>
+  </div>
+
+  <div class="card">
+    <h2>📜 قواعد Firestore (نسخة العميل)</h2>
+    <div class="row">
+      <div class="field" style="min-width:230px"><label>انطلق من عميل</label>
+        <select id="rClient"><option value="">— أو اكتب البريد يدوياً —</option>${list.map(c => `<option value="${esc(c.id)}">${esc(c.company)}</option>`).join('')}</select></div>
+      <div class="field" style="min-width:230px"><label>بريد المالك (المشرف)</label><input id="rEmail" type="email" dir="ltr" placeholder="owner@example.com"></div>
+      <button class="btn sec" id="rCopy">📋 نسخ القواعد</button>
+      <button class="btn sec" id="rDl">⬇️ تنزيل firestore.rules.txt</button>
+    </div>
+    <pre class="code" id="rBox" style="margin-top:12px">اختر عميلاً أو اكتب بريد المالك ↑</pre>
+  </div>
+
+  <div class="card">
+    <h2>⚡ وصول سريع للكود (تعديل الإيميل / الإعدادات يدوياً)</h2>
+    <p class="hint">لو احتجت تعديل نسخة عميلٍ قديمة بنفسك — هذا هو بلوك <span dir="ltr">firebaseConfig</span> الذي يجب أن يكون داخل ملف عميلك. انسخه واستبدل به البلوك الموجود في ملف الـ index الخاص به.</p>
+    <div class="row">
+      <div class="field" style="min-width:230px"><label>العميل</label>
+        <select id="qClient"><option value="">— اختر —</option>${list.map(c => `<option value="${esc(c.id)}">${esc(c.company)}</option>`).join('')}</select></div>
+      <button class="btn sec" id="qCopy">📋 نسخ البلوك</button>
+    </div>
+    <pre class="code" id="qBox" style="margin-top:12px">—</pre>
+  </div>`;
+
+  $('#gRun').onclick = genFile;
+
+  $('#rClient').onchange = () => { const c = getClients().find(x => x.id === $('#rClient').value); if (c) $('#rEmail').value = c.ownerEmail || ''; $('#rClient').blur(); };
+  $('#rEmail').oninput = () => { $('#rBox').textContent = rulesText($('#rEmail').value); };
+  $('#rCopy').onclick = () => { const t = rulesText($('#rEmail').value); navigator.clipboard.writeText(t).then(() => toast('نُسخت القواعد — الصقها في Firestore ← Rules ← Publish', 'good')).catch(() => toast('انسخها يدوياً من المربع', 'err')); };
+  $('#rDl').onclick = () => { const cId = $('#rClient').value; const c = getClients().find(x => x.id === cId); download(rulesText($('#rEmail').value), c ? `firestore.rules_${c.company}.txt` : 'firestore.rules.txt', 'text/plain;charset=utf-8'); };
+  $('#rEmail').value = ''; $('#rBox').textContent = rulesText('');
+
+  $('#qClient').onchange = () => { const c = getClients().find(x => x.id === $('#qClient').value); $('#qBox').textContent = c ? cfgPreview(c) : '—'; };
+  $('#qCopy').onclick = () => { navigator.clipboard.writeText($('#qBox').textContent).then(() => toast('نُسخ البلوك', 'good')).catch(() => {}); };
+}
+
+async function genFile() {
+  const sel = $('#gClient'), out = $('#gOut'), btn = $('#gRun');
+  const c = getClients().find(x => x.id === sel.value);
+  if (!c) return toast('اختر العميل أولاً', 'err');
+  if (c.kind !== 'demo' && (!c.apiKey || !c.projectId || !c.appId)) return toast('بيانات Firebase ناقصة لهذا العميل — عدّله وأدخل apiKey و projectId و appId', 'err');
+  const isDemo = c.kind === 'demo';
+  let url = isDemo ? '' : $('#tplUrl').value.trim();
+  if (isDemo) url = $('#dTplUrl') ? $('#dTplUrl').value.trim() : '';
+  if (!/^https?:\/\//.test(url)) return toast('أدخل رابط قالب النظام المنشور (يبدأ بـ https)', 'err');
+  store.set('mc_tpl', url);
+  btn.disabled = true; const oldTxt = btn.textContent; btn.textContent = '⏳ جارٍ الجلب والمعالجة…';
+  try {
+    const r = await fetch(url, { cache: 'no-store' });
+    if (!r.ok) throw new Error('رَفَض السيرفر الطلب (HTTP ' + r.status + ') — تأكد أن الرابط يشير لملف index.html المنشور');
+    let html = await r.text();
+    if (html.length < 5000) throw new Error('القالب صغير جداً — هذا ليس ملف النظام، تأكد من الرابط');
+    const i = html.indexOf('const firebaseConfig');
+    if (i < 0) throw new Error('لم أجد firebaseConfig داخل القالب — القالب ليس ملف النظام');
+    const j = html.indexOf('};', i);
+    if (j < 0) throw new Error('بلوك الإعدادات غير مكتمل في القالب');
+    const senderM = /1:([0-9]+):web:/.exec(c.appId || '');
+    const cfgObj = { apiKey: c.apiKey || 'YOUR_API_KEY', authDomain: c.projectId + '.firebaseapp.com', projectId: c.projectId, storageBucket: c.projectId + '.firebasestorage.app', messagingSenderId: senderM ? senderM[1] : '', appId: c.appId || 'YOUR_APP_ID' };
+    html = html.slice(0, i) + 'const firebaseConfig = ' + JSON.stringify(cfgObj, null, 2) + ';\n' + html.slice(j + 2);
+    const si = html.indexOf('<script type="module">');
+    if (si < 0) throw new Error('لم أجد وسم السكربت الرئيسي في القالب');
+    const lic = licFor(c);
+    html = html.slice(0, si) + '<script>window.MEQAT_LICENSE = ' + JSON.stringify(lic, null, 1) + ';</scr' + 'ipt>\n' + html.slice(si);
+    const fname = (isDemo ? 'demo_' : 'index_') + String(c.company || 'client').replace(/[\\/:*?"<>| ]+/g, '_') + '.html';
+    download(html, fname);
+    const p = planOf(c.planId);
+    const s = licFor(c);
+    out.hidden = false;
+    out.innerHTML = `<div class="card" style="border:2px solid var(--ok)">
+      <h3 style="color:var(--ok)">✅ وُلِّدت نسخة «${esc(c.company)}» ونُزِّل الملف: <span dir="ltr">${esc(fname)}</span></h3>
+      <div class="tw"><table><thead><tr><th>البند</th><th>القيمة</th></tr></thead><tbody>
+        <tr><td>الباقة</td><td><b>${esc(s.planName)}</b></td></tr>
+        <tr><td>النوع</td><td>${s.status === 'trial' ? 'تجربة' : s.status === 'demo' ? 'ديمو' : 'مدفوع'}</td></tr>
+        <tr><td>حد الموظفين</td><td>${s.maxEmployees || 'بلا حدود'}</td></tr>
+        <tr><td>الرواتب / المهام</td><td>${s.features.payroll ? '✅' : '❌'} / ${s.features.tasks ? '✅' : '❌'}</td></tr>
+        <tr><td>تنتهي في</td><td>${fmtD(s.expires)}</td></tr>
+      </tbody></table></div>
+      <p class="hint" style="margin-top:10px"><b>ما بعد التوليد — خطوات التسليم:</b><br>
+      1️⃣ انشر مشروع Firebase للعميل (Auth ← فعّل Email + Anonymous، أنشئ Firestore).<br>
+      2️⃣ انشر القواعد: تبويب «القواعد» في هذه اللوحة بنفس بريد المالك.<br>
+      3️⃣ ارفع الملف على الاستضافة (Netlify Drop: اسحب الملف وأفلته).<br>
+      4️⃣ افتح موقع العميل ← أكمل الإعداد ← أنشئ المشرف ببريد المالك نفسه.<br>
+      5️⃣ أضف المواقع والأنماط ثم أرسل روابط الموظفين عبر واتساب من الأرشيف.</p>
+    </div>`;
+    toast('تولّدت نسخة العميل ✅', 'good');
+  } catch (e) {
+    out.hidden = false;
+    out.innerHTML = `<div class="card" style="border:2px solid var(--bad)"><b>❌ تعذّر التوليد:</b> ${esc(e.message || String(e))}</div>`;
+  }
+  btn.disabled = false; btn.textContent = oldTxt;
+}
+
+
+/* ============ الديمو والبذر ============ */
+const getDemo = () => store.get('mc_demo', { apiKey: '', projectId: '', appId: '', email: '', pass: '', org: 'نسخة عرض ميقات' });
+
+function renderDemo(el) {
+  const d = getDemo();
+  el.innerHTML = `
+  <div class="card">
+    <h2>🧪 نظام النسخة التجريبية (الديمو)</h2>
+    <p class="hint">فكرة الديمو: <b>مشروع Firebase منفصل باسم meqat-demo</b> تملؤه ببيانات وهمية جذابة، وتُنشر رابطه لأي عميل محتمل ليجرب النظام فوراً بضغطة زر ودون تسجيل. بعد الإعجاب يُوقَّع العقد وتولّد للعميل نسخته الخاصة.</p>
+    <div class="row">
+      <div class="field"><label>apiKey الخاص بالديمو</label><input id="dKey" dir="ltr" value="${esc(d.apiKey)}" placeholder="AIza..."></div>
+      <div class="field"><label>projectId للديمو</label><input id="dPid" dir="ltr" value="${esc(d.projectId)}" placeholder="meqat-demo"></div>
+      <div class="field"><label>appId للديمو</label><input id="dApp" dir="ltr" value="${esc(d.appId)}" placeholder="1:123:web:abc"></div>
+    </div>
+    <div class="row" style="margin-top:10px">
+      <div class="field"><label>بريد دخول الديمو (حساب مشرف تجريبي)</label><input id="dEmail" type="email" dir="ltr" value="${esc(d.email)}" placeholder="demo@meqat.app"></div>
+      <div class="field"><label>كلمة السر</label><input id="dPass" dir="ltr" value="${esc(d.pass)}" placeholder="demo1234"></div>
+      <div class="field"><label>اسم النظام في الديمو</label><input id="dOrg" value="${esc(d.org)}"></div>
+      <button class="btn" id="dSave">💾 حفظ إعدادات الديمو</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>🌱 توليد نسخة الديمو + بذر البيانات</h2>
+    <ol class="hint" style="margin:6px 12px 14px 0">
+      <li>أنشئ مشروع Firebase باسم <b dir="ltr">meqat-demo</b> وفعّل فيه Email/Password + Anonymous وأنشئ Firestore.</li>
+      <li>من Authentication ← Users أضف مستخدماً بنفس بريد وكلمة السر أعلاه (هذا المشرف التجريبي).</li>
+      <li>املأ الإعدادات أعلاه واحفظها، ثم اضغط «🧬 توليد نسخة الديمو» — سيُنزَّل ملف <b dir="ltr">demo_نسخة_عرض.html</b> وفيه زر «الدخول إلى نسخة العرض بضغطة».</li>
+      <li>ارفع ملف الديمو على استضافة ثانية (مثال: <span dir="ltr">meqat-demo.netlify.app</span>).</li>
+      <li>افتح <b>أداة البذر</b> أدناه، وأدخل إعدادات الديمو وبريد المشرف وكلمة السر، ثم اضغط «🚀 البذر الكامل» — تُنشئ الإعدادات والمواقع و12 موظفاً وسجلات 30 يوماً وطلبات جاهزة.</li>
+      <li>أرسل الرابط إلى عميلك المحتمل 🎉 — وتنتهي نسخة العرض تلقائياً بعد مدتها المحددة.</li>
+    </ol>
+    <div class="row">
+      <button class="btn ok" id="dGen">🧬 توليد نسخة الديمو</button>
+      <button class="btn sec" id="dSeed">🌱 فتح أداة البذر (meqat-seed.html)</button>
+      <span class="muted" style="align-self:center;font-size:13px">ضع ملف meqat-seed.html بجوار هذه اللوحة قبل الرفع.</span>
+    </div>
+    <div class="row" style="margin-top:10px">
+      <div class="field"><label>رابط قالب النظام (يستخدمه التوليد إذا كان شاغراً في الأعلى)</label><input id="dTplUrl" dir="ltr" value="${esc(store.get('mc_tpl', ''))}" placeholder="https://meqat-app.netlify.app/"></div>
+    </div>
+    <div id="dOut" hidden></div>
+  </div>`;
+
+  $('#dSave').onclick = () => {
+    store.set('mc_demo', { apiKey: $('#dKey').value.trim(), projectId: $('#dPid').value.trim(), appId: $('#dApp').value.trim(), email: $('#dEmail').value.trim(), pass: $('#dPass').value, org: $('#dOrg').value.trim() || 'نسخة عرض ميقات' });
+    toast('حُفظت إعدادات الديمو ✅', 'good');
+  };
+  $('#dSeed').onclick = () => window.open('meqat-seed.html', '_blank');
+  $('#dGen').onclick = () => {
+    const dd = getDemo();
+    if (!dd.apiKey || !dd.projectId || !dd.appId) return toast('املأ إعدادات الديمو واحفظها أولاً', 'err');
+    const fake = { id: 'demo-const', company: dd.org, kind: 'demo', start: todayKey(), durationDays: 30, apiKey: dd.apiKey, projectId: dd.projectId, appId: dd.appId, planId: 'company' };
+    genFileFor(fake, $('#dTplUrl').value.trim(), $('#dOut'));
+  };
+}
+
+/* نسخة genFile تعمل على عميلٍ حُمّل يدوياً (للديمو) */
+async function genFileFor(c, url, out) {
+  if (!/^https?:\/\//.test(url)) { out.hidden = false; out.innerHTML = `<div class="card" style="border:2px solid var(--bad)"><b>❌</b> أدخل رابط القالب المنشور أولاً</div>`; return; }
+  out.hidden = false; out.innerHTML = `<div class="card muted">⏳ جارٍ الجلب والمعالجة…</div>`;
+  try {
+    const r = await fetch(url, { cache: 'no-store' });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    let html = await r.text();
+    if (html.length < 5000) throw new Error('القالب صغير جداً');
+    const i = html.indexOf('const firebaseConfig');
+    if (i < 0) throw new Error('قالب غير صالح');
+    const j = html.indexOf('};', i);
+    const senderM = /1:([0-9]+):web:/.exec(c.appId || '');
+    html = html.slice(0, i) + 'const firebaseConfig = ' + JSON.stringify({ apiKey: c.apiKey, authDomain: c.projectId + '.firebaseapp.com', projectId: c.projectId, storageBucket: c.projectId + '.firebasestorage.app', messagingSenderId: senderM ? senderM[1] : '', appId: c.appId }, null, 2) + ';\n' + html.slice(j + 2);
+    const si = html.indexOf('<script type="module">');
+    const lic = licFor(c);
+    if (si < 0) throw new Error('قالب غير صالح');
+    html = html.slice(0, si) + '<script>window.MEQAT_LICENSE = ' + JSON.stringify(lic, null, 1) + ';</scr' + 'ipt>\n' + html.slice(si);
+    download(html, 'demo_' + String(c.company).replace(/[\\/:*?"<>| ]+/g, '_') + '.html');
+    out.innerHTML = `<div class="card" style="border:2px solid var(--ok)"><b style="color:var(--ok)">✅ نزلت ملف الديمو</b> — الخطوات 3-6 أعلاه.</div>`;
+    toast('نزلت نسخة الديمو ✅', 'good');
+  } catch (e) { out.innerHTML = `<div class="card" style="border:2px solid var(--bad)"><b>❌:</b> ${esc(e.message || String(e))}</div>`; }
+}
+
+function renderHosting(el) {
+  const list = getClients();
+  const st = (n, title, url, desc, undo) => `<div class="step-row">
+    <div class="s-num">${n}</div>
+    <div class="s-body"><b>${title}</b><div class="hint">${desc}</div>${undo || ''}</div>
+    ${url ? `<div class="s-link"><a class="btn sm sec" href="${esc(url)}" target="_blank" rel="noopener">🔗 افتح المكان</a></div>` : ''}
+  </div>`;
+  const undoBox = txt => `<details class="undo"><summary>↩️ التراجع عن هذه الخطوة</summary><div>${txt}</div></details>`;
+
+  const nUrl = store.get('mc_netlify', '');
+  const siteId = nUrl.replace(/^https?:\/\/(www\.)?/, '').replace(/\.netlify\.app.*/, '').replace(/\/+$/, '');
+  const nSite = () => siteId ? `https://app.netlify.com/sites/${siteId}/settings/general` : 'https://app.netlify.com';
+  const nDeploys = () => siteId ? `https://app.netlify.com/sites/${siteId}/deploys` : 'https://app.netlify.com';
+  const nDomain = () => siteId ? `https://app.netlify.com/sites/${siteId}/settings/domain` : 'https://app.netlify.com';
+
+  el.innerHTML = `
+  <div class="card">
+    <h2>🌐 الاستضافة خطوة بخطوة — روابط مباشرة لكل خطوة</h2>
+    <p class="hint">كل زر «🔗 افتح المكان» ينقلك للصفحة المحددة داخل الموقع التي تُنفَّذ فيها الخطوة بالضبط، ولكل خطوة يمكن التراجع عنها يوجد صندوق «↩️ التراجع» يشرح كيف.</p>
+    <div class="row">
+      <div class="field" style="min-width:250px"><label>العميل (لتعبئة روابط Firebase تلقائياً)</label>
+        <select id="hClient"><option value="">— أدخل المعرّف يدوياً —</option>${list.map(c => `<option value="${esc(c.id)}">${esc(c.company)}</option>`).join('')}</select></div>
+      <div class="field" style="min-width:210px"><label>projectId لعميل Firebase</label><input id="hPid" dir="ltr" placeholder="client-app123"></div>
+      <div class="field" style="min-width:240px"><label>رابط موقعك على Netlify</label><input id="hNet" dir="ltr" value="${esc(nUrl)}" placeholder="https://meqat-app.netlify.app"></div>
+      <button class="btn sec" id="hSaveNet">💾 حفظ</button>
+    </div>
+  </div>
+
+  <details class="fold">
+    <summary><span>🥇 Netlify — الأسهل (موصى به للديمو وللبدء السريع)</span><span class="badge b-ok">5 دقائق</span></summary>
+    ${st(1, 'أنشئ حساباً مجانياً', 'https://app.netlify.com/signup', 'بريد + كلمة سر، أو أسرع: زر «Continue with Google» وتكون جاهزاً.', undoBox('لا تحتاج تراجعاً — إذا أردت التوقف لاحقاً: من https://app.netlify.com/user/settings حذف الحساب.'))}
+    ${st(2, 'اسحب ملف النظام وأفلته — نشر فوري', 'https://app.netlify.com/drop',
+      'جهّز على جهازك مجلداً يحوي الملف باسم <b dir="ltr">index.html</b> (وضع معه manifest.json و sw.js و icon.svg إن أردت التطبيق كاملاً)، ثم اسحب المجلد وأفلته في تلك الصفحة — يعمل الموقع فوراً برابط مؤقت مثل <span dir="ltr">random-name.netlify.app</span>.',
+      undoBox('لا يحتاج تراجعاً — الخطوة لا تلف شيئاً. إن رفعت مجلداً خاطئاً: أنشئ موقعاً جديداً بالسحب والإفلات مرة أخرى.'))}
+    ${st(3, 'ثبّت الموقع بحسابك (مهم!)', 'https://app.netlify.com',
+      'إن أنشأت الموقع من Drop قبل تسجيل الدخول، اضغط زر <b>Claim this site</b> بعد الدخول واربطه بحسابك — وإلا يفقد الرابط نشاطه مؤقتاً.',
+      undoBox('لا شيء يُلغى — الربط مجاني ويحمي موقعك من الفقد.'))}
+    ${st(4, 'غيّر اسم الرابط لاسم جميل', nSite(),
+      'من صفحة الإعدادات العامة ← قسم <b>Site details</b> ← زر <b>Change site name</b> — اكتب مثلاً <span dir="ltr">meqat-demo</span> فيصبح <span dir="ltr">meqat-demo.netlify.app</span>.',
+      undoBox('أعد الاسم القديم من نفس الحقل. انتبه: الرابط القديم يتوقف فوراً — حدّث من لديه الرابط.'))}
+    ${st(5, 'تحديث ملف النظام لاحقاً (تجديد أو ترقية)', nDeploys(),
+      'من صفحة <b>Deploys</b> ← حدد <b>Deploy manually</b> ← اسحب المجلد المحدَّث وأفلته ← يُنشر في ثوانٍ ويحل محل القديم.',
+      undoBox('في صفحة Deploys: مرّر على آخر نشر سليم قديم ← زر «⋮» ← <b>Publish deploy</b> — رجوع فوري للنسخة السابقة بلا أي خسارة.'))}
+    ${st(6, 'ربط دومين خاص (اختياري)', nDomain(),
+      'من <b>Domain management</b> ← <b>Add a domain</b> ← أدخل دومينك واتبع تعليمات DNS (سجل CNAME أو تغيير Nameservers). شهادة HTTPS تُصدر تلقائياً.',
+      undoBox('نفس الصفحة ← زر «⋮» بجانب الدومين ← <b>Remove domain</b> — يعود الموقع للرابط العادي netlify.app.'))}
+    ${st(7, 'حذف الموقع نهائياً', nSite(),
+      'أقصى صفحة الإعدادات العامة في قسم <b>Danger zone</b> ← <b>Delete site</b> — يُطلب كتابة اسم الموقع للتأكيد.',
+      undoBox('الحذف نهائي بلا استرجاع — لكن ملفاتك محفوظة على جهازك، وأعد رفعها من خطوة 2 في دقيقة.'))}
+  </details>
+
+  <details class="fold">
+    <summary><span>🥈 Cloudflare Pages — باندويث غير محدود (للتشغيل الآمن الكامل)</span><span class="badge b-pri">10 دقائق</span></summary>
+    ${st(1, 'أنشئ حساباً مجانياً', 'https://dash.cloudflare.com/sign-up', 'بريد + كلمة سر — الحساب المجاني كامل بلا بطاقة دفع.', undoBox('للتوقف بأمان لاحقاً: من الإعدادات حذف الحساب — المشاريع محفوظة عندك محلياً.'))}
+    ${st(2, 'افتح قسم Workers & Pages', 'https://dash.cloudflare.com/?to=/:account/pages',
+      'بعد الدخول يفتح هذا الرابط القسم مباشرة ← <b>Create</b> ← تبويب <b>Pages</b> ← اختر <b>Upload assets</b> (وليس الاتصال بـ Git).')}
+    ${st(3, 'سمِّ المشروع وارفع المجلد', 'https://dash.cloudflare.com/?to=/:account/pages',
+      'اكتب اسم المشروع (يصبح <span dir="ltr">الاسم.pages.dev</span>) ← اسحب المجلد الذي فيه <span dir="ltr">index.html</span> وأفلته ← <b>Deploy site</b>. ننصح برفع كل ملفات النظام معاً (index + manifest + sw + icon) ليكتمل التطبيق.',
+      undoBox('إن رفعت مجلداً خاطئاً: أنشئ deployment جديد بالمجلد الصحيح — الأحدث يُغطي القديم.'))}
+    ${st(4, 'تحديث لاحقاً', 'https://dash.cloudflare.com/?to=/:account/pages',
+      'من داخل المشروع ← <b>Create new deployment</b> ← اسحب المجلد المحدَّث ← Deploy. كل نشر يُحفظ في التاريخ.',
+      undoBox('صفحة <b>Deployments</b> داخل المشروع ← اختر أي نشر قديم سليم ← <b>Rollback</b> — رجوع فوري بأكمله.'))}
+    ${st(5, 'دومين مخصص (اختياري)', 'https://dash.cloudflare.com/?to=/:account/pages',
+      'داخل المشروع ← تبويب <b>Custom domains</b> ← <b>Set up a custom domain</b> — إن كان الدومين مشترى من Cloudflare نفسها يُربط بضغطة، وإلا أضف سجل DNS يدوياً.',
+      undoBox('نفس تبويب Custom domains ← «⋮» بجانب الدومين ← <b>Remove domain</b>.'))}
+    ${st(6, 'حذف المشروع', 'https://dash.cloudflare.com/?to=/:account/pages',
+      'المشروع ← <b>Settings</b> ← أقصى الصفحة <b>Delete project</b>.',
+      undoBox('لا يمكن استرجاعه — لكن إعادة إنشائه من خطوة 2 دقيقتان، والملفات عندك محلياً.'))}
+  </details>
+
+  <details class="fold">
+    <summary><span>🥉 Firebase Hosting — أنسب لنسخ العملاء (كل شيء يملكه العميل)</span><span class="badge b-warn">20 دقيقة · تحتاج Node.js مرة واحدة</span></summary>
+    <p class="hint" style="margin-top:14px">⚠️ شرط وحيد: ثبّت <b>Node.js</b> على جهازك من <a href="https://nodejs.org" target="_blank" rel="noopener">nodejs.org</a> (اختر الإصدار LTS وأكمل التثبيت بالضغط التالي). المكافأة: موقع نسخة العميل يُنشر ضمن <b>مشروع Firebase الخاص به هو</b> — بياناته وموقعه تحت سيطرته كاملاً.</p>
+    <div id="fbSteps"></div>
+  </details>
+
+  <details class="fold">
+    <summary><span>🙈 GitHub Pages — فقط كأرشيف كود (لا تبع منه نسخاً تجارية)</span><span class="badge b-mute">تنبيه كاش</span></summary>
+    ${st(1, 'فعّل Pages في مستودعك', 'https://github.com',
+      'من مستودعك ← <b>Settings</b> ← <b>Pages</b> ← في <b>Source</b> اختر <b>Deploy from a branch</b> ← الفرع <b>main</b> والمجلد <b>/(root)</b> ← Save. الرابط يصبح <span dir="ltr">username.github.io/اسم-المستودع/</span>',
+      undoBox('نفس صفحة Pages ← <b>Unpublish site</b> — يُوقف الموقع فوراً ويعود من جديد أي وقت.'))}
+    ${st(2, 'تحديث الموقع', 'https://github.com',
+      'من المستودع: <b>Add file ← Upload files</b> ← ارفع الملفات المحدَّثة ← Commit changes — يتحدث الموقع خلال دقيقة.',
+      undoBox('صفحة <b>Commits</b> في المستودع ← اختر آخر «commit» سليم ← <b>Revert</b>، أو ارفع الملفات القديمة من جديد.'))}
+    ${st(3, '⚠️ انتبه: مشكلة الكاش القديم المعروفة',
+      '', 'جرّبناها معك من قبل: Service Worker والكاش المتشدد يلصقون النسخة القديمة عند المستخدم حتى بعد التحديث. لذلك مع كل تحديث غيّر قيمة <code class="dir">const VER</code> في <b>sw.js</b> (مثل <span dir="ltr">meqat-v7</span>). لهذا لا نوصي ببيع النسخ التجارية من GitHub Pages مع أنها تعمل.',
+      '')}
+  </details>
+
+  <div class="card" style="border:2px solid var(--ok)">
+    <h3>💡 التوصية العملية باختصار</h3>
+    <p class="hint" style="margin:4px 0 0">الديمو ← <b>Netlify Drop</b> (أسرع ما يمكن رفعه والدفعة صفر). نسخة العميل المكتمل ← <b>Firebase Hosting داخل مشروعه</b> (بياناته وموقعه عنده، ولا يتوقف أبداً لو أراد). أرشيفك وعرضك التعريفي ← <b>Cloudflare Pages</b>. وGitHub Pages لأرشفة الكود فقط.</p>
+  </div>`;
+
+  const fillFb = () => {
+    const pid = ($('#hPid').value || '').trim();
+    const P = pid || '{PROJECT_ID}';
+    const live = !!pid;
+    $('#fbSteps').innerHTML = [
+      st(1, 'أنشئ مشروع Firebase باسم العميل', 'https://console.firebase.google.com/new', 'اكتب اسم الشركة ← أكمل الخطوات (تحليلات Analytics اختيارية — أرفضها إن لم يحتجها).'),
+      st(2, 'فعّل خدمات النظام في المشروع', live ? `https://console.firebase.google.com/project/${P}/authentication/providers` : 'https://console.firebase.google.com',
+        'من القائمة الجانبية: <b>Authentication</b> ← Sign-in method ← فعّل <b>Email/Password</b> ثم <b>Anonymous</b>. ثم <b>Firestore Database</b> ← Create database ← وضع الإنتاج ← واختر أقرب منطقة إليك (أوروبا عادةً).'),
+      st(3, 'سجّل تطبيق ويب وانسخ المفاتيح', live ? `https://console.firebase.google.com/project/${P}/settings/general` : 'https://console.firebase.google.com',
+        'الإعدادات العامة ← قسم <b>Your apps</b> ← أيقونة <b dir="ltr">&lt;/&gt;</b> (Web) ← سجّل ← انسخ <b>apiKey</b> و<b>appId</b> ← أضفها لبيانات العميل في أرشيف اللوحة (تبويب العملاء ← تعديل) وتبويب «مولّد النسخ» يبدأ منها.',
+        undoBox('لا خطر — التسجيل مجانٍ؛ وإن سجلت تطبيقاً زائداً: من قائمة التطبيقات «⋮» ← <b>Delete</b>.')),
+      st(4, 'انشر أول نسخة على Firebase Hosting', live ? `https://console.firebase.google.com/project/${P}/hosting` : 'https://console.firebase.google.com',
+        'صفحة Hosting ← <b>Get started</b>. ثم في <b>موجه الأوامر (CMD)</b> على جهازك سطراً سطراً:<br><code class="dir">npm install -g firebase-tools</code><br><code class="dir">firebase login</code> ← يفتح المتصفح للتأكيد<br>جهّز مجلد نسخة العميل (فيه index.html) وأنشئ بداخله ملف <code class="dir">firebase.json</code> محتواه: <code class="dir">{"hosting":{"public":"."}}</code><br>داخل المجلد: <code class="dir">firebase use معرّف-المشروع</code> (المعرف الذي في حقل «projectId» أعلى هذه الصفحة)<br><code class="dir">firebase deploy --only hosting</code> ← ينشر فوراً.',
+        undoBox('لا شيء يُلغى — النشر الجديد يستبدل القديم أبداً، والإعداد عند Firebase يبقى للانتشار القادم. للاسترجاع لأنفسك: خطوة 7.')),
+      st(5, 'افتح رابط الموقع وأرسله للعميل', live ? `https://${P}.web.app` : '',
+        'يصبح الموقع على <span dir="ltr">' + (pid || "PROJECT-ID") + '.web.app</span> و<span dir="ltr">' + (pid || "PROJECT-ID") + '.firebaseapp.com</span> — أرسله من تبويب «رسائل واتساب» بقالب «تسليم النظام».'),
+      st(6, 'دومين العميل الرسمي (اختياري)', live ? `https://console.firebase.google.com/project/${P}/hosting` : 'https://console.firebase.google.com',
+        'صفحة Hosting ← <b>Add custom domain</b> ← أدخل دومين العميل ← أضف السجل A في لوحة مزوّد نطاقه كما تظهر في التعليمات — التحقق وHTTPS تلقائيان.',
+        undoBox('من لوحة مزوّد النطاق احذف سجل A/CNAME — يعود الموقع للرابط web.app.')),
+      st(7, 'تحديث نسخة العميل (ترقية الباقة أو التجديد)', live ? `https://console.firebase.google.com/project/${P}/hosting` : 'https://console.firebase.google.com',
+        'استبدل <span dir="ltr">index.html</span> في مجلد النشر عندك بالنموذج المولَّد الجديد ← ثم <code class="dir">firebase deploy --only hosting</code> — انتهى.',
+        undoBox('صفحة Hosting ← سجل الإصدارات <b>Release history</b> ← بجانب آخر إصدار سليم «⋮» ← <b>Rollback to this release</b> — أو بالأوامر: <code class="dir">firebase hosting:rollback</code> رجوع خلال دقيقة.')),
+      st(8, 'إيقاف الموقع عند انتهاء العقد', live ? `https://console.firebase.google.com/project/${P}/hosting` : 'https://console.firebase.google.com',
+        'شريط الترخيص داخل ملف العميل يقفل الواجهة تلقائياً عند انتهاء التاريخ — لا تحتاج أي حذف. لوقف الموقع يدوياً: صفحة Hosting ← <b>Release history</b> ← زر «⋮» بجانب أحدث إصدار ← حذف الإصدار، أو انشر نشراً فارغاً فيُحجب الموقع.',
+        undoBox('أعد نشر آخر إصدار سليم بالخطوة 7 — ولا تحذف المشروع أبداً لأن بيانات الموظفين فيه.'))
+    ].join('');
+  };
+
+  $('#hSaveNet').onclick = () => { store.set('mc_netlify', $('#hNet').value.trim()); toast('حُفظ رابط Netlify ✅', 'good'); };
+  $('#hClient').onchange = () => { const c = getClients().find(x => x.id === $('#hClient').value); if (c) { $('#hPid').value = c.projectId || ''; fillFb(); } };
+  $('#hPid').oninput = fillFb;
+  fillFb();
+}
+
+/* ============ رسائل واتساب الجاهزة ============ */
+function renderMsgs(el) {
+  const list = getClients();
+  el.innerHTML = `
+  <div class="card">
+    <h2>💬 رسائل واتساب الجاهزة</h2>
+    <p class="hint">اختر عميلاً ليُعبَّأ النص تلقائياً ببياناته (الاسم والباقة والسعر وتاريخ الانتهاء). ما تبقى بين قوسين مثل <b>{اسم الموظف}</b> أو <b>{كلمة المرور}</b> أكمله يدوياً قبل الإرسال.</p>
+    <div class="row">
+      <div class="field" style="min-width:240px"><label>العميل</label>
+        <select id="mClient"><option value="">— رسالة عامة —</option>${list.map(c => `<option value="${esc(c.id)}">${esc(c.company)}</option>`).join('')}</select></div>
+      <div class="field" style="min-width:260px"><label>رابط نسخة العرض (الديمو)</label><input id="mDemo" dir="ltr" value="${esc(store.get('mc_demolink', ''))}" placeholder="https://meqat-demo.netlify.app/"></div>
+      <button class="btn sec" id="mSaveDemo">💾 حفظ الرابط</button>
+    </div>
+  </div>
+  <div id="mList"></div>`;
+
+  const TPLS = [
+    { id: 'demo', title: '🧪 عرض الديمو (أول تواصل)',
+      body: `السلام عليكم ورحمة الله {العميل} 🌹
+
+أرسلت لك نظام «مِيقَاتْ» لإدارة حضور وانصراف موظفيكم بالبصمة الجغرافية:
+
+🔗 رابط النسخة العرض: {رابط الديمو}
+
+- افتحه من الهاتف واضغط «الدخول إلى نسخة العرض بضغطة واحدة»
+- سترى 12 موظفاً وسجلات شهر كامل وتقارير ورواتب جاهزة
+
+في انتظار ملاحظاتك الكريمة 🙏` },
+    { id: 'follow', title: '📞 متابعة بعد الديمو',
+      body: `السلام عليكم {العميل}
+
+هل جرّبتَ نظام ميقات؟
+
+أهم ما يوفره على مؤسستكم:
+✅ منع انتحال الحضور (الرابط يقفل على هاتف كل موظف)
+✅ منع التسجيل خارج موقع العمل (نصف قطر جغرافي)
+✅ حساب الرواتب والتأخير والخصومات بدقيقة واحدة
+
+جاهز أفعّل نسختكم الخاصة خلال اليوم نفسه 🙌` },
+    { id: 'offer', title: '💰 عرض السعر والباقة',
+      body: `السلام عليكم {العميل}
+
+بخصوص نظام «مِيقَاتْ» لإدارة موظفيكم:
+
+🏷️ الباقة: {الباقة}
+👥 حد الموظفين: {حد الموظفين}
+💰 السعر: {السعر}
+🎁 تشمل: الاستضافة المساعدة + التدريب + الدعم
+🆓 تجربة مجانية: {أيام التجربة} يوم
+
+تعمل الباقة تلقائياً: تُفتح الميزات المشمولة وتُحسب الرواتب آلياً.
+
+هل نبدأ؟ ✅` },
+    { id: 'handover', title: '✅ تسليم النظام (بعد التفعيل)',
+      body: `السلام عليكم {العميل}
+
+تم تفعيل نظام ميقات لمؤسستكم 🎉
+
+🔗 رابط النظام: {رابط الموقع}
+🧑‍💼 بريد المشرف: {بريد المالك}
+🔑 كلمة المرور: {كلمة المرور}
+
+سأرشدك في مكالمة قصيرة إلى: إضافة مواقع العمل، إعداد الدوام، وإرسال روابط الموظفين.
+
+تجربة {أيام التجربة} يوم — ثم الاشتراك دون فقدان أي بيانات.` },
+    { id: 'employee', title: '🧑‍🏭 إرسال الرابط لكل موظف',
+      body: `أهلاً {اسم الموظف} 👋
+
+هذا رابط الحضور الخاص بك، افتحه من هاتفك وثبّته كتطبيق (حين يسألك المتصفح اختر «إضافة إلى الشاشة الرئيسية»):
+
+{رابط الموظف}
+
+⚠️ الرابط يقفل على أول جهاز يفتحه — لا تشاركه مع أحد، ولا يؤثر نقله على رصيدك.` },
+    { id: 'renew', title: '🔁 التذكير بالتجديد (قبل 7 أيام)',
+      body: `السلام عليكم {العميل}
+
+تذكير ودي 🌹
+اشتراك {اسم الشركة} في نظام ميقات ينتهي بتاريخ {تاريخ الانتهاء} — أي متبقٍ {الأيام المتبقية} يوم.
+
+لتجنب توقف النظام:
+1️⃣ أؤكد لي التجديد بنفس الباقة
+2️⃣ أرسل المبلغ
+3️⃣ أرسل لك ملفاً محدثاً خلال دقائق — بياناتكم كاملة لن تُمَس
+
+بانتظار تأكيدك 🙏` },
+    { id: 'reopen', title: '⚠️ بعد انتهاء الاشتراك (استرجاع)',
+      body: `السلام عليكم {العميل}
+
+لاحظنا أن اشتراك {اسم الشركة} انتهى وهذه رسالة تفتح شاشة التجديد.
+
+🛡️ أطمئنك: كل بيانات وسجلاتكم محفوظة بالكامل في حسابكم الخاص ولن تُحذف.
+لإعادة التفعيل فوراً: أرسل تأكيد التجديد وسنصلك خلال دقائق.
+
+أستعجل اعتمادكم لأن فريقكم يحتاج النظام في العمل اليومي حتماً 🙏` }
+  ];
+
+  const sub = (txt, c) => {
+    if (!c) return txt.replace('{رابط الديمو}', $('#mDemo').value.trim() || '{رابط الديمو}');
+    const p = planOf(c.planId);
+    const st = cliStatus(c);
+    return txt
+      .replace(/\{العميل\}/g, c.contact || c.company)
+      .replace(/\{اسم الشركة\}/g, c.company)
+      .replace(/\{الباقة\}/g, p.name)
+      .replace(/\{حد الموظفين\}/g, p.maxEmp ? `${p.maxEmp} موظفاً` : 'بلا حدود')
+      .replace(/\{السعر\}/g, p.price)
+      .replace(/\{أيام التجربة\}/g, p.trialDays || 14)
+      .replace(/\{رابط الديمو\}/g, $('#mDemo').value.trim())
+      .replace(/\{رابط الموقع\}/g, c.domain || '{رابط الموقع}')
+      .replace(/\{بريد المالك\}/g, c.ownerEmail || '{بريد المالك}')
+      .replace(/\{تاريخ الانتهاء\}/g, fmtD(addDays(c.start, st.dur - 1)))
+      .replace(/\{الأيام المتبقية\}/g, st.left >= 0 ? st.left : 0);
+  };
+
+  const renderList = () => {
+    const c = list.find(x => x.id === $('#mClient').value);
+    $('#mList').innerHTML = TPLS.map(t => {
+      const filled = sub(t.body, c);
+      const phone = c && c.phone ? c.phone : '';
+      return `<div class="card">
+        <h3>${esc(t.title)}</h3>
+        <textarea rows="${Math.min(14, filled.split('\n').length + 1)}" data-t="${t.id}">${esc(filled)}</textarea>
+        <div class="row" style="margin-top:10px">
+          <button class="btn sec" data-cp="${t.id}">📋 نسخ النص</button>
+          ${phone ? `<button class="btn ok" data-wa="${t.id}" data-phone="${esc(phone)}">💬 إرسال واتساب إلى ${esc(phone)}</button>` : '<span class="muted" style="align-self:center;font-size:12.5px">اختر عميلاً له رقم واتساب ليظهر زر الإرسال</span>'}
+        </div>
+      </div>`;
+    }).join('');
+    $('#mList').querySelectorAll('[data-cp]').forEach(b => b.onclick = () => {
+      const ta = $(`#mList textarea[data-t="${b.dataset.cp}"]`);
+      navigator.clipboard.writeText(ta.value).then(() => toast('نُسخ النص ✅', 'good')).catch(() => toast('انسخه يدوياً', 'err'));
+    });
+    $('#mList').querySelectorAll('[data-wa]').forEach(b => b.onclick = () => {
+      const ta = $(`#mList textarea[data-t="${b.dataset.wa}"]`);
+      window.open('https://wa.me/' + b.dataset.phone + '?text=' + encodeURIComponent(ta.value), '_blank');
+    });
+  };
+
+  $('#mClient').onchange = renderList;
+  $('#mSaveDemo').onclick = () => { store.set('mc_demolink', $('#mDemo').value.trim()); toast('حُفظ رابط الديمو ✅', 'good'); };
+  renderList();
+}
+
+/* ============ الدليل الاحترافي ============ */
+const GUIDE_HTML = `
+<div class="card no-print" style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap">
+  <h2 style="margin:0">📘 الدليل الاحترافي — نظام «مِيقَاتْ» للحضور والرواتب</h2>
+  <button class="btn" onclick="window.print()">🖨️ طباعة / حفظ PDF</button>
+</div>
+<div class="card" id="guidePrint">
+<p class="muted">إصدار 1.0 — ${fmtD(todayKey())}</p>
+
+<h2>1️⃣ ما هذا المنتج؟</h2>
+<p><b>«مِيقَاتْ»</b> نظام حضور وانصراف ذكي يعمل بالكامل في المتصفح والتطبيق (PWA) دون أي خادم تديره أنت. يوفّر النظام:</p>
+<ul>
+  <li><b>الدقة الجغرافية:</b> تسجيل بالبصمة الجغرافية GPS (نصف قطر قابل للضبط لكل موقع، ولا يُقبل التسجيل خارج النطاق).</li>
+  <li><b>تأمين الجهاز:</b> رابط الموظف يُقفل على أول جهاز يفتحه + هوية مجهولة آمنة — لا يمكن مشاركة الرابط أو تسجيل الحضور عن زميل.</li>
+  <li><b>رواتب آلية:</b> احتساب شهري أو بالساعة أو بالمهام، تأخير وخصومات وعمل إضافي — كلها مبنية على سجلات لا يستطيع أحد تزويرها من الجهاز نفسه.</li>
+  <li><b>المهام:</b> لموظفي الأجر القطعي — سعر محدد لكل نوع مهمة يُضرب في الكمية المنجزة، بسجل يعتمده المشرف.</li>
+  <li><b>الطلبات:</b> إجازات (برصيد سنوي محسوب آلياً)، وطلبات تصحيح لنقاط لم تُسجَّل، وطلبات مهام.</li>
+  <li><b>تقارير:</b> سجل يومي، إحصائية لكل موظف، مسير رواتب جاهز للطباعة، تصدير Excel/CSV.</li>
+  <li><b>واجهة عربية بالكامل</b> + وضع ليلي + مراعاة رمضان (وقت عمل مخفّض) — مع إعداد موحّد وتوقيت محلي ثابت.</li>
+</ul>
+
+<h2>2️⃣ الباقات الثلاث</h2>
+<div class="gcard">
+  ${getPlans().map(p => `<p><b>${esc(p.name)}</b> — ${esc(p.price)} ${p.maxEmp ? `· حتى ${p.maxEmp} موظف` : '· بلا حد'} · تجربة ${p.trialDays} يوم · ${p.payroll ? 'رواتب ✅' : 'بلا رواتب'} ${p.tasks ? '· مهام ✅' : ''}<br><span class="muted">${esc(p.tag)}</span></p>`).join('<hr style="border:0;border-top:1px solid var(--line)">')}
+</div>
+<p class="hint">تُطبَّق كل باقة تلقائياً على نسخة العميل: حد الموظفين يمنع الإضافة بعد بلوغه، والميزات غير المشمولة تُخفى من القائمة. ترقية الباقة = توليد ملف جديد بنفس بيانات العميل — دون فقدان أي بيانات.</p>
+
+<h2>3️⃣ دورة البيع (نصيحة عملية)</h2>
+<ol>
+  <li><b>عرض الديمو (10 دقائق):</b> أرسل رابط الديمو وقل: «جرّبه بنفسك — هذا ما ستحصل عليه تماماً».</li>
+  <li><b>عرض السعر:</b> اختر الباقة المناسبة لعدد موظفيه، وأرسل السعر والمدة من واتساب اللوحة.</li>
+  <li><b>استلام المقدّم وبدء التجربة:</b> مدفوع أو تجربة مجانية تنتهي تلقائياً — والنظام نفسه يُخبر العميل بالمتبقي.</li>
+  <li><b>التسليم (خطوات القسم 4):</b> مشروع Firebase + توليد الملف + الرفع + الإعداد.</li>
+  <li><b>تدريب المشرف (30 دقيقة):</b> إضافة موظف وموقع وجدولة، واستخراج راتب تجريبي، ثم إرسال روابط الموظفين بواتساب.</li>
+  <li><b>متابعة 7 أيام</b> ثم استلام الباقي — التحويل من تجربة إلى مفعّل = توليد ملف جديد بنفس البيانات دون فقدان شيء.</li>
+</ol>
+
+<h2>4️⃣ خطوات التسليم الكاملة لعميل جديد</h2>
+<ol>
+  <li><b>مشروع جديد على Firebase</b> (حساب العميل إذا أردت أن يملك التحكم الكامل): <a href="https://console.firebase.google.com/" target="_blank">console.firebase.google.com</a> — أنشئ مشروعاً باسم الشركة.</li>
+  <li><b>Authentication:</b> Sign-in method ← فعّل Email/Password ← ثم Anonymous.</li>
+  <li><b>التطبيق:</b> Project settings ← عام ← Your apps ← Web ← سجّل ← انسخ apiKey و projectId و appId.</li>
+  <li><b>Firestore:</b> أنشئ قاعدة بيانات (وضع الإنتاج).</li>
+  <li><b>لوحة التسليم:</b> سجّل العميل في تبويب العملاء (ضع مفاتيح Firebase + البريد + الباقة + المدة).</li>
+  <li><b>مولّد النسخ:</b> اختر العميل واضغط «⚙️ توليد الملف وتنزيله» — احتفظ بنسخة من الملف في مجلد أرشيفك.</li>
+  <li><b>القواعد:</b> من شاشة «قواعد Firestore» في اللوحة ولِّد القواعد ببريد المالك والصقها في Firestore ← Rules ← Publish.</li>
+  <li><b>الرفع:</b> Netlify Drop — اسحب الملف وأفلته في <span dir="ltr">app.netlify.com/drop</span> — أو Firebase Hosting. سجّل رابط الموقع في أرشيف العميل.</li>
+  <li><b>المشرف:</b> أضف مستخدماً في Firebase ← Authentication ← Users ببريد المالك وكلمة سر، ثم من شاشة «الإعداد الأول» بالموقع أنشئ حساب المشرف بنفس البريد (القواعد تظهر جاهزة في تلك الشاشة أيضاً).</li>
+  <li><b>بناء البيانات:</b> مواقع العمل + أنماط الدوام + الموظفون، ثم أرسل رابط كل موظف عبر واتساب (يفتحه من هاتفه فيرتبط الرابط بجهازه).</li>
+</ol>
+
+<h2>5️⃣ التجديد وأرشفة العملاء</h2>
+<ul>
+  <li>من <b>العملاء والأرشيف</b>: كل عميل مع شارة حالة ملوّنة (نشط / قُرب الانتهاء / منتهٍ) وزر واتساب بضغطة واحدة — واللوحة تُحذّرك قبل الانتهاء بـ 7 أيام.</li>
+  <li><b>التجديد:</b> الترخيص موضوع داخل ملف العميل نفسه (تاريخ الانتهاء مثبّت فيه). إجراء التجديد: عدّل التواريخ من زر «تعديل» في اللوحة ← أعد التوليد ← أرسل للعميل الملف المحدّث ليستبدل به القديم — دقيقتان ولا يفقد أي بيانات. احتفظ بكلمة سر المشرف التي اتفقتما عليها عند التدريب لمساعدته عند الحاجة، ولا تشاركها إلا بإذنه.</li>
+  <li><b>التصدير والأرشيف:</b> زر «💾 تصدير أرشيف» أعلى الصفحة ينزّل ملف JSON بكل العملاء والباقات وإعدادات الديمو. احفظه أسبوعياً على Google Drive أو أي تخزين سحابي. زر «📥 استيراد» يدمج الأرشيف في جهاز جديد — لا يضيع عليك شيء.</li>
+</ul>
+
+<h2>6️⃣ الديمو والبذر — نظام «جرب قبل الشراء»</h2>
+<ul>
+  <li>مشروع Firebase مستقل باسم <span dir="ltr">meqat-demo</span> يبقى مجانياً (خطة Spark) مهما زاره الزوار — بلا أي تكلفة عليك.</li>
+  <li>أداة البذر <span dir="ltr">meqat-seed.html</span> تملؤه بـ 12 موظفاً وسجلات 30 يوماً وطلبات جاهزة — بمظهر واقعي مبهر.</li>
+  <li>يمكن للعميل تجربة الديمو دون تسجيل — زر «الدخول إلى نسخة العرض» بضغطة واحدة.</li>
+  <li>وضّح للعميل أن الديمو للعرض فقط وليس للعمل الفعلي؛ نسخته الحقيقية تبدأ بقاعدة بيانات نظيفة، وإعداده معك لا يستغرق سوى نصف ساعة.</li>
+</ul>
+
+<h2>7️⃣ أسئلة يطرحها العميل (وجوابك الاحترافي)</h2>
+<div class="gcard">
+<p><b>«ماذا لو تغيّر جهاز الموظف أو تكسر هاتفه؟»</b> من لوحة المشرف أعد ضبط الربط وأرسل رابطاً جديداً — 30 ثانية.</p>
+<p><b>«ماذا لو حاول موظف التسجيل من خارج موقع العمل؟»</b> النظام يمنع التسجيل خارج نصف قطر الموقع، والمسافة والدقة مسجّلة في كل سجل للمراجعة.</p>
+<p><b>«بياناتنا أين تُخزَّن؟ عندك؟»</b> لا — بيانات العميل في حساب Firebase الخاص به تحت سيطرته الكاملة، محمية بقواعد صلاحيات صارمة.</p>
+<p><b>«وإذا توقف الاشتراك؟ هل نفقد بياناتنا؟»</b> البيانات تبقى محفوظة كاملة في حساب العميل ولا تُحذف أبداً؛ فقط تُقفل شاشة الاستخدام حتى التجديد.</p>
+<p><b>«لدي مواقع عمل متعددة؟»</b> أضف كل موقع بنصف قطره الخاص، وحدد المواقع المسموحة لكل موظف على حدة.</p>
+<p><b>«كيف أتأكد أن الموظف لن يشارك رابطه مع زميل؟»</b> الرابط يُقفل على أول جهاز يفتحه — بعده لا فائدة من أي جهاز آخر مهما حاول.</p>
+</div>
+
+<h2>8️⃣ قنوات الدعم المستمر</h2>
+<ul>
+  <li>املأ حقل «تواصل الدعم» عند كل عميل — يظهر داخل شاشة «انتهت المدة» لدى العميل للتواصل معك مباشرة.</li>
+  <li>خدمات الدعم المجانية الثابتة: ترقية ملف الباقة، استعادة جهاز موظف، إعادة إرسال رابط مفقود — كلها دقيقتان من اللوحة.</li>
+</ul>
+
+<h2>9️⃣ الخلاصة في 5 نقاط</h2>
+<ol>
+  <li>الديمو الأنيق يُبيع وحده — جهّز رابطه واحفظه في المفضلة.</li>
+  <li>كل تسليم = قيد فوري في أرشيف اللوحة — إهمال الأرشفة كارثة خلال شهرين.</li>
+  <li>التزم حدود الباقات التي تسوّقها — ثقة العميل رأس مالك.</li>
+  <li>أبقِ الديمو دائماً في مشروع منفصل حتى لا تختلط بيانات حقيقية به.</li>
+  <li>صدّر الأرشيف كل أسبوع — فقدان الأرشيف أغلى من خسارة أي عميل.</li>
+</ol>
+</div>`;
+
+$('#guide').innerHTML = GUIDE_HTML;
+
+/* ============ التشغيل ============ */
+go('clients');
+</script>
+</body>
+</html>
+
