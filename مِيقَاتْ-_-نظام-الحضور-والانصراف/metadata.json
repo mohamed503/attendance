@@ -1,0 +1,6 @@
+{
+  "name": "مِيقَاتْ | نظام الحضور والانصراف",
+  "description": "نظام متكامل لإدارة الحضور والانصراف والورديات والإجازات ومسير الرواتب الآلي عبر إحداثيات GPS.",
+  "requestFramePermissions": ["geolocation"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
