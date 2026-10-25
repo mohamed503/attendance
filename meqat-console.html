@@ -149,7 +149,7 @@ const fbConsole = (projectId, path) => projectId ? `https://console.firebase.goo
 function cliStatus(c) {
   const p = planOf(c.planId);
   const dur = c.kind === 'trial' ? (p.trialDays || 14) : (+c.durationDays || 365);
-  const left = (c.start ? dur - daysBetween(c.start, todayKey()) : 999);
+  const left = (c.start ? dur - 1 - daysBetween(c.start, todayKey()) : 999); // آخر يوم صالح = start + dur - 1 (نفس حساب النظام)
   return { left, dur, expired: left < 0, soon: left >= 0 && left <= 7, badge: left < 0 ? ['b-bad', 'منتهٍ'] : c.kind === 'trial' ? ['b-warn', `تجربة · ${left} يوم`] : ['b-ok', `مفعّل · ${left} يوم`] };
 }
 
@@ -762,7 +762,7 @@ function renderDemo(el) {
   $('#dGen').onclick = () => {
     const dd = getDemo();
     if (!dd.apiKey || !dd.projectId || !dd.appId) return toast('املأ إعدادات الديمو واحفظها أولاً', 'err');
-    const fake = { id: 'demo-const', company: dd.org, kind: 'demo', start: todayKey(), durationDays: 30, apiKey: dd.apiKey, projectId: dd.projectId, appId: dd.appId, planId: 'company' };
+    const fake = { id: 'demo-const', company: dd.org, kind: 'demo', start: todayKey(), durationDays: 365, apiKey: dd.apiKey, projectId: dd.projectId, appId: dd.appId, planId: 'company' };
     genFileFor(fake, $('#dTplUrl').value.trim(), $('#dOut'));
   };
 }
@@ -1020,6 +1020,7 @@ function renderMsgs(el) {
     const p = planOf(c.planId);
     const st = cliStatus(c);
     return txt
+      .replace(/^تجربة \{أيام التجربة\} يوم — ثم الاشتراك دون فقدان أي بيانات\.$/m, m => c.kind === 'trial' ? m : 'اشتراككم ساري حتى {تاريخ الانتهاء} ✅')
       .replace(/\{العميل\}/g, c.contact || c.company)
       .replace(/\{اسم الشركة\}/g, c.company)
       .replace(/\{الباقة\}/g, p.name)
@@ -1033,6 +1034,7 @@ function renderMsgs(el) {
       .replace(/\{الأيام المتبقية\}/g, st.left >= 0 ? st.left : 0);
   };
 
+  const waNum = p => { let d = String(p || '').replace(/\D/g, ''); if (d.startsWith('00')) d = d.slice(2); if (/^09\d{8}$/.test(d)) d = '218' + d.slice(1); return d; };
   const renderList = () => {
     const c = list.find(x => x.id === $('#mClient').value);
     $('#mList').innerHTML = TPLS.map(t => {
@@ -1043,7 +1045,7 @@ function renderMsgs(el) {
         <textarea rows="${Math.min(14, filled.split('\n').length + 1)}" data-t="${t.id}">${esc(filled)}</textarea>
         <div class="row" style="margin-top:10px">
           <button class="btn sec" data-cp="${t.id}">📋 نسخ النص</button>
-          ${phone ? `<button class="btn ok" data-wa="${t.id}" data-phone="${esc(phone)}">💬 إرسال واتساب إلى ${esc(phone)}</button>` : '<span class="muted" style="align-self:center;font-size:12.5px">اختر عميلاً له رقم واتساب ليظهر زر الإرسال</span>'}
+          ${phone ? `<button class="btn ok" data-wa="${t.id}" data-phone="${esc(waNum(phone))}">💬 إرسال واتساب إلى ${esc(phone)}</button>` : '<span class="muted" style="align-self:center;font-size:12.5px">اختر عميلاً له رقم واتساب ليظهر زر الإرسال</span>'}
         </div>
       </div>`;
     }).join('');

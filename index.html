@@ -1406,7 +1406,8 @@ function adminApp(db, auth) {
   function render() {
     const pend = S.reqs.filter(r => r.status === 'pending').length;
     const LF = licFeatures();
-    const tabs = [['today', 'اليوم', 'today'], ['emps', 'الموظفون', 'users'], ['sched', 'الدوام والإعدادات', 'sched'], ['locs', 'المواقع', 'pin'], ['reqs', `الطلبات${pend ? ' (' + pend + ')' : ''}`, 'send'], ...(LF.tasks === false ? [] : [['tasks', 'المهام', 'task']]), ['recs', 'التقارير والرواتب', 'report']];
+    const fgN = forgotAlerts().length;
+    const tabs = [['today', 'اليوم', 'today'], ['emps', 'الموظفون', 'users'], ['sched', 'الدوام والإعدادات', 'sched'], ['locs', 'المواقع', 'pin'], ['reqs', `الطلبات${pend ? ' (' + pend + ')' : ''}`, 'send'], ...(LF.tasks === false ? [] : [['tasks', 'المهام', 'task']]), ['recs', `التقارير والرواتب${fgN ? ' ⚠ ' + fgN : ''}`, 'report']];
     root.innerHTML = `<div class="top"><div class="top-in">
         <div class="brand"><div class="logo">${logoMark(32)}</div><div><b>${esc(brandName())}</b><small>نظام الحضور والانصراف الذكي · لوحة الإدارة ${licBadgeHtml()}</small></div></div>
         <div class="top-act">
@@ -1468,7 +1469,10 @@ function adminApp(db, auth) {
     const q = S.qToday.trim().toLowerCase();
     const shown = q ? rows.filter(r => (r.e.name || '').toLowerCase().includes(q) || (r.e.dept || '').toLowerCase().includes(q)) : rows;
 
-    el.innerHTML = `<div class="stats">
+    const fgA = forgotAlerts();
+    const fgBy = {}; fgA.forEach(s => { (fgBy[s.name] = fgBy[s.name] || []).push(s.day); });
+    const fgBanner = fgA.length ? `<div class="notice" style="border-color:var(--warn)"><b>⚠️ تنبيه: ${fgA.length} يوم نسيان انصراف لم تُصحَّح</b> (${fmtDate(dayStart(S.from))} → ${fmtDate(dayStart(S.to))})<br>${Object.entries(fgBy).map(([n, ds]) => `${esc(n)} — ${ds.length} ${ds.length === 1 ? 'يوم' : 'أيام'}: ${ds.sort().map(d => d.split('-').reverse().join('/')).join('، ')}`).join('<br>')}<br><small>السياسة الحالية: ${forgotTxt()}. عدّل البصمة من «التقارير والرواتب ← سجل البصمات» أو من طلبات التصحيح، ويمكنك تغيير السياسة من «الدوام والإعدادات ← إعدادات المنشأة».</small><div style="margin-top:8px"><button class="btn sm" data-tab="recs">${ic('report', 16)} فتح التقارير</button></div></div>` : '';
+    el.innerHTML = `${fgBanner}<div class="stats">
       ${stat('check', 'حاضرون الآن', c('present') + c('late'))}
       ${stat('login', 'انصرفوا', c('left'))}
       ${stat('alert', 'لم يحضروا (مجدول)', c('absent'))}
@@ -1815,9 +1819,10 @@ function adminApp(db, auth) {
           <div class="row">
             <div class="field" style="max-width:320px"><label>اسم المنشأة (يظهر مكان «مِيقَاتْ» في اللوحة)</label><input id="sOrg" value="${esc((S.set && S.set.orgName) || '')}" placeholder="شركة النور"></div>
             <div class="field" style="max-width:260px"><label>المنطقة الزمنية للتقارير</label><select id="sTz">${TZ_OPTS.map(([v, l]) => `<option value="${v}" ${(S.set && +S.set.tzOffset || TZ_OFFSET_MIN) === v ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
+            <div class="field" style="max-width:300px"><label>عند نسيان الموظف تسجيل الانصراف</label><select id="sForgot">${[[0, 'بلا خصم تلقائي (تنبيه فقط)'], [0.25, 'خصم ربع يوم'], [0.5, 'خصم نصف يوم'], [1, 'خصم يوم كامل']].map(([v, l]) => `<option value="${v}" ${forgotDed() === v ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
             <button class="btn" data-act="saveSet">${ic('check', 18)} حفظ الإعدادات</button>
           </div>
-          <p class="muted" style="font-size:13px;margin:12px 0 0">المنطقة الزمنية تثبّت أسماء الأيام والحدود اليومية في كل التقارير على جهاز أي مدير مهما كانت ساعة جهازه.</p>
+          <p class="muted" style="font-size:13px;margin:12px 0 0">المنطقة الزمنية تثبّت أسماء الأيام والحدود اليومية في كل التقارير على جهاز أي مدير مهما كانت ساعة جهازه.<br>سياسة «نسيان الانصراف» تُطبَّق على الراتب الشهري (من الراتب اليومي) وعلى الأجر بالساعة (من ساعات اليوم المجدولة). ويظهر للإدارة تنبيه في «اليوم» وعلى تبويب التقارير إلى أن تُصحَّح البصمة، وعند التصحيح يُلغى الخصم تلقائياً.</p>
         </div>`
       }`;
   }
@@ -1982,10 +1987,10 @@ function adminApp(db, auth) {
       const pr = payrollRows().filter(r => r.pm !== 'none');
       if (pr.length) {
         const rn = v => +(Math.round(v * 100) / 100);
-        const aoa3 = [['الموظف', 'طريقة الأجر', 'قيمة الأجر', 'ساعات عادية فعلية', 'الأساسي', 'قيمة الإضافي', 'خصم التأخير', 'خصم المبكر', 'خصم الغياب / إجازة بلا راتب', 'الصافي']];
-        pr.forEach(r => aoa3.push([xlSafe(r.name), r.pm === 'monthly' ? 'شهري' : r.pm === 'task' ? 'بالمهام' : 'بالساعة', rn(r.amt), r.pm === 'task' ? r.taskQty : rn(r.paidH), rn(r.base), rn(r.otPay), rn(r.dedLate), rn(r.dedEarly), rn(r.dedAbs), rn(r.net)]));
+        const aoa3 = [['الموظف', 'طريقة الأجر', 'قيمة الأجر', 'ساعات عادية فعلية', 'الأساسي', 'قيمة الإضافي', 'خصم التأخير', 'خصم المبكر', 'خصم الغياب / إجازة بلا راتب', 'خصم نسيان الانصراف', 'الصافي']];
+        pr.forEach(r => aoa3.push([xlSafe(r.name), r.pm === 'monthly' ? 'شهري' : r.pm === 'task' ? 'بالمهام' : 'بالساعة', rn(r.amt), r.pm === 'task' ? r.taskQty : rn(r.paidH), rn(r.base), rn(r.otPay), rn(r.dedLate), rn(r.dedEarly), rn(r.dedAbs), rn(r.dedForgot || 0), rn(r.net)]));
         const ws3 = XLSX.utils.aoa_to_sheet(aoa3);
-        ws3['!cols'] = [{ wch: 22 }, { wch: 10 }, { wch: 12 }, { wch: 16 }, { wch: 12 }, { wch: 14 }, { wch: 12 }, { wch: 12 }, { wch: 18 }, { wch: 12 }];
+        ws3['!cols'] = [{ wch: 22 }, { wch: 10 }, { wch: 12 }, { wch: 16 }, { wch: 12 }, { wch: 14 }, { wch: 12 }, { wch: 12 }, { wch: 18 }, { wch: 16 }, { wch: 12 }];
         try { ws3['!views'] = [{ RTL: true }]; } catch {}
         XLSX.utils.book_append_sheet(wb, ws3, 'الرواتب');
       }
@@ -2139,50 +2144,63 @@ function adminApp(db, auth) {
   }
 
   const dimOf = k => new Date(Date.UTC(+k.slice(0, 4), +k.slice(5, 7), 0)).getUTCDate();
+  /* سياسة «نسيان الانصراف»: كسر اليوم المخصوم (0 = بلا خصم … 1 = يوم كامل) — تحددها الإدارة من الدوام والإعدادات ← إعدادات المنشأة */
+  const forgotAlerts = () => { try { return summary().filter(s => s.status === 'forgot'); } catch { return []; } };
+  const forgotDed = () => { const v = S.set ? S.set.forgotDeductDays : null; const n = (v === undefined || v === null || v === '') ? 0 : +v; return isNaN(n) ? 0 : Math.min(1, Math.max(0, n)); };
+  const forgotTxt = () => { const d = forgotDed(); return d === 0 ? 'بلا خصم تلقائي (يُدفع اليوم كاملاً حتى تُصحَّح البصمة)' : d >= 1 ? 'خصم يوم كامل' : `خصم ${d === 0.25 ? 'ربع' : d === 0.5 ? 'نصف' : d} يوم`; };
   function payrollRows() {
     const agg = new Map();
-    const blank = () => ({ net: 0, otMin: 0, otEq: 0, late: 0, early: 0, absent: 0, absentDays: [], daysWorked: 0, forgotDays: 0, plMin: 0, plDays: 0, lv: [] });
+    const blank = () => ({ net: 0, otMin: 0, otEq: 0, late: 0, early: 0, absent: 0, absentDays: [], daysWorked: 0, forgotDays: 0, forgotList: [], forgotPlan: 0, plMin: 0, plDays: 0, lv: [], lateK: 0, earlyK: 0, otK: 0 });
     summary().forEach(s => {
       const g = agg.get(s.empId) || blank();
-      if (s.status === 'work' || s.status === 'open') { g.net += s.met.net; g.otMin += s.met.otMin; g.otEq += (s.met.otEq || 0); g.daysWorked++; }
-      else if (s.status === 'forgot') g.forgotDays++;
+      const dm = dimOf(s.day);
+      if (s.status === 'work' || s.status === 'open') { g.net += s.met.net; g.otMin += s.met.otMin; g.otEq += (s.met.otEq || 0); g.otK += (s.met.otEq || 0) / dm; g.daysWorked++; }
+      else if (s.status === 'forgot') { g.forgotDays++; g.forgotList.push(s.day); g.forgotPlan += (s.met.planned || 0); }
       else if (s.status === 'absent') { g.absent++; g.absentDays.push(s.day); }
       else if (s.status === 'leave' && s.lv) g.lv.push({ day: s.day, pct: leavePct(s.lv) / 100, plan: s.met.planned || 0 });
       g.late += s.met.late || 0; g.early += s.met.early || 0;
+      g.lateK += (s.met.late || 0) / dm; g.earlyK += (s.met.early || 0) / dm;
       if ((s.status === 'work' || s.status === 'open' || s.status === 'absent') && s.met.planned > 0) { g.plMin += s.met.planned; g.plDays++; }
       agg.set(s.empId, g);
     });
     const emps = S.emps.filter(e => (e.empType === 'task' || ((e.payMode === 'monthly' || e.payMode === 'hourly') && (+e.payAmount || 0) > 0))
       && (e.active || (stopOf(e) && stopOf(e) > S.from)) && (!S.emp || e.id === S.emp));
+    const FD = forgotDed();
     return emps.map(e => {
       if (e.empType === 'task') {
         const rs = S.reqs.filter(r => r.kind === 'task' && r.status === 'approved' && r.empId === e.id && r.from >= S.from && r.from <= S.to);
         const base = rs.reduce((a, r) => a + (+r.amount || 0), 0), qty = rs.reduce((a, r) => a + (+(r.qtyApproved ?? r.qty) || 0), 0);
-        return { empId: e.id, name: e.name, pm: 'task', amt: 0, paidH: 0, otEq: 0, base, otPay: 0, dedLate: 0, dedEarly: 0, dedAbs: 0, net: base, absent: 0, unpaidDays: 0, payDays: 0, lateMin: 0, earlyMin: 0, forgotDays: 0, taskQty: qty };
+        return { empId: e.id, name: e.name, pm: 'task', amt: 0, paidH: 0, otEq: 0, base, otPay: 0, dedLate: 0, dedEarly: 0, dedAbs: 0, dedForgot: 0, net: base, absent: 0, unpaidDays: 0, payDays: 0, lateMin: 0, earlyMin: 0, forgotDays: 0, taskQty: qty };
       }
       const g = agg.get(e.id) || blank();
       const pm = e.payMode, amt = +e.payAmount || 0;
       const regH = Math.max(0, g.net - g.otMin) / 60;
-      let base = 0, otPay = 0, dedLate = 0, dedEarly = 0, dedAbs = 0, payDays = 0, avgH = 8;
+      let base = 0, otPay = 0, dedLate = 0, dedEarly = 0, dedAbs = 0, dedForgot = 0, payDays = 0, avgH = 8;
       if (pm === 'hourly') {
         const leavePay = g.lv.reduce((a, x) => a + (x.plan ? x.plan / 60 : 8) * amt * x.pct, 0);
-        base = amt * regH + leavePay; otPay = amt * g.otEq;
+        // يوم نسيان الانصراف: يُحتسب بساعاته المجدولة ثم يُخصم منه كسر السياسة
+        const forgotFull = (g.forgotPlan / 60) * amt;
+        base = amt * regH + leavePay + forgotFull; otPay = amt * g.otEq;
+        dedForgot = forgotFull * FD;
       } else {
-        const dayRate = amt / 30;
         avgH = g.plDays ? Math.min(24, Math.max(1, g.plMin / g.plDays / 60)) : 8;
-        const hourRate = dayRate / avgH;
+        // أجر الساعة = (الراتب ÷ أيام الشهر الفعلية) ÷ ساعات اليوم — نفس أساس الأساسي والغياب
+        const perHourUnit = amt / avgH;
         const from = (e.startDate && e.startDate > S.from) ? e.startDate : S.from;
         const stop = stopOf(e);
         const to = (stop && stop < S.to) ? stop : S.to;
         for (let k = from; k <= to; k = addDays(k, 1)) { base += amt / dimOf(k); payDays++; }
         const absDed = g.absentDays.reduce((a, dKey) => a + (amt / dimOf(dKey)), 0);
         const lvDed = g.lv.reduce((a, x) => a + (amt / dimOf(x.day)) * (1 - x.pct), 0);
-        otPay = hourRate * g.otEq; dedLate = hourRate * g.late; dedEarly = hourRate * g.early;
+        otPay = perHourUnit * g.otK;                 // otEq بالساعات
+        dedLate = perHourUnit * g.lateK / 60;        // late بالدقائق
+        dedEarly = perHourUnit * g.earlyK / 60;      // early بالدقائق
         dedAbs = Math.min(base, absDed + lvDed);
+        dedForgot = g.forgotList.reduce((a, dKey) => a + (amt / dimOf(dKey)), 0) * FD;
       }
       const paidH = regH;
-      const net = Math.max(0, base + otPay - dedLate - dedEarly - dedAbs);
-      return { empId: e.id, name: e.name, pm, amt, paidH, otEq: g.otEq, base, otPay, dedLate, dedEarly, dedAbs, net, absent: g.absent, unpaidDays: g.lv.filter(x => x.pct === 0).length, payDays, lateMin: g.late, earlyMin: g.early, forgotDays: g.forgotDays, taskQty: 0 };
+      const net = Math.max(0, base + otPay - dedLate - dedEarly - dedAbs - dedForgot);
+      return { empId: e.id, name: e.name, pm, amt, paidH, otEq: g.otEq, base, otPay, dedLate, dedEarly, dedAbs, dedForgot, net, absent: g.absent, unpaidDays: g.lv.filter(x => x.pct === 0).length, payDays, lateMin: g.late, earlyMin: g.early, forgotDays: g.forgotDays, taskQty: 0 };
     });
   }
 
@@ -2220,10 +2238,10 @@ function adminApp(db, auth) {
       <div class="card">${ch('payroll', 'مسير الرواتب والاستحقاقات الآلي')}${(() => {
         if (!pay.length) return '<p class="muted center" style="padding:20px 0">لا يوجد موظف عليه راتب بعد — حدد طريقة الأجر وقيمته من تعديل بيانات الموظف ليظهر المسير.</p>';
         const m = v => (Math.round(v * 100) / 100).toString();
-        const T = pay.reduce((a, r) => ({ base: a.base + r.base, otPay: a.otPay + r.otPay, dl: a.dl + r.dedLate, de: a.de + r.dedEarly, da: a.da + r.dedAbs, net: a.net + r.net }), { base: 0, otPay: 0, dl: 0, de: 0, da: 0, net: 0 });
-        return `<p class="hint" style="margin-top:0">محسوبة للفترة (${fmtDate(dayStart(S.from))} → ${fmtDate(dayStart(S.to))}). أيام «نسيان الانصراف» لا تُحتسب حتى تُصحَّح البصمة.</p><div class="tw"><table><thead><tr><th>الموظف</th><th>الأجر</th><th>ساعات عادية فعلية</th><th>الأساسي</th><th>قيمة الإضافي</th><th>خصم التأخير</th><th>خصم المبكر</th><th>خصم الغياب / إجازة بلا راتب</th><th>الصافي المستحق</th></tr></thead><tbody>
-        ${pay.map(r => `<tr><td><div class="who"><span class="av">${ini(r.name)}</span><div>${esc(r.name)}${r.forgotDays ? ` <span class="badge b-warn" title="لم تُحتسب ساعاتها حتى تُصحَّح البصمة">${r.forgotDays} يوم منسي</span>` : ''}</div></div></td><td><span class="badge ${r.pm === 'monthly' ? 'b-pri' : r.pm === 'task' ? 'b-warn' : 'b-ok'}">${r.pm === 'monthly' ? 'شهري ' + m(r.amt) : r.pm === 'task' ? 'بالمهام' : 'بالساعة ' + m(r.amt)}</span></td><td>${r.pm === 'task' ? r.taskQty + ' وحدة' : r.paidH.toFixed(1) + ' س'}</td><td>${m(r.base)}</td><td><b>${m(r.otPay)}</b></td><td class="muted">${m(r.dedLate)}</td><td class="muted">${m(r.dedEarly)}</td><td class="muted">${m(r.dedAbs)}</td><td><b class="badge b-ok" style="font-size:14px">${m(r.net)}</b></td></tr>`).join('')}
-        </tbody><tfoot><tr><td colspan="3">الإجمالي الكلي</td><td>${m(T.base)}</td><td>${m(T.otPay)}</td><td>${m(T.dl)}</td><td>${m(T.de)}</td><td>${m(T.da)}</td><td><b class="badge b-ok" style="font-size:14.5px">${m(T.net)}</b></td></tr></tfoot></table></div>`;
+        const T = pay.reduce((a, r) => ({ base: a.base + r.base, otPay: a.otPay + r.otPay, dl: a.dl + r.dedLate, de: a.de + r.dedEarly, da: a.da + r.dedAbs, df: a.df + (r.dedForgot || 0), net: a.net + r.net }), { base: 0, otPay: 0, dl: 0, de: 0, da: 0, df: 0, net: 0 });
+        return `<p class="hint" style="margin-top:0">محسوبة للفترة (${fmtDate(dayStart(S.from))} → ${fmtDate(dayStart(S.to))}). سياسة «نسيان الانصراف» الحالية: ${forgotTxt()} — عدّل البصمة من «سجل البصمات» وسيُعاد الاحتساب تلقائياً.</p><div class="tw"><table><thead><tr><th>الموظف</th><th>الأجر</th><th>ساعات عادية فعلية</th><th>الأساسي</th><th>قيمة الإضافي</th><th>خصم التأخير</th><th>خصم المبكر</th><th>خصم الغياب / إجازة بلا راتب</th><th>خصم نسيان الانصراف</th><th>الصافي المستحق</th></tr></thead><tbody>
+        ${pay.map(r => `<tr><td><div class="who"><span class="av">${ini(r.name)}</span><div>${esc(r.name)}${r.forgotDays ? ` <span class="badge b-warn" title="لم تُصحَّح بصمة انصرافها — السياسة: ${forgotTxt()}">${r.forgotDays} يوم منسي</span>` : ''}</div></div></td><td><span class="badge ${r.pm === 'monthly' ? 'b-pri' : r.pm === 'task' ? 'b-warn' : 'b-ok'}">${r.pm === 'monthly' ? 'شهري ' + m(r.amt) : r.pm === 'task' ? 'بالمهام' : 'بالساعة ' + m(r.amt)}</span></td><td>${r.pm === 'task' ? r.taskQty + ' وحدة' : r.paidH.toFixed(1) + ' س'}</td><td>${m(r.base)}</td><td><b>${m(r.otPay)}</b></td><td class="muted">${m(r.dedLate)}</td><td class="muted">${m(r.dedEarly)}</td><td class="muted">${m(r.dedAbs)}</td><td class="muted">${m(r.dedForgot || 0)}</td><td><b class="badge b-ok" style="font-size:14px">${m(r.net)}</b></td></tr>`).join('')}
+        </tbody><tfoot><tr><td colspan="3">الإجمالي الكلي</td><td>${m(T.base)}</td><td>${m(T.otPay)}</td><td>${m(T.dl)}</td><td>${m(T.de)}</td><td>${m(T.da)}</td><td>${m(T.df)}</td><td><b class="badge b-ok" style="font-size:14.5px">${m(T.net)}</b></td></tr></tfoot></table></div>`;
       })()}</div>`
     : `
       <div class="card">${ch('pin', `سجل عمليات البصمة التفصيلي (${raw.length})`)}<div class="tw"><table><thead><tr><th>الموظف</th><th>العملية</th><th>التاريخ</th><th>الوقت</th><th>الموقع</th><th>البعد</th><th>الخريطة</th></tr></thead><tbody>
@@ -2332,7 +2350,8 @@ function adminApp(db, auth) {
       if (act === 'saveSet') {
         const org = $('#sOrg').value.trim();
         const tz = parseInt($('#sTz').value, 10);
-        await setDoc(doc(db, 'settings', 'general'), { orgName: org, tzOffset: isNaN(tz) ? TZ_OFFSET_MIN : tz, updatedAt: serverTimestamp() }, { merge: true });
+        const fgd = parseFloat($('#sForgot').value);
+        await setDoc(doc(db, 'settings', 'general'), { orgName: org, tzOffset: isNaN(tz) ? TZ_OFFSET_MIN : tz, forgotDeductDays: isNaN(fgd) ? 0 : Math.min(1, Math.max(0, fgd)), updatedAt: serverTimestamp() }, { merge: true });
         if (!isNaN(tz) && tz !== TZOFF) TZOFF = tz;
         await loadAll(); toast('حُفظت إعدادات المنشأة', 'good');
       }
