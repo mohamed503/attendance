@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#0d4fa8">
+<meta name="theme-color" content="#0E6B4D">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="ميقات">
@@ -17,25 +17,20 @@
 <link rel="manifest" href="manifest.json">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800;900&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;500;600;700;800&family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
 :root{
-  --bg:#f0f5fc;--card:#ffffff;--surface:#f7faff;--ink:#0f2544;--mute:#64748b;--line:#e2e8f0;
-  --pri:#1b7ee6;--pri-d:#0f5fc0;--pri-l:#e0effe;--navy:#0b3c7d;
-  --ok:#10b981;--bad:#ef4444;--warn:#f59e0b;
-  --grad:linear-gradient(135deg,#09397c 0%,#1568c7 52%,#329ef2 100%);
-  --sh:0 4px 20px -2px rgba(15,37,68,.06),0 2px 6px -1px rgba(15,37,68,.04);
-  --sh-lg:0 16px 36px -6px rgba(15,37,68,.12);
-  --th-bg:#f4f8fd;--tr-hover:#f8fbff;--inp-bg:#f8fafc;
+--bg:#EAF4EE;--card:#ffffff;--surface:#F2F8F4;--ink:#0E2A20;--mute:#587265;--line:#D3E5DA;
+--pri:#0E6B4D;--pri-d:#0A5139;--pri-l:#D3EBDD;--pri-t:#0E6B4D;--navy:#0E2A20;--on:#fff;
+--mint:#BDE96B;--mint-ink:#1E3A07;--sun:#F7C948;--sun-ink:#3A2A05;--coral:#FF7352;--coral-ink:#3D1005;
+--ok:#0E6B4D;--bad:#C23B1B;--warn:#8A6100;
+--grad:var(--pri);--sh:none;--sh-lg:none;--th-bg:#F2F8F4;--tr-hover:#F2F8F4;--inp-bg:#F2F8F4;color-scheme:light;
 }
 [data-theme="dark"]{
-  --bg:#0b1120;--card:#131c31;--surface:#19253f;--ink:#f1f5f9;--mute:#94a3b8;--line:#233252;
-  --pri:#3898ff;--pri-d:#60a5fa;--pri-l:rgba(56,152,255,.15);--navy:#93c5fd;
-  --ok:#10b981;--bad:#f87171;--warn:#fbbf24;
-  --grad:linear-gradient(135deg,#082046 0%,#0f458a 55%,#1967be 100%);
-  --sh:0 6px 24px rgba(0,0,0,.35);
-  --sh-lg:0 20px 44px rgba(0,0,0,.55);
-  --th-bg:#18243e;--tr-hover:#18233c;--inp-bg:#0f172a;
+--bg:#07140E;--card:#10241A;--surface:#0A1B13;--ink:#E9F6EE;--mute:#8FB0A0;--line:#1B3A2B;
+--pri:#17935F;--pri-d:#12865A;--pri-l:#143A2B;--pri-t:#5FDBA3;--navy:#E9F6EE;
+--mint:#C6F27A;--sun:#FFD35C;--coral:#FF8463;--ok:#C6F27A;--bad:#FF8463;--warn:#FFD35C;
+--sh:none;--sh-lg:none;--th-bg:#0A1B13;--tr-hover:#143A2B;--inp-bg:#0A1B13;color-scheme:dark;
 }
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 body{margin:0;background:var(--bg);color:var(--ink);font-family:"Tajawal","Segoe UI",Tahoma,"Noto Sans Arabic",Arial,sans-serif;font-size:15px;line-height:1.65;transition:background-color .25s,color .25s}
@@ -241,6 +236,208 @@ details.fold[open] summary{margin-bottom:16px;padding-bottom:12px;border-bottom:
   .search-box{max-width:none;width:100%}
 }
 @media (max-width:420px){.tab{font-size:10px}.tab svg{width:20px;height:20px}}
+
+/* =============== «نبض» — اللوحة الخضراء (الجزء 1: الأساس) =============== */
+html{padding-top:env(safe-area-inset-top,0px);-webkit-text-size-adjust:100%}
+body{font-family:"Rubik","IBM Plex Sans Arabic","Segoe UI",Tahoma,Arial,sans-serif;font-size:15px;line-height:1.65;transition:background-color .25s,color .25s}
+:focus-visible{outline:2px solid var(--pri-t);outline-offset:2px;border-radius:8px}
+.ic{filter:none}
+a{color:var(--pri-t)}
+.top{background:var(--pri);border-radius:0 0 34px 34px}.top::before,.top::after{display:none}
+.logo{background:rgba(255,255,255,.16);border-color:rgba(255,255,255,.28)}.logo.big{background:var(--pri);box-shadow:none}
+.ib{border-radius:50%;background:rgba(255,255,255,.14)}
+.tabs{box-shadow:none;border-radius:30px}
+.tab{border-radius:99px;font-weight:700}.tab:hover{background:var(--pri-l);color:var(--pri-t)}
+.tab.on{background:var(--ink);color:var(--bg);box-shadow:none}
+.subtabs{border-radius:99px;background:var(--pri-l);border-color:transparent}
+.stab{border-radius:99px;color:var(--pri-t)}.stab.on{background:var(--ink);color:var(--bg);box-shadow:none}
+.card{border-radius:30px;box-shadow:none}
+.chi{border-radius:16px;background:var(--pri-l)}
+h1,h2,h3{letter-spacing:-.01em}
+.search-box input{border-radius:99px}
+.btn{border-radius:99px;background:var(--pri);color:var(--on);box-shadow:none;font-weight:700}
+.btn:hover{filter:brightness(1.1);transform:none}
+.btn.sec{background:var(--pri-l);color:var(--pri-t)}.btn.sec:hover{border-color:var(--pri)}
+.btn.ok{background:var(--mint);color:var(--mint-ink);box-shadow:none}
+.btn.bad{background:var(--coral);color:var(--coral-ink);box-shadow:none}
+.btn.sm{border-radius:99px}
+input,select,textarea{border-radius:16px;background:var(--inp-bg)}
+input:focus,select:focus,textarea:focus{background:var(--inp-bg);box-shadow:none;border-color:var(--pri)}
+input[type=checkbox],input[type=radio]{accent-color:var(--pri)}
+.tw{border-radius:22px}
+th,td{text-align:start}
+th{color:var(--mute);font-weight:600}
+tfoot td{border-top:2px solid var(--line)}
+.av{background:var(--pri);border-radius:16px}.av.lg{background:rgba(255,255,255,.16)}
+.badge{border-radius:99px;font-weight:700}
+.b-ok{background:var(--mint);color:var(--mint-ink)}.b-bad{background:var(--coral);color:var(--coral-ink)}
+.b-warn{background:var(--sun);color:var(--sun-ink)}.b-pri{background:var(--pri-l);color:var(--pri-t)}
+.b-mute{background:var(--surface);color:var(--mute);border:1px solid var(--line)}
+.act-menu summary{border-radius:99px}.act-drop{border-radius:22px;box-shadow:0 18px 40px -16px rgba(7,20,14,.4);max-width:calc(100vw - 32px)}
+.act-drop button{border-radius:14px}.act-drop button:hover{color:var(--pri-t)}
+.act-drop button.bad-txt{color:var(--bad)}
+.stat{border-radius:28px;box-shadow:none}.stat:hover{transform:none;box-shadow:none}
+.st-ic{border-radius:18px;background:var(--pri-l)}
+.notice{background:var(--sun);color:var(--sun-ink);border:0;border-radius:22px 22px 22px 8px;font-weight:500}
+.toast{border-radius:99px;background:var(--ink);color:var(--bg);font-weight:600}.toast.err{background:var(--coral);color:var(--coral-ink)}.toast.good{background:var(--pri);color:var(--on)}
+.auth-bg{background:var(--pri)}.login{border-radius:34px;box-shadow:none}
+.emp-bg{background:var(--pri) top/100% 320px no-repeat,var(--bg)}
+.emp-head{border-radius:28px;background:rgba(255,255,255,.12)}
+.clockcard{border-radius:32px;box-shadow:none}
+.pbtn{border-radius:30px;box-shadow:none}
+.pbtn.in{background:var(--mint);color:var(--mint-ink)}.pbtn.out{background:var(--coral);color:var(--coral-ink)}
+.pbtn .pc{background:rgba(0,0,0,.1)}
+.live{color:var(--ok)}.live::before{background:var(--mint)}
+.status{border-radius:22px;background:var(--pri-l);color:var(--pri-t)}
+.status.err{background:var(--coral);color:var(--coral-ink);border-color:transparent}
+.ov{backdrop-filter:blur(3px)}.modal{border-radius:32px;box-shadow:none}
+.chip,.plan{border-radius:99px}.sch{border-radius:26px;box-shadow:none}
+.sec-t{color:var(--ink)}
+details.fold{border-radius:26px;box-shadow:none}
+details.fold>summary::after{content:"";flex:none;width:9px;height:9px;border-inline-end:2.5px solid var(--mute);border-bottom:2.5px solid var(--mute);transform:rotate(45deg);margin-inline-start:8px;transition:transform .2s}
+details.fold[open]>summary::after{transform:rotate(-135deg)}
+details.fold[open]>summary{margin-bottom:16px;padding-bottom:12px;border-bottom:1px solid var(--line)}
+details details summary{border:0;padding:0;margin:0}
+pre.rules{background:#0B1F16;color:#E9F6EE}
+.off-bar{background:var(--sun);color:var(--sun-ink)}
+@media (max-width:1020px){.act-menu{position:static}.act-drop{inset-inline:12px;left:auto;right:auto;width:auto;top:auto}}
+@media (max-width:760px){
+ body{font-size:15.5px}.hint{font-size:14.5px;line-height:1.85}.field label{font-size:13px}
+ .card{padding:16px;border-radius:26px}h2{line-height:1.5}
+ .modal{border-radius:30px 30px 0 0}.mb{padding:18px 16px}.mh{padding:14px 16px}.mf{padding:12px 16px calc(12px + env(safe-area-inset-bottom,0px))}
+ .tabs{border-radius:28px 28px 0 0}.tab.on{background:var(--ink);color:var(--bg)}
+ .btn{min-height:44px}.btn.sm{min-height:38px}.notice{font-size:14.5px;line-height:1.85}
+}
+@media(prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+
+/* =============== الجزء 2: إطار الإدارة وتبويب اليوم =============== */
+.shell{display:grid;grid-template-columns:92px minmax(0,1fr);max-width:1360px;margin:0 auto}
+.rail{padding:22px 0;display:flex;justify-content:center}
+.rail-nav{position:sticky;top:22px;align-self:flex-start;background:var(--card);border:1px solid var(--line);border-radius:30px;width:66px;padding:12px 0;display:flex;flex-direction:column;align-items:center;gap:6px;margin-inline-start:14px}
+.rail-nav .lg{width:44px;height:44px;border-radius:16px;background:var(--pri);display:grid;place-items:center;margin-bottom:8px}
+.rail-nav .tab{width:46px;height:46px;padding:0;border-radius:16px;background:transparent;color:var(--mute);display:grid;place-items:center;position:relative;flex:none;gap:0;box-shadow:none}
+.rail-nav .tab .tl{display:none}
+.rail-nav .tab:hover{background:var(--pri-l);color:var(--pri-t)}
+.rail-nav .tab.on{background:var(--ink);color:var(--bg)}
+.rail-nav .tab em{position:absolute;top:1px;inset-inline-end:1px;font-style:normal;font-size:10.5px;font-weight:700;background:var(--coral);color:var(--coral-ink);border-radius:99px;min-width:17px;height:17px;display:grid;place-items:center;padding:0 4px}
+.wrap.main{max-width:none;margin:0;padding:26px 28px 48px;min-width:0}
+.phead{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;flex-wrap:wrap;margin-bottom:22px}
+.phead small{display:flex;align-items:center;gap:8px;flex-wrap:wrap;color:var(--mute);font-weight:500;font-size:14.5px}
+.phead h1{font-size:42px;line-height:1.15;font-weight:800;letter-spacing:-.02em;margin:2px 0 0}
+.ptools{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.ptools .ib,.ptools .pwa-btn{height:46px;border-radius:99px;background:var(--card);border:1px solid var(--line);color:var(--ink);backdrop-filter:none;transform:none}
+.ptools .ib{width:46px;padding:0;border-radius:50%;display:grid;place-items:center}
+.ptools .pwa-btn{padding:0 18px;font-weight:600;font-size:14px}
+.ptools .ib:hover,.ptools .pwa-btn:hover{background:var(--pri-l);color:var(--pri-t);transform:none}
+.ptools [data-act=logout]{color:var(--bad)}
+.bento{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;margin-bottom:18px}
+.tile{background:var(--card);border:1px solid var(--line);border-radius:28px;padding:20px 22px;display:flex;flex-direction:column;justify-content:space-between;gap:10px;min-height:150px;position:relative;min-width:0}
+.tile .tl{display:flex;align-items:center;justify-content:space-between;gap:8px;font-weight:600;font-size:14.5px;opacity:.88}
+.tile .big{font-size:68px;line-height:.95;font-weight:800;letter-spacing:-.04em;font-variant-numeric:tabular-nums}
+.t-hero{grid-column:span 2;grid-row:span 2;background:var(--pri);color:var(--on);border-color:transparent;border-radius:36px;padding:26px;overflow:hidden}
+.t-hero .big{font-size:148px}
+.t-hero::after{content:"";position:absolute;width:260px;height:260px;border-radius:50%;border:44px solid rgba(255,255,255,.09);inset-inline-end:-80px;top:-90px;pointer-events:none}
+.t-mint{background:var(--mint);color:var(--mint-ink);border-color:transparent}
+.t-coral{background:var(--coral);color:var(--coral-ink);border-color:transparent;border-radius:26px}
+.t-sun{background:var(--sun);color:var(--sun-ink);border-color:transparent;border-radius:30px 30px 30px 10px}
+.prog{height:10px;background:rgba(255,255,255,.2);border-radius:99px;overflow:hidden;display:flex;gap:3px;margin:14px 0 10px}.prog i{display:block;height:100%;border-radius:99px}
+.tlist{display:grid;gap:10px}
+.trow{display:grid;grid-template-columns:auto minmax(0,1.4fr) minmax(0,1.2fr) minmax(0,2.4fr);gap:14px;align-items:center;padding:12px 16px;border-radius:24px;background:var(--surface)}
+.trow small{display:block;color:var(--mute);font-size:12px;font-weight:500}
+.tr-n b{display:block;line-height:1.35}
+.tr-s{display:flex;flex-direction:column;gap:4px;align-items:flex-start}
+.tr-m{display:grid;grid-template-columns:1.2fr 1fr 1fr;gap:12px;font-size:14px}
+.empty{text-align:center;color:var(--mute);padding:30px 16px;border:1.5px dashed var(--line);border-radius:24px}
+@media(max-width:1180px){.trow{grid-template-columns:auto minmax(0,1fr) auto}.tr-s{grid-column:3;grid-row:1;align-items:flex-end}.tr-m{grid-column:1/-1}}
+@media(max-width:1020px){.bento{grid-template-columns:repeat(2,minmax(0,1fr))}.t-hero{grid-row:auto}.t-hero .big{font-size:110px}.tile{min-height:130px}}
+@media(max-width:760px){
+ .shell{display:block}.rail{padding:0;display:block}
+ .rail-nav{position:fixed;inset-inline:10px;bottom:calc(10px + env(safe-area-inset-bottom,0px));top:auto;width:auto;z-index:60;flex-direction:row;justify-content:space-between;gap:2px;padding:7px;border-radius:28px;margin:0;overflow-x:auto;scrollbar-width:none;box-shadow:0 14px 34px -14px rgba(7,20,14,.45)}
+ .rail-nav::-webkit-scrollbar{display:none}.rail-nav .lg{display:none}
+ .rail-nav .tab{flex:1 1 0;min-width:46px;width:auto;height:56px;padding:0 2px;border-radius:18px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px}
+ .rail-nav .tab .tl{display:block;font-size:11px;font-weight:600;line-height:1.2;white-space:nowrap}
+ .rail-nav .tab em{top:2px;inset-inline-end:50%;margin-inline-end:-22px}
+ .wrap.main{padding:18px 14px 120px}.phead h1{font-size:30px}.phead{margin-bottom:16px}
+ .ptools{width:100%}.ptools .ib,.ptools .pwa-btn{height:44px}.ptools .ib{width:44px}
+ .tile{padding:16px 18px;border-radius:24px;min-height:120px}.tile .big{font-size:54px}.t-hero .big{font-size:96px}.tile .tl{font-size:14px}
+ .tr-m{grid-template-columns:1fr 1fr;gap:10px 12px}.tr-p{grid-column:1/-1}.trow{padding:14px}
+}
+
+/* =============== الجزء 3: الموظفون والدوام والمواقع =============== */
+.subtabs{display:flex;width:max-content;max-width:100%;overflow-x:auto;scrollbar-width:none;flex-wrap:nowrap;margin-bottom:16px}
+.subtabs::-webkit-scrollbar{display:none}.stab{flex:none;white-space:nowrap;min-height:40px;font-weight:600}
+.fold:not([open]) .when-open,.fold[open] .when-closed{display:none}
+details.fold>summary{gap:10px 14px}details.fold>summary .ch-l{flex:1;min-width:0}
+.card>.row,details.fold>.row,.mb .row{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px;align-items:end}
+.card>.row .field,details.fold>.row .field,.mb .row .field{min-width:0;max-width:none}
+.elist{display:grid;gap:10px}
+.erow{display:grid;grid-template-columns:auto minmax(0,1.3fr) minmax(0,1.3fr) minmax(0,1.1fr) auto;gap:14px;align-items:center;padding:12px 16px;border-radius:24px;background:var(--surface)}
+.erow .er-n b{display:block;line-height:1.35}.er-n .badge{margin-top:4px}
+.er-n .mail{display:block;direction:ltr;text-align:right;color:var(--mute);font-size:12.5px;overflow-wrap:anywhere}
+.er-b{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.er-a{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.er-adm{grid-template-columns:auto minmax(0,1.6fr) minmax(0,1fr) auto}
+.act-menu summary{display:inline-flex;align-items:center;gap:6px;min-height:38px;padding:0 16px;font-weight:600}
+.act-menu summary::after{content:"";width:7px;height:7px;border-right:2px solid currentColor;border-bottom:2px solid currentColor;transform:rotate(45deg) translateY(-2px)}
+details.fold>summary::after{border-inline-end:0!important;border-right:2.5px solid var(--mute)!important;border-bottom:2.5px solid var(--mute)}
+.rt td.center{justify-content:center}
+@media(max-width:1180px){.erow,.er-adm{grid-template-columns:auto minmax(0,1fr)}.er-b,.er-a{grid-column:1/-1}.er-adm .er-b{grid-column:2}}
+@media(max-width:760px){
+ .mb .g2,.mb .cyc{grid-template-columns:1fr}.mb .field,.mb .field[style]{max-width:none!important;min-width:0;width:100%}.mb input,.mb select,.mb textarea{width:100%;max-width:none}
+ .mb input[type=checkbox],.mb input[type=radio]{width:auto!important;flex:none}
+ .mb .num{width:100%!important}
+ .mb .tin{display:grid;grid-template-columns:auto minmax(0,1fr) auto minmax(0,1fr);gap:8px;align-items:center;width:100%}
+ .mb .tin input{min-width:0;width:100%;padding:9px 10px}
+ .mb .drow{gap:8px}.mb .dn{width:auto;flex:1 1 100%}
+ .rail-nav{justify-content:flex-start}.rail-nav .tab{flex:0 0 auto;min-width:60px}.rail-nav .tab .tl{font-size:11.5px}
+ .subtabs{flex-direction:column;width:100%;overflow:visible;border-radius:24px;gap:4px}
+ .stab{justify-content:flex-start;padding:11px 16px;border-radius:18px;white-space:normal;text-align:start;font-size:14.5px}
+ details.fold>summary{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center}
+ details.fold>summary .ch-l{grid-column:1;grid-row:1}details.fold>summary::after{grid-column:2;grid-row:1}
+ details.fold>summary>.badge{grid-column:1/-1;grid-row:2;justify-self:start}
+ .card>.row,details.fold>.row,.mb .row{grid-template-columns:1fr}
+ .card>.row .btn,details.fold>.row .btn{width:100%}
+ .erow{padding:14px}.er-a .btn{flex:1 1 auto;justify-content:center}
+ .tw:has(table.rt){border:0;background:transparent;overflow:visible;border-radius:0}
+ .rt thead{display:none}.rt,.rt tbody,.rt tr,.rt td{display:block}
+ .rt tr{border:1px solid var(--line);border-radius:22px;padding:10px 14px;margin-bottom:10px;background:var(--surface)}
+ .rt td{border:0;padding:7px 0;white-space:normal;display:flex;justify-content:space-between;align-items:center;gap:12px;text-align:end}
+ .rt td::before{content:attr(data-l);color:var(--mute);font-size:13px;font-weight:600;text-align:start;flex:none}
+ .rt td[data-l=""]::before,.rt td:not([data-l])::before{display:none}
+ .rt td[data-l=""]{justify-content:flex-start;padding-top:10px}
+}
+
+/* =============== الجزء 3: الموظفون والدوام والمواقع والنوافذ =============== */
+.subtabs{display:inline-flex;max-width:100%}
+.row:has(>.field){display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;align-items:end}
+.row:has(>.field)>.field{max-width:none!important;min-width:0}
+.row:has(>.field)>.btn{align-self:end;justify-content:center}
+.mf{justify-content:flex-start}
+.mb .field{margin-top:12px}.mb .field:first-child,.mb .g2 .field,.mb .row .field{margin-top:0}
+.mb .hint{margin:6px 0 4px}
+.sch{border-radius:26px;background:var(--surface);box-shadow:none}
+.sch h4{font-size:17px}.sch p{line-height:1.8}
+.erow .er-n b{font-size:15.5px}
+.drow .dn{width:auto;min-width:96px}
+@media(max-width:760px){
+ .subtabs{display:flex;flex-direction:column;border-radius:26px;width:100%;padding:6px;gap:4px}
+ .stab{justify-content:flex-start;padding:12px 16px;border-radius:20px;font-size:14.5px}
+ details.fold>summary{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:8px 12px}
+ details.fold>summary::after{grid-column:2;grid-row:1;margin:0}
+ details.fold>summary>.ch-l{grid-column:1;grid-row:1}
+ details.fold>summary>.badge{grid-column:1/-1;grid-row:2;justify-self:start}
+ .row:has(>.field)>.btn{width:100%}
+ .mf{gap:8px}.mf .btn{flex:1;justify-content:center}
+ .sch-grid{grid-template-columns:1fr}
+ .er-a .btn,.er-a .act-menu{flex:1 1 calc(50% - 6px)}.er-a .act-menu summary{display:flex;justify-content:center;height:38px;align-items:center}
+ .mb{padding:18px 16px}.sec-t{font-size:16px}
+ .drow{gap:8px 10px}.tin input,.srow input[type=time]{min-width:0;flex:1}
+}
+@media(max-width:430px){
+ .rail-nav .tab:not(.on){flex:1 1 0;min-width:0}.rail-nav .tab:not(.on) .tl{display:none}
+ .rail-nav .tab:not(.on) em{inset-inline-end:2px;margin:0;top:4px}
+ .rail-nav .tab.on{flex:0 0 auto;min-width:78px;padding:0 12px}
+}
 </style>
 </head>
 <body>
@@ -354,7 +551,40 @@ const I = {
   lock: `<path d="M20 28V18a12 12 0 0 1 24 0v10" fill="none" stroke="#cbd5e1" stroke-width="7" stroke-linecap="round"/><rect x="12" y="26" width="40" height="32" rx="8" fill="#fbbf24"/><path d="M32 26h12a8 8 0 0 1 8 8v16a8 8 0 0 1-8 8H32z" fill="#f59e0b"/><circle cx="32" cy="40" r="5" fill="#334155"/><path d="M32 43v7" stroke="#334155" stroke-width="4" stroke-linecap="round"/>`,
   search: `<circle cx="28" cy="28" r="18" fill="#e0f2fe" stroke="#0284c7" stroke-width="5"/><path d="M41 41l13 13" stroke="#f59e0b" stroke-width="6.5" stroke-linecap="round"/>`
 };
-const ic = (n, s = 22) => `<svg class="ic" width="${s}" height="${s}" viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg">${I[n] || I.clock}</svg>`;
+const I2 = {
+ clock:'<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/>',
+ today:'<rect x="4" y="5.5" width="16" height="14.5" rx="3.5"/><path d="M4 10h16M8.5 3.5v3.5M15.5 3.5v3.5M9.5 15l2 2 3.5-3.5"/>',
+ users:'<circle cx="9" cy="8" r="3.2"/><path d="M3 19c.6-3.3 3-5 6-5s5.4 1.7 6 5M16 5.2a3 3 0 0 1 0 5.6M18 14.3c1.7.6 2.7 2.2 3 4.7"/>',
+ pin:'<path d="M12 21s6.5-5.8 6.5-11a6.5 6.5 0 0 0-13 0C5.5 15.200 12 21 12 21z"/><circle cx="12" cy="10" r="2.3"/>',
+ report:'<path d="M5 20V10M10.5 20V5M16 20v-7M21 20H3"/>',
+ payroll:'<rect x="3.5" y="6" width="17" height="12" rx="3"/><circle cx="12" cy="12" r="2.6"/><path d="M7 12h.01M17 12h.01"/>',
+ print:'<path d="M7 9V4h10v5M7 17H5a1 1 0 0 1-1-1v-5a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v5a1 1 0 0 1-1 1h-2M7 14h10v6H7z"/>',
+ refresh:'<path d="M20 12a8 8 0 0 1-14 5.3M4 12a8 8 0 0 1 14-5.3M18 3v4h-4M6 21v-4h4"/>',
+ logout:'<path d="M10 4.5H6.5A2.5 2.5 0 0 0 4 7v10a2.5 2.5 0 0 0 2.5 2.5H10M15 8l4 4-4 4M19 12H9"/>',
+ login:'<path d="M14 4.5h3.5A2.5 2.5 0 0 1 20 7v10a2.5 2.5 0 0 1-2.5 2.5H14M9 8l-4 4 4 4M5 12h10"/>',
+ link:'<path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3A4 4 0 0 0 11 18.7l1-1"/>',
+ send:'<path d="M20.5 3.5 10 14M20.5 3.5 14 20.5l-4-6.5-6.5-4z"/>',
+ device:'<rect x="7" y="3" width="10" height="18" rx="2.5"/><path d="M11 18h2"/>',
+ power:'<path d="M12 3.5v8M7.2 6.8a7.5 7.5 0 1 0 9.6 0"/>',
+ trash:'<path d="M5 7h14M9 7V4.5h6V7M7 7l1 13h8l1-13"/>',
+ plus:'<path d="M12 5v14M5 12h14"/>',
+ download:'<path d="M12 4v11M7.5 10.5 12 15l4.5-4.5M5 20h14"/>',
+ target:'<circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4.5"/><circle cx="12" cy="12" r=".8"/>',
+ filter:'<path d="M4 6h16M7 12h10M10 18h4"/>',
+ check:'<path d="m5 12.5 4.5 4.5L19 7.5"/>',
+ alert:'<path d="M12 4 3.5 19h17z"/><path d="M12 10v4.2M12 17h.01"/>',
+ map:'<path d="M9 5 3.5 7v12L9 17l6 2 5.5-2V5L15 7z"/><path d="M9 5v12M15 7v12"/>',
+ sched:'<rect x="4" y="5.5" width="16" height="14.5" rx="3.5"/><path d="M4 10h16M8.5 3.5v3.5M15.5 3.5v3.5M8 14h2M14 14h2"/>',
+ edit:'<path d="M4 20h4L19 9l-4-4L4 16zM13 7l4 4"/>',
+ x:'<path d="M6 6l12 12M18 6 6 18"/>',
+ copy:'<rect x="8" y="8" width="12" height="12" rx="3"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/>',
+ sun:'<circle cx="12" cy="12" r="4"/><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4"/>',
+ moon:'<path d="M20 14.5A8 8 0 0 1 9.5 4 8 8 0 1 0 20 14.5z"/>',
+ task:'<rect x="5" y="4" width="14" height="17" rx="3"/><path d="M9 4h6v2.500H9zM8.500 12l1.800 1.800 3.200-3.200M8.500 17h7"/>',
+ lock:'<rect x="5" y="10.5" width="14" height="10" rx="3"/><path d="M8 10.5V8a4 4 0 0 1 8 0v2.5M12 15v2"/>',
+ search:'<circle cx="11" cy="11" r="6.5"/><path d="m16 16 4 4"/>'
+};
+const ic = (n, s = 22) => `<svg class="ic" width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${I2[n] || I2.clock}</svg>`;
 
 /* ---------- أدوات مساعدة ---------- */
 const $ = (s, r = document) => r.querySelector(s);
@@ -835,12 +1065,12 @@ function setupPage() {
   <p class="muted">النظام يحتاج قاعدة بيانات مجانية لمزامنة الإدارة مع الموظفين. الخطوات كلها مجانية ولا تتطلب بطاقة بنكية.</p>
   <ol>
     <li>ادخل إلى <a href="https://console.firebase.google.com" target="_blank">console.firebase.google.com</a> وأنشئ مشروعاً جديداً (خطة Spark المجانية).</li>
-    <li>من <b>Build ← Authentication</b>: فعّل <b>Email/Password</b> وأضف مستخدماً (بريدك وكلمة مرور) — هذا حساب الإدارة. ثم من <b>Sign-in method</b> فعّل أيضاً <b>Anonymous</b> — يستخدمه رابط الموظف لهوية آمنة مرتبطة بجهازه.</li>
-    <li>من <b>Build ← Firestore Database</b> أنشئ قاعدة بيانات (اختر Production mode وأقرب منطقة).</li>
+    <li>من <b>Build › Authentication</b>: فعّل <b>Email/Password</b> وأضف مستخدماً (بريدك وكلمة مرور) — هذا حساب الإدارة. ثم من <b>Sign-in method</b> فعّل أيضاً <b>Anonymous</b> — يستخدمه رابط الموظف لهوية آمنة مرتبطة بجهازه.</li>
+    <li>من <b>Build › Firestore Database</b> أنشئ قاعدة بيانات (اختر Production mode وأقرب منطقة).</li>
     <li>من تبويب <b>Rules</b> في Firestore الصق القواعد أدناه (الإصدار 2) ثم اضغط Publish. اكتب بريد الإدارة أولاً ليدخل في القواعد.</li>
-    <li>من <b>Project settings ← Your apps</b> أضف تطبيق ويب <code>&lt;/&gt;</code> وانسخ قيم <code>firebaseConfig</code> إلى أعلى هذا الملف (داخل وسم script) مكان القيم الافتراضية.</li>
+    <li>من <b>Project settings › Your apps</b> أضف تطبيق ويب <code>&lt;/&gt;</code> وانسخ قيم <code>firebaseConfig</code> إلى أعلى هذا الملف (داخل وسم script) مكان القيم الافتراضية.</li>
     <li>ارفع الملف على استضافة مجانية تدعم HTTPS (مثل <b>Netlify Drop</b> أو <b>GitHub Pages</b> أو <b>Cloudflare Pages</b> أو <b>Firebase Hosting</b>). الـ HTTPS ضروري ليسمح المتصفح بتحديد الموقع.</li>
-    <li>في Authentication ← Settings ← Authorized domains أضف نطاق الاستضافة إن لم يكن مضافاً.</li>
+    <li>في Authentication › Settings › Authorized domains أضف نطاق الاستضافة إن لم يكن مضافاً.</li>
     <li>بعد الدخول للوحة: يمكنك إضافة مشرفين إضافيين من تبويب «الموظفون» (قسم المشرفون) دون تعديل القواعد.</li>
   </ol>
   <p class="hint">القواعد هنا إصدار 2: القراءة مقيّدة بالهوية (الموظف المجهول المرتبط برابطه أو الإدارة) بدل القراءة العامة، وكل تسجيل البصمة يشترط وجود هوية موثقة.</p>
@@ -880,7 +1110,7 @@ async function employeeApp(db, auth, token) {
     const c = e && e.code ? e.code : '';
     return showErr(
       (c === 'auth/operation-not-allowed' || c === 'auth/configuration-not-found' || c === 'auth/admin-restricted-operation')
-        ? 'تسجيل الدخول المجهول (Anonymous) غير مفعّل في هذا المشروع. اطلب من الإدارة: Firebase Console ← Authentication ← Sign-in method ← تفعيل Anonymous، ثم أعد المحاولة.'
+        ? 'تسجيل الدخول المجهول (Anonymous) غير مفعّل في هذا المشروع. اطلب من الإدارة: Firebase Console › Authentication › Sign-in method ثم تفعيل Anonymous، ثم أعد المحاولة.'
         : 'تعذر الاتصال بالنظام. تحقق من الإنترنت وحاول مجدداً.');
   }
   try {
@@ -1159,7 +1389,7 @@ async function employeeApp(db, auth, token) {
 }
 
 /* =====================================================================
-   واجهة موظف المهام (فري لانسر): بلا بصمة، يُسجّل مهامه والإدارة تعتمد
+   واجهة موظف المهام (عمل حر): بلا بصمة، يُسجّل مهامه والإدارة تعتمد
    ===================================================================== */
 async function taskWorkerApp(db, token, emp, orgName) {
   let types = [];
@@ -1408,26 +1638,30 @@ function adminApp(db, auth) {
     const LF = licFeatures();
     const fgN = forgotAlerts().length;
     const tabs = [['today', 'اليوم', 'today'], ['emps', 'الموظفون', 'users'], ['sched', 'الدوام والإعدادات', 'sched'], ['locs', 'المواقع', 'pin'], ['reqs', `الطلبات${pend ? ' (' + pend + ')' : ''}`, 'send'], ...(LF.tasks === false ? [] : [['tasks', 'المهام', 'task']]), ['recs', `التقارير والرواتب${fgN ? ' ⚠ ' + fgN : ''}`, 'report']];
-    root.innerHTML = `<div class="top"><div class="top-in">
-        <div class="brand"><div class="logo">${logoMark(32)}</div><div><b>${esc(brandName())}</b><small>نظام الحضور والانصراف الذكي · لوحة الإدارة ${licBadgeHtml()}</small></div></div>
-        <div class="top-act">
-          <button class="pwa-btn" onclick="window.__installPWA()">${ic('download', 18)} تثبيت</button>
-          ${themeBtnHtml()}
-          <button class="ib" onclick="window.__openDownloadBox()" title="تحميل ملفات النظام المحدّثة">${ic('download', 22)}</button>
-          <button class="ib" data-act="reload" title="تحديث البيانات">${ic('refresh', 22)}</button>
-          <button class="ib" data-act="logout" title="تسجيل الخروج">${ic('power', 22)}</button>
-        </div>
-      </div></div>
-      <div class="wrap main">
-      <div class="tabs">${tabs.map(([k, n, i]) => `<button class="tab ${S.tab === k ? 'on' : ''}" data-tab="${k}">${ic(i, 24)}<span>${n}</span></button>`).join('')}</div>
-      ${licBannerHtml()}
+    const TT = { today: 'اليوم', emps: 'الموظفون', sched: 'الدوام والإعدادات', locs: 'المواقع', reqs: 'الطلبات', tasks: 'المهام', recs: 'التقارير والرواتب' };
+ const SH = { today: 'اليوم', emps: 'الموظفون', sched: 'الدوام', locs: 'المواقع', reqs: 'الطلبات', tasks: 'المهام', recs: 'التقارير' };
+ const CNT = { reqs: pend || 0, recs: fgN || 0 };
+ root.innerHTML = `<div class="shell"><aside class="rail"><nav class="rail-nav" id="adminNav" aria-label="تبويبات لوحة الإدارة"><div class="lg" aria-hidden="true">${logoMark(28)}</div>
+ ${tabs.map(([k, n, i]) => `<button class="tab ${S.tab === k ? 'on' : ''}" data-tab="${k}" title="${TT[k]}" aria-label="${TT[k]}"${S.tab === k ? ' aria-current="page"' : ''}>${ic(i, 22)}<span class="tl">${SH[k]}</span>${CNT[k] ? `<em>${CNT[k]}</em>` : ''}</button>`).join('')}</nav></aside>
+ <main class="wrap main">
+ <header class="phead"><div><small>${esc(brandName())} · لوحة الإدارة ${licBadgeHtml()}</small><h1>${TT[S.tab] || ''}</h1></div>
+ <div class="ptools">
+ <button class="pwa-btn" onclick="window.__installPWA()">${ic('download', 18)} تثبيت</button>
+ ${themeBtnHtml()}
+ <button class="ib" onclick="window.__openDownloadBox()" title="تحميل ملفات النظام المحدّثة" aria-label="تحميل ملفات النظام المحدّثة">${ic('download', 22)}</button>
+ <button class="ib" data-act="reload" title="تحديث البيانات" aria-label="تحديث البيانات">${ic('refresh', 22)}</button>
+ <button class="ib" data-act="logout" title="تسجيل الخروج" aria-label="تسجيل الخروج">${ic('power', 22)}</button>
+ </div></header>
+ ${licBannerHtml()}
       ${S.idxUrl ? `<div class="notice"><b>خطوة لمرة واحدة:</b> يلزم إنشاء فهرس لتسريع التقارير. <a href="${esc(S.idxUrl)}" target="_blank">اضغط هنا لإنشائه</a> وانتظر دقيقة ثم اضغط «تحديث». حتى ذلك الحين تُحمَّل السجلات بالطريقة البديلة الآمنة.</div>` : ''}
-      ${S.rulesOld ? `<div class="notice"><b>تحديث لمرة واحدة:</b> لحفظ جداول الدوام يلزم تحديث قواعد Firestore. اضغط الزر لنسخ القواعد الجديدة، ثم افتح Firestore ← Rules، وامسح القديم والصق الجديد واضغط Publish، ثم حدّث الصفحة.<div style="margin-top:10px"><button class="btn sm" data-act="copyRules">${ic('copy', 16)} نسخ القواعد الجديدة</button></div></div>` : ''}
+      ${S.rulesOld ? `<div class="notice"><b>تحديث لمرة واحدة:</b> لحفظ جداول الدوام يلزم تحديث قواعد Firestore. اضغط الزر لنسخ القواعد الجديدة، ثم افتح Firestore › Rules، وامسح القديم والصق الجديد واضغط Publish، ثم حدّث الصفحة.<div style="margin-top:10px"><button class="btn sm" data-act="copyRules">${ic('copy', 16)} نسخ القواعد الجديدة</button></div></div>` : ''}
       ${S.reqsErr || S.adminsErr ? `<div class="notice"><b>تحديث مطلوب:</b> قواعد Firestore المنشورة حالياً لا تتيح قراءة طلبات الموظفين جماعياً أو بيانات المشرفين. انسخ القواعد الأحدث وانشرها ثم أعد التحميل.<div style="margin-top:10px"><button class="btn sm" data-act="copyRules">${ic('copy', 16)} نسخ القواعد الأحدث</button></div></div>` : ''}
-      ${(()=>{try{return localStorage.getItem('att_rules_v4')}catch{return '1'}})() ? '' : `<div class="notice"><b>تحديث قواعد Firestore (مرة واحدة):</b> القواعد المحدثة تضيف: فرض المواقع المسموحة لكل موظف في الخادم، وتأكيد بريد المشرف، وإتاحة إلغاء الموظف لطلبه المعلّق، وكتالوج المهام وطلبات موظفي المهام. انسخها وانشرها في Firestore ← Rules. <b>لا تنسَ تفعيل «Anonymous» من Authentication ← Sign-in method.</b><div style="margin-top:10px"><button class="btn sm" data-act="copyRules">${ic('copy', 16)} نسخ القواعد</button> <button class="btn sm sec" data-act="v2Done">${ic('check', 16)} نشرتها — لا تُظهر مجدداً</button></div></div>`}
-      <div id="content"></div></div>`;
+      ${(()=>{try{return localStorage.getItem('att_rules_v4')}catch{return '1'}})() ? '' : `<div class="notice"><b>تحديث قواعد Firestore (مرة واحدة):</b> القواعد المحدثة تضيف: فرض المواقع المسموحة لكل موظف في الخادم، وتأكيد بريد المشرف، وإتاحة إلغاء الموظف لطلبه المعلّق، وكتالوج المهام وطلبات موظفي المهام. انسخها وانشرها في Firestore › Rules. <b>ولا تنسَ تفعيل «Anonymous» من Authentication › Sign-in method.</b><div style="margin-top:10px"><button class="btn sm" data-act="copyRules">${ic('copy', 16)} نسخ القواعد</button> <button class="btn sm sec" data-act="v2Done">${ic('check', 16)} نشرتها، لا تُظهر هذا التنبيه مجدداً</button></div></div>`}
+      <div id="content"></div></main></div>`;
+    { const nv = $('#adminNav'), on = nv && nv.querySelector('.tab.on'); if (on) { const a = on.getBoundingClientRect(), b = nv.getBoundingClientRect(); nv.scrollLeft += (a.left + a.width / 2) - (b.left + b.width / 2); } }
     refreshPwaButtons();
     ({ today: viewToday, emps: viewEmps, sched: viewSched, locs: viewLocs, reqs: viewReqs, tasks: viewTasks, recs: viewRecs })[S.tab]($('#content'));
+ { const so = document.querySelector('.stab.on'); if (so && so.scrollIntoView) so.scrollIntoView({ inline: 'center', block: 'nearest' }); }
   }
 
   /* --- 1. تبويب اليوم --- */
@@ -1471,24 +1705,27 @@ function adminApp(db, auth) {
 
     const fgA = forgotAlerts();
     const fgBy = {}; fgA.forEach(s => { (fgBy[s.name] = fgBy[s.name] || []).push(s.day); });
-    const fgBanner = fgA.length ? `<div class="notice" style="border-color:var(--warn)"><b>⚠️ تنبيه: ${fgA.length} يوم نسيان انصراف لم تُصحَّح</b> (${fmtDate(dayStart(S.from))} → ${fmtDate(dayStart(S.to))})<br>${Object.entries(fgBy).map(([n, ds]) => `${esc(n)} — ${ds.length} ${ds.length === 1 ? 'يوم' : 'أيام'}: ${ds.sort().map(d => d.split('-').reverse().join('/')).join('، ')}`).join('<br>')}<br><small>السياسة الحالية: ${forgotTxt()}. عدّل البصمة من «التقارير والرواتب ← سجل البصمات» أو من طلبات التصحيح، ويمكنك تغيير السياسة من «الدوام والإعدادات ← إعدادات المنشأة».</small><div style="margin-top:8px"><button class="btn sm" data-tab="recs">${ic('report', 16)} فتح التقارير</button></div></div>` : '';
-    el.innerHTML = `${fgBanner}<div class="stats">
-      ${stat('check', 'حاضرون الآن', c('present') + c('late'))}
-      ${stat('login', 'انصرفوا', c('left'))}
-      ${stat('alert', 'لم يحضروا (مجدول)', c('absent'))}
-      ${stat('clock', 'نسوا الانصراف', c('forgot'))}
-      ${stat('sun', 'إجازة / راحة / عطلة', c('leave') + c('rest') + c('holiday') + c('notyet'))}
-      ${stat('users', 'إجمالي الموظفين', act.length)}
-    </div>
+    const fgBanner = fgA.length ? `<div class="notice" style="border-color:var(--warn)"><b>تنبيه: ${fgA.length} يوم نسيان انصراف لم تُصحَّح</b> (من ${fmtDate(dayStart(S.from))} إلى ${fmtDate(dayStart(S.to))})<br>${Object.entries(fgBy).map(([n, ds]) => `${esc(n)} — ${ds.length} ${ds.length === 1 ? 'يوم' : 'أيام'}: ${ds.sort().map(d => d.split('-').reverse().join('/')).join('، ')}`).join('<br>')}<br><small>السياسة الحالية: ${forgotTxt()}. عدّل البصمة من «التقارير والرواتب» ثم «سجل البصمات» أو من طلبات التصحيح، ويمكنك تغيير السياسة من «الدوام والإعدادات» ثم «إعدادات المنشأة».</small><div style="margin-top:8px"><button class="btn sm" data-tab="recs">${ic('report', 16)} فتح التقارير</button></div></div>` : '';
+    el.innerHTML = `${fgBanner}<div class="bento">
+ <div class="tile t-hero"><span class="tl">حاضرون الآن ${ic('check', 22)}</span><div><div class="big">${c('present') + c('late')}</div>
+ <div class="prog" aria-hidden="true"><i style="width:${act.length ? Math.round((c('present') + c('late')) / act.length * 100) : 0}%;background:var(--mint)"></i><i style="width:${act.length ? Math.round(c('left') / act.length * 100) : 0}%;background:var(--sun)"></i><i style="width:${act.length ? Math.round(c('absent') / act.length * 100) : 0}%;background:var(--coral)"></i></div>
+ <p style="margin:0;opacity:.9">من أصل ${act.length} موظفاً${c('late') ? ` · منهم ${c('late')} متأخر` : ''}</p></div></div>
+ <div class="tile t-mint"><span class="tl">انصرفوا ${ic('login', 20)}</span><div class="big">${c('left')}</div></div>
+ <div class="tile t-coral"><span class="tl">لم يحضروا (مجدول) ${ic('alert', 20)}</span><div class="big">${c('absent')}</div></div>
+ <div class="tile t-sun"><span class="tl">نسوا الانصراف ${ic('clock', 20)}</span><div class="big">${c('forgot')}</div></div>
+ <div class="tile"><span class="tl">إجازة أو راحة أو عطلة ${ic('sun', 20)}</span><div class="big">${c('leave') + c('rest') + c('holiday') + c('notyet')}</div></div>
+ </div>
     <div class="card">
       ${ch('today', `حالة اليوم — ${weekday(new Date())} ${fmtDate(new Date())}`, `<div class="search-box"><span class="s-ic">${ic('search', 18)}</span><input id="qTodayInp" placeholder="ابحث عن موظف أو قسم…" value="${esc(S.qToday)}"></div>`)}
-      <div class="tw"><table><thead><tr><th>الموظف</th><th>الحالة</th><th>خطة اليوم</th><th>أول حضور</th><th>آخر عملية</th></tr></thead><tbody>
-      ${shown.map(({ e, st, met, planTxt, firstShown, lastRec }) => {
-        const stateTxt = B[st][1] + (st === 'late' && met.late ? ` ${fmtMinsH(met.late)}` : '');
-        const worked = met.net > 0 ? ` · ${fmtDur(met.net * 60000)}${met.open ? ' (جارٍ)' : ''} ${met.otMin ? `· إضافي ${(met.otMin / 60).toFixed(1)}س` : ''}` : '';
-        return `<tr><td><div class="who"><span class="av">${ini(e.name)}</span><div><div>${esc(e.name)}</div>${e.dept ? `<small class="muted">${esc(e.dept)}</small>` : ''}</div></div></td><td><span class="badge ${B[st][0]}">${stateTxt}</span>${worked}</td><td>${esc(planTxt)}</td><td>${firstShown ? when(firstShown) : '—'}</td><td>${lastRec ? `${lastRec.type === 'in' ? 'حضور' : 'انصراف'} ${when(lastRec.t)}` : '—'}</td></tr>`;
-      }).join('') || '<tr><td colspan="5" class="muted center">لا توجد نتائج مطابقة</td></tr>'}
-      </tbody></table></div>
+      <div class="tlist">
+ ${shown.map(({ e, st, met, planTxt, firstShown, lastRec }) => {
+ const stateTxt = B[st][1] + (st === 'late' && met.late ? ` ${fmtMinsH(met.late)}` : '');
+ const worked = met.net > 0 ? `${fmtDur(met.net * 60000)}${met.open ? ' (جارٍ)' : ''}${met.otMin ? ` · إضافي ${(met.otMin / 60).toFixed(1)}س` : ''}` : '';
+ return `<div class="trow"><span class="av">${ini(e.name)}</span><div class="tr-n"><b>${esc(e.name)}</b>${e.dept ? `<small>${esc(e.dept)}</small>` : ''}</div>
+ <div class="tr-s"><span class="badge ${B[st][0]}">${stateTxt}</span>${worked ? `<small>${worked}</small>` : ''}</div>
+ <div class="tr-m"><div class="tr-p"><small>خطة اليوم</small>${esc(planTxt)}</div><div><small>أول حضور</small>${firstShown ? when(firstShown) : '—'}</div><div><small>آخر عملية</small>${lastRec ? `${lastRec.type === 'in' ? 'حضور' : 'انصراف'} ${when(lastRec.t)}` : '—'}</div></div></div>`;
+ }).join('') || '<div class="empty">لا توجد نتائج مطابقة</div>'}
+ </div>
     </div>`;
     const inp = $('#qTodayInp');
     if (inp) inp.oninput = e => { S.qToday = e.target.value; viewToday(el); $('#qTodayInp').focus(); $('#qTodayInp').setSelectionRange(S.qToday.length, S.qToday.length); };
@@ -1658,7 +1895,7 @@ function adminApp(db, auth) {
       const sc = S.scheds.find(x => x.id === W.scheduleId);
       let h = `<div class="g2"><div class="field"><label>الاسم</label><input data-k="name" value="${esc(W.name)}"></div><div class="field"><label>رقم الواتساب</label><input data-k="phone" dir="ltr" value="${esc(W.phone)}" placeholder="2189XXXXXXXX"></div></div>`;
       h += `<div class="field" style="max-width:280px;margin-top:10px"><label>القسم / الفرع (اختياري)</label><input data-k="dept" value="${esc(W.dept)}" placeholder="المبيعات"></div>`;
-      h += `<div class="field" style="max-width:380px;margin-top:10px"><label>نوع التوظيف</label><select data-k="empType" data-redraw><option value="staff" ${W.empType === 'staff' ? 'selected' : ''}>موظف دوام (بصمة وجدول)</option><option value="task" ${W.empType === 'task' ? 'selected' : ''}>موظف مهام — فري لانسر (يُدفع له حسب المهام المنفّذة)</option></select></div>`;
+      h += `<div class="field" style="max-width:380px;margin-top:10px"><label>نوع التوظيف</label><select data-k="empType" data-redraw><option value="staff" ${W.empType === 'staff' ? 'selected' : ''}>موظف دوام (بصمة وجدول)</option><option value="task" ${W.empType === 'task' ? 'selected' : ''}>موظف مهام — عمل حر (يُدفع له حسب المهام المنفّذة)</option></select></div>`;
       if (W.empType === 'task') {
         h += `<div class="sec-t">${ic('task', 20)} أسعار خاصة بهذا الموظف (اختياري)</div><p class="hint" style="margin-top:0">اترك الخانة فارغة ليُحتسب سعر الكتالوج. موظف المهام بلا بصمة ولا جدول ولا غياب ولا رصيد إجازات، وأجره = مجموع مهامه المعتمدة في الفترة.</p>`;
         h += S.taskTypes.length ? `<div class="g2">${S.taskTypes.map(x => `<div class="field"><label>${esc(x.name)} (الكتالوج: ${+x.price || 0})</label><input class="num" type="number" min="0" step="0.01" data-k="tp.${esc(x.id)}" value="${W.tp[x.id] ?? ''}"></div>`).join('')}</div>` : '<p class="muted">لا يوجد كتالوج مهام بعد — أضف أنواع المهام من تبويب «المهام».</p>';
@@ -1713,56 +1950,49 @@ function adminApp(db, auth) {
       </div>
       ${S.empSub === 'list' ? `
         <details class="fold">
-          <summary><div class="ch-l">${ic('plus', 24)} <span>إضافة موظف جديد وإنشاء رابط خاص</span></div><span class="badge b-pri">+ فتح النموذج</span></summary>
+          <summary><div class="ch-l">${ic('plus', 24)} <span>إضافة موظف جديد وإنشاء رابط خاص</span></div><span class="badge b-pri when-closed">فتح النموذج</span><span class="badge b-pri when-open">إخفاء النموذج</span></summary>
           <div class="row">
             <div class="field"><label>اسم الموظف</label><input id="eName" placeholder="الاسم الثلاثي"></div>
-            <div class="field"><label>رقم الواتساب (دولي بدون +)</label><input id="ePhone" dir="ltr" placeholder="2189XXXXXXXX"></div>
-            <div class="field"><label>نوع التوظيف</label><select id="eType"><option value="staff">موظف دوام</option><option value="task">موظف مهام (فري لانسر)</option></select></div>
+            <div class="field"><label>رقم واتساب (بالصيغة الدولية، دون +)</label><input id="ePhone" dir="ltr" placeholder="2189XXXXXXXX"></div>
+            <div class="field"><label>نوع التوظيف</label><select id="eType"><option value="staff">موظف دوام</option><option value="task">موظف مهام (عمل حر)</option></select></div>
             <div class="field"><label>جدول الدوام</label><select id="eSched"><option value="">— بدون جدول —</option>${S.scheds.map(x => `<option value="${x.id}">${esc(x.name)}</option>`).join('')}</select></div>
             <button class="btn" data-act="addEmp">${ic('plus', 18)} إضافة الموظف</button>
           </div>
         </details>
         <div class="card">
           ${ch('users', `سجل الموظفين (${list.length})`, `<div class="search-box"><span class="s-ic">${ic('search', 18)}</span><input id="qEmpInp" placeholder="بحث بالاسم أو القسم…" value="${esc(S.qEmp)}"></div>`)}
-          <div class="tw" style="overflow:visible"><table><thead><tr><th>الاسم</th><th>القسم</th><th>الدوام</th><th>الحالة</th><th>الجهاز</th><th>إجراءات سريعة</th></tr></thead><tbody>
-          ${list.map(e => `<tr>
-            <td><div class="who"><span class="av">${ini(e.name)}</span><div><div>${esc(e.name)}</div>${e.empType === 'task' ? '<span class="badge b-pri">موظف مهام</span>' : ''}</div></div></td>
-            <td>${e.dept ? `<span class="badge b-warn">${esc(e.dept)}</span>` : '<span class="muted">—</span>'}</td>
-            <td>${e.empType === 'task' ? '<span class="badge b-mute">حسب المهام</span>' : sname(e.scheduleId) ? `<span class="badge b-pri">${esc(sname(e.scheduleId))}</span>` : '<span class="badge b-mute">غير محدد</span>'}</td>
-            <td>${e.active ? '<span class="badge b-ok">مفعّل</span>' : `<span class="badge b-bad">موقوف</span>`}</td>
-            <td>${e.deviceId ? '<span class="badge b-ok">مرتبط</span>' : '<span class="badge b-mute">جديد</span>'}</td>
-            <td>
-              <div class="acts">
-                <button class="btn sm sec" data-act="editEmp" data-id="${e.id}">${ic('edit', 16)} تعديل</button>
-                <button class="btn sm" data-act="copy" data-id="${e.id}">${ic('link', 16)} الرابط</button>
-                <button class="btn sm ok" data-act="wa" data-id="${e.id}" title="إرسال عبر واتساب">${ic('send', 16)}</button>
-                <details class="act-menu">
-                  <summary>⋯ المزيد</summary>
-                  <div class="act-drop">
-                    <button data-act="resetDev" data-id="${e.id}">${ic('device', 18)} إعادة ضبط الجهاز</button>
-                    <button data-act="toggle" data-id="${e.id}">${ic('power', 18)} ${e.active ? 'إيقاف الموظف' : 'تفعيل الموظف'}</button>
-                    ${!e.active ? `<button class="bad-txt" data-act="hardDelEmp" data-id="${e.id}">${ic('trash', 18)} حذف نهائي</button>` : ''}
-                  </div>
-                </details>
-              </div>
-            </td>
-          </tr>`).join('') || '<tr><td colspan="6" class="muted center">لا يوجد موظفون</td></tr>'}
-          </tbody></table></div>
-          <p class="muted" style="font-size:13px;margin:14px 0 0">الرابط يُربط تلقائياً بأول جهاز يفتحه لمنع مشاركته بين الموظفين. إن غيّر الموظف هاتفه اختر «إعادة ضبط الجهاز» من قائمة (المزيد).</p>
+          <div class="elist">
+ ${list.map(e => `<div class="erow">
+ <span class="av">${ini(e.name)}</span>
+ <div class="er-n"><b>${esc(e.name)}</b>${e.empType === 'task' ? '<span class="badge b-pri">موظف مهام</span>' : ''}</div>
+ <div class="er-b">${e.dept ? `<span class="badge b-warn">${esc(e.dept)}</span>` : ''}${e.empType === 'task' ? '<span class="badge b-mute">حسب المهام</span>' : sname(e.scheduleId) ? `<span class="badge b-pri">${esc(sname(e.scheduleId))}</span>` : '<span class="badge b-mute">دوام غير محدد</span>'}</div>
+ <div class="er-b">${e.active ? '<span class="badge b-ok">مفعّل</span>' : '<span class="badge b-bad">موقوف</span>'}${e.deviceId ? '<span class="badge b-ok">الجهاز مرتبط</span>' : '<span class="badge b-mute">جهاز جديد</span>'}</div>
+ <div class="er-a">
+ <button class="btn sm sec" data-act="editEmp" data-id="${e.id}">${ic('edit', 16)} تعديل</button>
+ <button class="btn sm" data-act="copy" data-id="${e.id}">${ic('link', 16)} نسخ الرابط</button>
+ <button class="btn sm ok" data-act="wa" data-id="${e.id}">${ic('send', 16)} واتساب</button>
+ <details class="act-menu"><summary>المزيد</summary><div class="act-drop">
+ <button data-act="resetDev" data-id="${e.id}">${ic('device', 18)} إعادة ضبط الجهاز</button>
+ <button data-act="toggle" data-id="${e.id}">${ic('power', 18)} ${e.active ? 'إيقاف الموظف' : 'تفعيل الموظف'}</button>
+ ${!e.active ? `<button class="bad-txt" data-act="hardDelEmp" data-id="${e.id}">${ic('trash', 18)} حذف نهائي</button>` : ''}
+ </div></details>
+ </div></div>`).join('') || '<div class="empty">لا يوجد موظفون</div>'}
+ </div>
+          <p class="muted" style="font-size:13px;margin:14px 0 0">يرتبط الرابط تلقائياً بأول جهاز يفتحه لمنع مشاركته بين الموظفين. وإن غيّر الموظف هاتفه فاختر «إعادة ضبط الجهاز» من قائمة «المزيد».</p>
         </div>`
       : `
         <div class="card">
           ${ch('lock', `المشرفون وصلاحيات الإدارة (${S.admins.length})`)}
-          <p class="hint" style="margin-top:0">أضف المشرف من هنا مباشرة: اكتب <b>اسمه + بريده + كلمة مرور مؤقتة</b> — سينشئ النظام حسابه في Firebase تلقائياً ويمنحه كامل الصلاحيات فوراً.</p>
+          <p class="hint" style="margin-top:0">أضف المشرف من هنا مباشرة: اكتب <b>اسمه وبريده وكلمة مرور مؤقتة</b>، وسينشئ النظام حسابه في Firebase تلقائياً ويمنحه كامل الصلاحيات فوراً.</p>
           <div class="row" style="margin-bottom:16px">
             <div class="field"><label>اسم المشرف</label><input id="aName" placeholder="مسؤول الموارد البشرية"></div>
             <div class="field"><label>البريد الإلكتروني</label><input id="aUid" type="email" dir="ltr" placeholder="hr@example.com"></div>
-            <div class="field" style="max-width:220px"><label>كلمة المرور (لحساب جديد)</label><input id="aPw" type="password" dir="ltr" placeholder="6 أحرف على الأقل" autocomplete="new-password"></div>
+            <div class="field" style="max-width:220px"><label>كلمة المرور (للحساب الجديد)</label><input id="aPw" type="password" dir="ltr" placeholder="6 أحرف على الأقل" autocomplete="new-password"></div>
             <button class="btn" data-act="addAdmin">${ic('plus', 18)} إضافة مشرف</button>
           </div>
-          <div class="tw"><table><thead><tr><th>الاسم</th><th>البريد الإلكتروني</th><th>الصلاحية</th><th></th></tr></thead><tbody>
-          ${S.admins.map(a => `<tr><td><b>${esc(a.name)}</b></td><td dir="ltr">${esc(a.email || a.id)}</td><td><span class="badge b-pri">كامل الصلاحيات</span></td><td><button class="btn sm bad" data-act="delAdmin" data-id="${esc(a.id)}">${ic('trash', 16)} إزالة</button></td></tr>`).join('') || `<tr><td colspan="4" class="muted center">${S.adminsErr ? 'تعذر قراءة قائمة المشرفين — انشر القواعد الجديدة' : 'لا يوجد مشرفون إضافيون — أنت المالك الوحيد'}</td></tr>`}
-          </tbody></table></div>
+          <div class="elist">
+ ${S.admins.map(a => `<div class="erow er-adm"><span class="av">${ini(a.name)}</span><div class="er-n"><b>${esc(a.name)}</b><small class="mail">${esc(a.email || a.id)}</small></div><div class="er-b"><span class="badge b-pri">كامل الصلاحيات</span></div><div class="er-a"><button class="btn sm bad" data-act="delAdmin" data-id="${esc(a.id)}">${ic('trash', 16)} إزالة</button></div></div>`).join('') || `<div class="empty">${S.adminsErr ? 'تعذّرت قراءة قائمة المشرفين، فانشر القواعد الجديدة' : 'لا يوجد مشرفون إضافيون، وأنت المالك الوحيد'}</div>`}
+ </div>
         </div>`
       }`;
     const inp = $('#qEmpInp');
@@ -1799,7 +2029,7 @@ function adminApp(db, auth) {
         <div class="card">
           ${ch('sun', 'أنواع الإجازات ونسب الدفع', `<button class="btn sec" data-act="ltEdit">${ic('edit', 18)} تعديل الأنواع</button>`)}
           <p class="hint" style="margin-top:0">لكل نوع نسبة دفع من الأجر (100% بمرتب كامل، 0% بدون مرتب، أو نسبة جزئية)، وهل يُخصم من الرصيد السنوي، وحد سنوي اختياري.</p>
-          <div class="tw"><table><thead><tr><th>النوع</th><th>نسبة الدفع</th><th>يُخصم من الرصيد</th><th>الحد السنوي</th></tr></thead><tbody>${leaveTypesOf(S.set).map(x => `<tr><td><b>${esc(x.name)}</b></td><td><span class="badge ${+x.pct >= 100 ? 'b-ok' : +x.pct <= 0 ? 'b-bad' : 'b-warn'}">${+x.pct}%</span></td><td>${x.deduct ? 'نعم' : 'لا'}</td><td>${+x.cap > 0 ? x.cap + ' يوم' : 'بلا حد'}</td></tr>`).join('')}</tbody></table></div>
+          <div class="tw"><table class="rt"><thead><tr><th>النوع</th><th>نسبة الدفع</th><th>يُخصم من الرصيد</th><th>الحد السنوي</th></tr></thead><tbody>${leaveTypesOf(S.set).map(x => `<tr><td data-l="النوع"><b>${esc(x.name)}</b></td><td data-l="نسبة الدفع"><span class="badge ${+x.pct >= 100 ? 'b-ok' : +x.pct <= 0 ? 'b-bad' : 'b-warn'}">${+x.pct}%</span></td><td data-l="يُخصم من الرصيد">${x.deduct ? 'نعم' : 'لا'}</td><td data-l="الحد السنوي">${+x.cap > 0 ? x.cap + ' يوم' : 'بلا حد'}</td></tr>`).join('')}</tbody></table></div>
         </div>
         <div class="card">
           ${ch('today', 'العطلات الرسمية')}
@@ -1809,8 +2039,8 @@ function adminApp(db, auth) {
             <div class="field"><label>اسم العطلة</label><input id="hName" placeholder="عيد الفطر المبارك"></div>
             <button class="btn" data-act="addHol">${ic('plus', 18)} إضافة عطلة</button>
           </div>
-          <div class="tw"><table><thead><tr><th>التاريخ</th><th>الاسم</th><th>اليوم</th><th></th></tr></thead><tbody>
-          ${S.hols.map(h => `<tr><td><b>${fmtDate(dayStart(h.date))}</b></td><td>${esc(h.name)}</td><td class="muted">${DAYS_AR[new Date(h.date + 'T00:00:00Z').getUTCDay()]}</td><td><button class="btn sm bad" data-act="delHol" data-id="${h.id}">${ic('trash', 16)} حذف</button></td></tr>`).join('') || '<tr><td colspan="4" class="muted center">لا توجد عطلات مسجلة</td></tr>'}
+          <div class="tw"><table class="rt"><thead><tr><th>التاريخ</th><th>الاسم</th><th>اليوم</th><th></th></tr></thead><tbody>
+          ${S.hols.map(h => `<tr><td data-l="التاريخ"><b>${fmtDate(dayStart(h.date))}</b></td><td data-l="الاسم">${esc(h.name)}</td><td data-l="اليوم" class="muted">${DAYS_AR[new Date(h.date + 'T00:00:00Z').getUTCDay()]}</td><td data-l=""><button class="btn sm bad" data-act="delHol" data-id="${h.id}">${ic('trash', 16)} حذف</button></td></tr>`).join('') || '<tr><td colspan="4" class="muted center">لا توجد عطلات مسجلة</td></tr>'}
           </tbody></table></div>
         </div>`
       : `
@@ -1880,8 +2110,8 @@ function adminApp(db, auth) {
       <button class="btn sec" data-act="myLoc">${ic('target', 18)} موقعي الحالي</button>
       <button class="btn" data-act="addLoc">${ic('plus', 18)} إضافة الموقع</button></div>
       <p class="muted" style="font-size:13px;margin:12px 0 0">يمكنك نسخ الإحداثيات من خرائط Google أو الضغط على «تحديد عبر الخريطة التفاعلية» لاختيار النقطة بصرياً.</p></div>
-    <div class="card">${ch('map', `المواقع المعتمدة (${S.locs.length})`)}<div class="tw"><table><thead><tr><th>اسم الموقع</th><th>الإحداثيات</th><th>نطاق القبول</th><th>إجراءات</th></tr></thead><tbody>
-    ${S.locs.map(l => `<tr><td><b>${esc(l.name)}</b></td><td dir="ltr">${l.lat.toFixed(5)}, ${l.lng.toFixed(5)}</td><td><span class="badge b-pri">${l.radius} متر</span></td><td><div class="acts"><a class="btn sm sec" style="text-decoration:none" href="${mapLink(l.lat, l.lng)}" target="_blank">${ic('map', 16)} Google Maps</a> <button class="btn sm sec" data-act="editLoc" data-id="${l.id}">${ic('edit', 16)} تعديل</button> <button class="btn sm bad" data-act="delLoc" data-id="${l.id}">${ic('trash', 16)} حذف</button></div></td></tr>`).join('') || '<tr><td colspan="4" class="muted center">لم تُضف مواقع بعد — بدونها لن يستطيع أي موظف تسجيل البصمة</td></tr>'}
+    <div class="card">${ch('map', `المواقع المعتمدة (${S.locs.length})`)}<div class="tw"><table class="rt"><thead><tr><th>اسم الموقع</th><th>الإحداثيات</th><th>نطاق القبول</th><th>إجراءات</th></tr></thead><tbody>
+    ${S.locs.map(l => `<tr><td data-l="اسم الموقع"><b>${esc(l.name)}</b></td><td data-l="الإحداثيات"><span dir="ltr">${l.lat.toFixed(5)}, ${l.lng.toFixed(5)}</span></td><td data-l="نطاق القبول"><span class="badge b-pri">${l.radius} متر</span></td><td data-l=""><div class="acts"><a class="btn sm sec" style="text-decoration:none" href="${mapLink(l.lat, l.lng)}" target="_blank">${ic('map', 16)} Google Maps</a> <button class="btn sm sec" data-act="editLoc" data-id="${l.id}">${ic('edit', 16)} تعديل</button> <button class="btn sm bad" data-act="delLoc" data-id="${l.id}">${ic('trash', 16)} حذف</button></div></td></tr>`).join('') || '<tr><td colspan="4" class="muted center">لم تُضف مواقع بعد، وبدونها لن يستطيع أي موظف تسجيل البصمة</td></tr>'}
     </tbody></table></div></div>`;
   }
 
@@ -2144,7 +2374,7 @@ function adminApp(db, auth) {
   }
 
   const dimOf = k => new Date(Date.UTC(+k.slice(0, 4), +k.slice(5, 7), 0)).getUTCDate();
-  /* سياسة «نسيان الانصراف»: كسر اليوم المخصوم (0 = بلا خصم … 1 = يوم كامل) — تحددها الإدارة من الدوام والإعدادات ← إعدادات المنشأة */
+  /* سياسة «نسيان الانصراف»: كسر اليوم المخصوم (0 = بلا خصم … 1 = يوم كامل) — تحددها الإدارة من الدوام والإعدادات ثم إعدادات المنشأة */
   const forgotAlerts = () => { try { return summary().filter(s => s.status === 'forgot'); } catch { return []; } };
   const forgotDed = () => { const v = S.set ? S.set.forgotDeductDays : null; const n = (v === undefined || v === null || v === '') ? 0 : +v; return isNaN(n) ? 0 : Math.min(1, Math.max(0, n)); };
   const forgotTxt = () => { const d = forgotDed(); return d === 0 ? 'بلا خصم تلقائي (يُدفع اليوم كاملاً حتى تُصحَّح البصمة)' : d >= 1 ? 'خصم يوم كامل' : `خصم ${d === 0.25 ? 'ربع' : d === 0.5 ? 'نصف' : d} يوم`; };
@@ -2328,7 +2558,7 @@ function adminApp(db, auth) {
           owner = me;
           try { await setDoc(doc(db, 'admins', 'owner'), { name: 'المالك', email: me, addedAt: serverTimestamp() }); S.ownerEmail = me; } catch {}
         }
-        await navigator.clipboard.writeText(rulesText(owner)); toast('تم نسخ القواعد — الصقها في Firestore ← Rules', 'good');
+        await navigator.clipboard.writeText(rulesText(owner)); toast('تم نسخ القواعد — الصقها في Firestore › Rules', 'good');
       }
       if (act === 'newSched') scheduleEditor(null);
       if (act === 'editSched') scheduleEditor(S.scheds.find(x => x.id === id));
