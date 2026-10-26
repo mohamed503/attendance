@@ -548,7 +548,14 @@ const TZ_OFFSET_MIN = 120;       // توقيت طرابلس UTC+2 ثابت (بل
 
 import { initializeApp, deleteApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, onAuthStateChanged, signInAnonymously } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import { getFirestore, collection, collectionGroup, doc, getDoc, getDocs, setDoc, addDoc, updateDoc, deleteDoc, query, where, orderBy, limit, writeBatch, Timestamp, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { getFirestore, collection, collectionGroup, doc, getDoc, getDocs, onSnapshot, setDoc as _setDoc, addDoc as _addDoc, updateDoc as _updateDoc, deleteDoc as _deleteDoc, query, where, orderBy, limit, writeBatch, Timestamp, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+/* رقم إصدار الإعدادات (cfgVersion): يُرفع تلقائياً عند أي تعديل إداري على المواقع/الجداول/العطل/الإعدادات،
+   فتعيد صفحات الموظفين جلبها مرة واحدة فقط، وإلا تقرؤها من ذاكرة الجهاز (توفير نحو نصف قراءات كل فتح). */
+const CFG_COLS = ['locations', 'schedules', 'holidays', 'settings'];
+const isCfgRef = r => { try { return CFG_COLS.includes(String(r.path).split('/')[0]); } catch { return false; } };
+const bumpCfg = r => { try { return _setDoc(doc(r.firestore, 'settings', 'general'), { cfgVersion: Date.now() }, { merge: true }).catch(() => {}); } catch { return Promise.resolve(); } };
+const cfgGuard = fn => async (r, ...a) => { const out = await fn(r, ...a); if (isCfgRef(r)) await bumpCfg(r); return out; };
+const setDoc = cfgGuard(_setDoc), addDoc = cfgGuard(_addDoc), updateDoc = cfgGuard(_updateDoc), deleteDoc = cfgGuard(_deleteDoc);
 
 /* ---------- نظام الوضع الليلي / النهاري ---------- */
 function initTheme() {
@@ -1155,6 +1162,7 @@ async function employeeApp(db, auth, token) {
         ? 'تسجيل الدخول المجهول (Anonymous) غير مفعّل في هذا المشروع. اطلب من الإدارة: Firebase Console › Authentication › Sign-in method ثم تفعيل Anonymous، ثم أعد المحاولة.'
         : 'تعذر الاتصال بالنظام. تحقق من الإنترنت وحاول مجدداً.');
   }
+  let cfgSt = null, cfgHit = null, cfgLocRaw = [];
   try {
     const snap = await getDoc(ref);
     if (!snap.exists() || !snap.data().active) return showErr('الرابط غير صالح أو تم إيقافه. تواصل مع الإدارة.');
@@ -1175,20 +1183,27 @@ async function employeeApp(db, auth, token) {
     } else if (emp.deviceId !== myDev) {
       return showErr('هذا الرابط مرتبط بجهاز آخر. اطلب من الإدارة إعادة ضبط الجهاز.');
     }
-    const ls = await getDocs(collection(db, 'locations'));
-    locs = ls.docs.map(d => ({ id: d.id, ...d.data() })).filter(l => l.active !== false);
+    try { cfgSt = await getDoc(doc(db, 'settings', 'general')); } catch {}
+    const cv = cfgSt && cfgSt.exists() ? cfgSt.data().cfgVersion : null;
+    let cc = null; try { cc = JSON.parse(localStorage.getItem('att_cfg_v1') || 'null'); } catch {}
+    if (cv && cc && cc.v === cv && cc.sid === (emp.scheduleId || '') && Array.isArray(cc.locs) && Array.isArray(cc.hols)) cfgHit = cc;
+    cfgLocRaw = cfgHit ? cfgHit.locs : (await getDocs(collection(db, 'locations'))).docs.map(d => ({ id: d.id, ...d.data() }));
+    locs = cfgLocRaw.filter(l => l.active !== false);
     if (emp.locs && emp.locs.length) locs = locs.filter(l => emp.locs.includes(l.id));
   } catch (e) {
     if (e && e.code === 'permission-denied') return showErr('هذا الرابط مرتبط بجهاز آخر، أو القواعد لم تُحدث بعد. اطلب من الإدارة إعادة ضبط الجهاز.');
     return showErr('تعذر الاتصال بالنظام. تحقق من الإنترنت وحاول مجدداً.');
   }
   let orgName = BRAND, LT = DEF_LT;
-  try { const st = await getDoc(doc(db, 'settings', 'general')); if (st.exists()) { const s = st.data(); if (s.tzOffset != null && !isNaN(+s.tzOffset)) TZOFF = +s.tzOffset; if (s.orgName) orgName = s.orgName; LT = leaveTypesOf(s); } } catch {}
+  try { const st = cfgSt; if (st && st.exists()) { const s = st.data(); if (s.tzOffset != null && !isNaN(+s.tzOffset)) TZOFF = +s.tzOffset; if (s.orgName) orgName = s.orgName; LT = leaveTypesOf(s); } } catch {}
   if (emp.empType === 'task') return taskWorkerApp(db, token, emp, orgName);
-  let sched = null;
-  try { if (emp.scheduleId) { const ss = await getDoc(doc(db, 'schedules', emp.scheduleId)); if (ss.exists()) sched = normSched({ id: ss.id, ...ss.data() }); } } catch {}
+  let sched = null, schedRaw = null, schedOK = true, holsOK = true;
+  try { if (emp.scheduleId) { if (cfgHit) schedRaw = cfgHit.sched; else { const ss = await getDoc(doc(db, 'schedules', emp.scheduleId)); if (ss.exists()) schedRaw = { id: ss.id, ...ss.data() }; } } } catch { schedOK = false; }
   let hols = [];
-  try { const hs = await getDocs(collection(db, 'holidays')); hols = hs.docs.map(d => d.data().date || d.id); } catch {}
+  try { if (cfgHit) hols = cfgHit.hols; else { const hs = await getDocs(collection(db, 'holidays')); hols = hs.docs.map(d => d.data().date || d.id); } } catch { holsOK = false; }
+  const cvNow = cfgSt && cfgSt.exists() ? cfgSt.data().cfgVersion : null;
+  if (!cfgHit && cvNow && schedOK && holsOK) { try { localStorage.setItem('att_cfg_v1', JSON.stringify({ v: cvNow, sid: emp.scheduleId || '', locs: cfgLocRaw, sched: schedRaw, hols })); } catch {} }
+  if (schedRaw) sched = normSched(schedRaw);
 
   let offset = 0, skewWarn = false;
   async function syncTime() {
@@ -1270,11 +1285,27 @@ async function employeeApp(db, auth, token) {
 
   let last = null;
   const inflightKey = 'att_inflight_' + token;
-  async function loadHist() {
+  /* سجل آخر 15 عملية: يُحفظ في الجهاز ولا يُعاد جلبه إلا إذا تغيّرت آخر عملية (lastRecId) أو مضى يوم.
+     وبعد كل تسجيل ناجح يُضاف السجل الجديد محلياً بدل إعادة الجلب. */
+  const HK = 'att_hist_' + token;
+  let histRid = emp.lastRecId || '', histRows = null;
+  const readHist = () => { try { const c = JSON.parse(localStorage.getItem(HK) || 'null'); return c && Array.isArray(c.rows) ? c : null; } catch { return null; } };
+  const saveHist = rows => { try { localStorage.setItem(HK, JSON.stringify({ rid: histRid, day: dayKey(now()), rows: rows.map(r => ({ type: r.type, ms: r.t.getTime(), loc: r.locationName || '' })) })); } catch {} };
+  async function loadHist(opt = {}) {
     try {
-      const q = query(collection(db, 'employees', token, 'records'), orderBy('time', 'desc'), limit(15));
-      const s = await getDocs(q);
-      const rows = s.docs.map(d => ({ ...d.data(), t: d.data().time?.toDate() })).filter(r => r.t);
+      let rows = null;
+      if (opt.add && histRows) { rows = [opt.add, ...histRows].slice(0, 15); saveHist(rows); }
+      if (!rows && !opt.force) {
+        const c = readHist();
+        if (c && histRid && c.rid === histRid && c.day === dayKey(now())) rows = c.rows.map(r => ({ type: r.type, t: new Date(r.ms), locationName: r.loc }));
+      }
+      if (!rows) {
+        const q = query(collection(db, 'employees', token, 'records'), orderBy('time', 'desc'), limit(15));
+        const s = await getDocs(q);
+        rows = s.docs.map(d => ({ ...d.data(), t: d.data().time?.toDate() })).filter(r => r.t);
+        saveHist(rows);
+      }
+      histRows = rows;
       last = rows[0] || null;
       $('#hist').innerHTML = rows.length ? rows.map(r => `<tr><td><span class="badge ${r.type === 'in' ? 'b-ok' : 'b-bad'}">${r.type === 'in' ? 'حضور' : 'انصراف'}</span></td><td>${fmtDate(r.t)}</td><td>${fmtTime(r.t)}</td><td class="muted">${esc(r.locationName)}</td></tr>`).join('') : '<tr><td class="muted">لا توجد تسجيلات بعد</td></tr>';
     } catch { $('#hist').innerHTML = '<tr><td class="muted">تعذر تحميل السجل</td></tr>'; }
@@ -1312,10 +1343,11 @@ async function employeeApp(db, auth, token) {
     let best = null;
     for (const l of locs) { const d = dist(lat, lng, l.lat, l.lng); if (!best || d < best.d) best = { l, d }; }
     if (best.d > best.l.radius) { setMsg(`أنت خارج نطاق العمل. تبعد حوالي ${Math.round(best.d)} متر عن «${best.l.name}» (المسموح ${best.l.radius}م). لم يتم التسجيل.`, 'err'); return loadHist(); }
+    let recRef = null, punched = null;
     try {
       try { sessionStorage.setItem(inflightKey, String(Date.now())); } catch {}
       const devToUse = emp.deviceId || myDev;
-      const recRef = doc(collection(db, 'employees', token, 'records'));
+      recRef = doc(collection(db, 'employees', token, 'records'));
       const batch = writeBatch(db);
       batch.set(recRef, { type, time: serverTimestamp(), lat, lng, accuracy: Math.round(accuracy), distance: Math.round(best.d), locationId: best.l.id, locationName: best.l.name, empName: emp.name, deviceId: devToUse });
       batch.update(ref, { state: type, lastAt: serverTimestamp(), lastRecId: recRef.id });
@@ -1323,16 +1355,17 @@ async function employeeApp(db, auth, token) {
       const first = await Promise.race([done.then(() => 'ok'), new Promise(r => setTimeout(() => r('slow'), 15000))]);
       if (first === 'slow') {
         setMsg('الشبكة بطيئة: التسجيل قيد الإرسال. لا تُعد الضغط — سيظهر في «آخر تسجيلاتك» فور وصوله.');
-        done.then(() => { try { sessionStorage.removeItem(inflightKey); } catch {} setMsg('وصل التسجيل إلى الخادم', 'good'); loadHist(); }).catch(() => { try { sessionStorage.removeItem(inflightKey); } catch {} setMsg('تعذر حفظ التسجيل. تحقق من الاتصال وأعد المحاولة.', 'err'); loadHist(); });
+        done.then(() => { try { sessionStorage.removeItem(inflightKey); } catch {} setMsg('وصل التسجيل إلى الخادم', 'good'); histRid = recRef.id; emp.lastRecId = recRef.id; loadHist({ force: true }); }).catch(() => { try { sessionStorage.removeItem(inflightKey); } catch {} setMsg('تعذر حفظ التسجيل. تحقق من الاتصال وأعد المحاولة.', 'err'); loadHist(); });
         return;
       }
       try { sessionStorage.removeItem(inflightKey); } catch {}
       setMsg(type === 'in' ? `تم تسجيل حضورك في «${best.l.name}»` : `تم تسجيل انصرافك من «${best.l.name}»`, 'good');
+      histRid = recRef.id; emp.lastRecId = recRef.id; punched = { type, t: now(), locationName: best.l.name };
     } catch (e) {
       try { sessionStorage.removeItem(inflightKey); } catch {}
       setMsg(e.code === 'permission-denied' ? 'رفض الخادم التسجيل: تأكد أنك داخل نطاق العمل وأن آخر عملية لم تُسجَّل للتو، ثم أعد المحاولة.' : 'تعذر حفظ التسجيل. تحقق من الاتصال وحاول مجدداً.', 'err');
     }
-    loadHist();
+    loadHist(punched ? { add: punched } : {});
   }
 
   /* ---------- طلبات الموظف: إجازة وتصحيح ---------- */
@@ -1633,6 +1666,50 @@ function adminApp(db, auth) {
   async function migrateLocs() {
     for (const l of S.locs) if (!(l.kx > 0) || !(l.ky > 0)) { const k = geoK(l.lat); await updateDoc(doc(db, 'locations', l.id), k); Object.assign(l, k); }
   }
+  /* ---- تبويب «اليوم»: أمس يُجلب مرة واحدة + مستمع لحظي لسجلات اليوم ----
+     بدل إعادة جلب كل السجلات كل 60 ثانية: القراءة الكاملة مرة عند الفتح، ثم قراءة واحدة لكل سجل جديد فقط. */
+  const mapRec = d => ({ id: d.id, empId: d.ref.parent.parent.id, ...d.data(), t: d.data().time?.toDate() });
+  let _todayRT = 0;
+  const mergeToday = () => { S.today = (S.todayPrev || []).concat(S.todayLive || []); };
+  function stopTodayFeed() {
+    if (window.__meqatUnsub) { try { window.__meqatUnsub(); } catch {} window.__meqatUnsub = null; }
+    clearInterval(window.__meqatPoll);
+  }
+  function refreshTodayView() {
+    clearTimeout(_todayRT);
+    _todayRT = setTimeout(() => { if (S.tab === 'today' && !document.querySelector('.ov') && $('#content')) viewToday($('#content')); }, 400);
+  }
+  async function startTodayFeed() {
+    stopTodayFeed();
+    const nowD = new Date(), key = dayKey(nowD), yKey = dayKey(new Date(nowD.getTime() - 86400000));
+    S.todayKey = key; S.todayLive = []; S.todayPrev = [];
+    S.todayPrev = await fetchRecs(dayStart(yKey), dayEnd(yKey));   // أمس: لإكمال جلسات الدوام الليلي — مرة واحدة فقط
+    mergeToday();
+    await new Promise(resolve => {
+      let first = true;
+      const done = () => { if (first) { first = false; resolve(); } else refreshTodayView(); };
+      const slowPoll = async () => {   // احتياط إذا تعذّر المستمع (مثلاً الفهرس غير منشأ): تحديث كل 5 دقائق فقط
+        clearInterval(window.__meqatPoll);
+        const pull = async () => { try { S.todayLive = await fetchRecs(dayStart(key), dayEnd(key)); mergeToday(); } catch {} done(); };
+        await pull();
+        window.__meqatPoll = setInterval(() => { if (!document.hidden && auth.currentUser) pull(); }, 300000);
+      };
+      const q = query(collectionGroup(db, 'records'), where('time', '>=', Timestamp.fromDate(dayStart(key))), where('time', '<', Timestamp.fromDate(dayEnd(key))), orderBy('time'));
+      try {
+        window.__meqatUnsub = onSnapshot(q, snap => {
+          S.todayLive = snap.docs.map(mapRec).filter(x => x.t);
+          mergeToday();
+          done();
+        }, err => {
+          console.warn(err);
+          if (err.code === 'failed-precondition') S.idxUrl = (String(err.message).match(/https:\/\/\S+/) || [''])[0] || 'https://console.firebase.google.com';
+          if (window.__meqatUnsub) { try { window.__meqatUnsub(); } catch {} window.__meqatUnsub = null; }
+          slowPoll();
+        });
+      } catch (e) { console.warn(e); slowPoll(); }
+      setTimeout(() => { if (first) { first = false; resolve(); } }, 15000);   // لا نعطّل تحميل اللوحة إذا تأخر الاتصال
+    });
+  }
   async function loadAll() {
     _sumC = null;
     S.idxUrl = '';
@@ -1670,7 +1747,7 @@ function adminApp(db, auth) {
       } catch (e2) { S.admins = []; if (e2.code === 'permission-denied') S.adminsErr = true; else console.warn(e2); }
       await migrateLocs();
       await loadRecs();
-      S.today = await fetchRecs(dayStart(dayKey(new Date(Date.now() - 86400000))), dayEnd(dayKey(new Date())));
+      await startTodayFeed();
     } catch (err) { console.error(err); toast('تعذر تحميل البيانات — تأكد أن بريدك مطابق للمكتوب في قواعد Firestore', 'err'); }
     render();
   }
@@ -2755,10 +2832,12 @@ function adminApp(db, auth) {
   };
 
   clearInterval(window.__meqatTick);
+  // مؤقّت محلي خفيف: لا يقرأ من Firebase. يُحدّث الحالات المعتمدة على الوقت (متأخر/نسي الانصراف/مدة العمل) ويتحقق من تغيّر اليوم.
   window.__meqatTick = setInterval(async () => {
-    if (!auth.currentUser || S.tab !== 'today' || document.hidden || document.querySelector('.ov')) return;
-    try { S.today = await fetchRecs(dayStart(dayKey(new Date(Date.now() - 86400000))), dayEnd(dayKey(new Date()))); } catch { return; }
-    if (S.tab === 'today' && !document.querySelector('.ov') && $('#content')) viewToday($('#content'));
+    if (!auth.currentUser) { stopTodayFeed(); return; }
+    if (S.todayKey && dayKey(new Date()) !== S.todayKey) { try { await startTodayFeed(); } catch (e) { console.warn(e); } }
+    if (S.tab !== 'today' || document.hidden || document.querySelector('.ov') || !$('#content')) return;
+    viewToday($('#content'));
   }, 60000);
   loadAll();
 }
