@@ -438,6 +438,24 @@ details.fold>summary::after{border-inline-end:0!important;border-right:2.5px sol
  .rail-nav .tab:not(.on) em{inset-inline-end:2px;margin:0;top:4px}
  .rail-nav .tab.on{flex:0 0 auto;min-width:78px;padding:0 12px}
 }
+
+/* =============== الجزء 4: الطلبات والتقارير والرواتب والمهام =============== */
+.rt td{align-items:flex-start}
+.rt td>.v{min-width:0;overflow-wrap:anywhere}
+@media(max-width:760px){
+ .rt tfoot{display:block}
+ .rt td{line-height:1.7;font-size:14.5px}
+ .rt .who{font-weight:700}
+ .rt-wide tr{display:grid;grid-template-columns:1fr 1fr;gap:6px 16px}
+ .rt td>.v{flex:1;text-align:end}
+ .rt-wide td{display:block;padding:4px 0;text-align:start;min-width:0}
+ .rt-wide td>.v{text-align:start}
+ .rt-wide td::before{display:block;margin-bottom:1px;font-size:12px}
+ .rt-wide td:first-child,.rt-wide td[colspan],.rt-wide td:last-child:nth-child(odd){grid-column:1/-1}
+ .rt tr td[colspan]{justify-content:flex-start}
+ #content .g2{grid-template-columns:1fr}
+ #content>.card>.ch .acts{width:100%}#content>.card>.ch .acts .btn{flex:1 1 auto;justify-content:center}
+}
 </style>
 </head>
 <body>
@@ -585,6 +603,24 @@ const I2 = {
  search:'<circle cx="11" cy="11" r="6.5"/><path d="m16 16 4 4"/>'
 };
 const ic = (n, s = 22) => `<svg class="ic" width="${s}" height="${s}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${I2[n] || I2.clock}</svg>`;
+function rtify(root) {
+  root.querySelectorAll('.tw > table:not(.rt)').forEach(tb => {
+    const ths = [...tb.querySelectorAll('thead th')].map(h => h.textContent.trim()); if (!ths.length) return;
+    tb.classList.add('rt'); if (ths.length > 5) tb.classList.add('rt-wide');
+    tb.querySelectorAll('tr').forEach(tr => {
+      if (tr.parentElement.tagName === 'THEAD') return;
+      let col = 0; [...tr.children].forEach(td => {
+        if (td.colSpan <= 1 && !td.hasAttribute('data-l')) {
+          td.setAttribute('data-l', ths[col] || '');
+          const f = td.firstChild;
+          if (td.childNodes.length > 1 || (f && f.nodeType === 3 && f.textContent.trim())) { const w = document.createElement('span'); w.className = 'v'; while (td.firstChild) w.appendChild(td.firstChild); td.appendChild(w); }
+        }
+        col += td.colSpan || 1;
+      });
+    });
+  });
+}
+let _rtq = 0; new MutationObserver(() => { if (_rtq) return; _rtq = requestAnimationFrame(() => { _rtq = 0; rtify(document); }); }).observe(document.documentElement, { childList: true, subtree: true });
 
 /* ---------- أدوات مساعدة ---------- */
 const $ = (s, r = document) => r.querySelector(s);
@@ -2092,7 +2128,7 @@ function adminApp(db, auth) {
       <div class="tw"><table><thead><tr><th>المهمة</th><th>السعر الافتراضي</th><th>الحالة</th><th></th></tr></thead><tbody>
       ${S.taskTypes.map(x => `<tr><td><b>${esc(x.name)}</b></td><td><span class="badge b-pri">${m(+x.price || 0)}</span></td><td>${x.active === false ? '<span class="badge b-mute">موقوفة</span>' : '<span class="badge b-ok">مفعّلة</span>'}</td><td><div class="acts"><button class="btn sm sec" data-act="editTask" data-id="${esc(x.id)}">${ic('edit', 16)} تعديل</button> <button class="btn sm sec" data-act="toggleTask" data-id="${esc(x.id)}">${ic('power', 16)} ${x.active === false ? 'تفعيل' : 'إيقاف'}</button> <button class="btn sm bad" data-act="delTask" data-id="${esc(x.id)}">${ic('trash', 16)} حذف</button></div></td></tr>`).join('') || '<tr><td colspan="4" class="muted center">لا توجد أنواع مهام بعد</td></tr>'}
       </tbody></table></div></div>
-    <div class="card">${ch('payroll', `ملخص المهام المعتمدة (${fmtDate(dayStart(S.from))} → ${fmtDate(dayStart(S.to))})`)}<p class="hint" style="margin-top:0">الفترة والموظف من «التقارير». يوجد حالياً (${workers.length}) موظف مهام مسجّل.</p>
+    <div class="card">${ch('payroll', `ملخص المهام المعتمدة (من ${fmtDate(dayStart(S.from))} إلى ${fmtDate(dayStart(S.to))})`)}<p class="hint" style="margin-top:0">الفترة والموظف من «التقارير». يوجد حالياً (${workers.length}) موظف مهام مسجّل.</p>
       <div class="tw"><table><thead><tr><th>الموظف</th><th>عدد الطلبات</th><th>إجمالي الوحدات</th><th>إجمالي المبلغ</th></tr></thead><tbody>
       ${[...by.entries()].map(([id, g]) => `<tr><td><div class="who"><span class="av">${ini(nm(id))}</span>${esc(nm(id))}</div></td><td>${g.n}</td><td>${m(g.qty)}</td><td><b class="badge b-ok">${m(g.amt)}</b></td></tr>`).join('') || '<tr><td colspan="4" class="muted center">لا توجد مهام معتمدة في الفترة</td></tr>'}
       </tbody></table></div>
@@ -2246,18 +2282,18 @@ function adminApp(db, auth) {
     if (!sum.length) { toast('لا توجد بيانات للفترة المحددة', 'err'); return; }
     const byEmp = new Map();
     sum.forEach(s => { const g = byEmp.get(s.empId) || { empId: s.empId, name: s.name, rows: [] }; g.rows.push(s); byEmp.set(s.empId, g); });
-    const html = `<!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>كشف دوام ${S.from} → ${S.to}</title>
-  <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;700;800&display=swap" rel="stylesheet">
-  <style>body{font-family:"Tajawal",Arial,sans-serif;margin:0;padding:24px;color:#12263f}
-  header{display:flex;justify-content:space-between;align-items:flex-end;border-bottom:3px solid #0d4fa8;padding-bottom:10px;margin-bottom:14px}
+    const html = `<!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>كشف دوام من ${S.from} إلى ${S.to}</title>
+  <link href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;600;800&family=IBM+Plex+Sans+Arabic:wght@400;600;700&display=swap" rel="stylesheet">
+  <style>body{font-family:"Rubik","IBM Plex Sans Arabic",Arial,sans-serif;margin:0;padding:24px;color:#0E2A20}
+  header{display:flex;justify-content:space-between;align-items:flex-end;border-bottom:3px solid #0E6B4D;padding-bottom:10px;margin-bottom:14px}
   h1{margin:0;font-size:22px} h2{margin:0 0 6px;font-size:19px}
-  .meta{color:#6580a0;font-size:12.5px}
+  .meta{color:#587265;font-size:12.5px}
   section{margin-bottom:6px}
   table{width:100%;border-collapse:collapse;font-size:12.5px;margin-bottom:8px}
-  th,td{border:1px solid #9db6d8;padding:5px 7px;text-align:center}
-  th{background:#e3f0ff;color:#0b3c7d}
+  th,td{border:1px solid #9CC4AF;padding:5px 7px;text-align:center}
+  th{background:#D3EBDD;color:#0A5139}
   tr.abs td{color:#c93636;font-weight:700}
-  tfoot td{font-weight:800;background:#f1f7fe}
+  tfoot td{font-weight:800;background:#EAF4EE}
   .sig{display:flex;justify-content:space-between;margin:10px 0 22px;font-size:13.5px}
   .pb{page-break-after:always}
   @page{size:A4;margin:12mm}</style></head><body>
@@ -2469,7 +2505,7 @@ function adminApp(db, auth) {
         if (!pay.length) return '<p class="muted center" style="padding:20px 0">لا يوجد موظف عليه راتب بعد — حدد طريقة الأجر وقيمته من تعديل بيانات الموظف ليظهر المسير.</p>';
         const m = v => (Math.round(v * 100) / 100).toString();
         const T = pay.reduce((a, r) => ({ base: a.base + r.base, otPay: a.otPay + r.otPay, dl: a.dl + r.dedLate, de: a.de + r.dedEarly, da: a.da + r.dedAbs, df: a.df + (r.dedForgot || 0), net: a.net + r.net }), { base: 0, otPay: 0, dl: 0, de: 0, da: 0, df: 0, net: 0 });
-        return `<p class="hint" style="margin-top:0">محسوبة للفترة (${fmtDate(dayStart(S.from))} → ${fmtDate(dayStart(S.to))}). سياسة «نسيان الانصراف» الحالية: ${forgotTxt()} — عدّل البصمة من «سجل البصمات» وسيُعاد الاحتساب تلقائياً.</p><div class="tw"><table><thead><tr><th>الموظف</th><th>الأجر</th><th>ساعات عادية فعلية</th><th>الأساسي</th><th>قيمة الإضافي</th><th>خصم التأخير</th><th>خصم المبكر</th><th>خصم الغياب / إجازة بلا راتب</th><th>خصم نسيان الانصراف</th><th>الصافي المستحق</th></tr></thead><tbody>
+        return `<p class="hint" style="margin-top:0">محسوبة للفترة (من ${fmtDate(dayStart(S.from))} إلى ${fmtDate(dayStart(S.to))}). سياسة «نسيان الانصراف» الحالية: ${forgotTxt()} — عدّل البصمة من «سجل البصمات» وسيُعاد الاحتساب تلقائياً.</p><div class="tw"><table><thead><tr><th>الموظف</th><th>الأجر</th><th>ساعات عادية فعلية</th><th>الأساسي</th><th>قيمة الإضافي</th><th>خصم التأخير</th><th>خصم المبكر</th><th>خصم الغياب / إجازة بلا راتب</th><th>خصم نسيان الانصراف</th><th>الصافي المستحق</th></tr></thead><tbody>
         ${pay.map(r => `<tr><td><div class="who"><span class="av">${ini(r.name)}</span><div>${esc(r.name)}${r.forgotDays ? ` <span class="badge b-warn" title="لم تُصحَّح بصمة انصرافها — السياسة: ${forgotTxt()}">${r.forgotDays} يوم منسي</span>` : ''}</div></div></td><td><span class="badge ${r.pm === 'monthly' ? 'b-pri' : r.pm === 'task' ? 'b-warn' : 'b-ok'}">${r.pm === 'monthly' ? 'شهري ' + m(r.amt) : r.pm === 'task' ? 'بالمهام' : 'بالساعة ' + m(r.amt)}</span></td><td>${r.pm === 'task' ? r.taskQty + ' وحدة' : r.paidH.toFixed(1) + ' س'}</td><td>${m(r.base)}</td><td><b>${m(r.otPay)}</b></td><td class="muted">${m(r.dedLate)}</td><td class="muted">${m(r.dedEarly)}</td><td class="muted">${m(r.dedAbs)}</td><td class="muted">${m(r.dedForgot || 0)}</td><td><b class="badge b-ok" style="font-size:14px">${m(r.net)}</b></td></tr>`).join('')}
         </tbody><tfoot><tr><td colspan="3">الإجمالي الكلي</td><td>${m(T.base)}</td><td>${m(T.otPay)}</td><td>${m(T.dl)}</td><td>${m(T.de)}</td><td>${m(T.da)}</td><td>${m(T.df)}</td><td><b class="badge b-ok" style="font-size:14.5px">${m(T.net)}</b></td></tr></tfoot></table></div>`;
       })()}</div>`
