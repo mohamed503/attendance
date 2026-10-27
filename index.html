@@ -1390,12 +1390,12 @@ function setupPage() {
     <li>بعد الدخول للوحة: يمكنك إضافة مشرفين إضافيين من تبويب «الموظفون» (قسم المشرفون) دون تعديل القواعد.</li>
   </ol>
   <p class="hint">القواعد هنا إصدار 3: قراءة مقيّدة بالهوية + سجل تدقيق تنشئه القواعد نفسها مع كل عملية إدارية حساسة (تعديل موظف/بصمة/اعتماد مسير/إعدادات)، والمسيرات الموثقة مجمدة (بلا تعديل أو حذف)، وطلبات رمز الأجهزة مقيدة بمحاولة كل دقيقة لمنع التخمين.</p>
-  <div class="field" style="max-width:360px"><label>بريد حساب الإدارة (لتوليد القواعد)</label><input id="admEmail" type="email" dir="ltr" placeholder="admin@example.com"></div>
+  <div class="field" style="max-width:360px"><label>بريد حساب الإدارة (لتوليد القواعد)</label><input id="admEmail" type="email" dir="ltr" value="mohamedalforjany654@gmail.com" placeholder="admin@example.com"></div>
   <h3 style="margin-top:14px;margin-bottom:10px">قواعد Firestore (الإصدار 3)</h3>
-  <pre class="rules" id="rulesBox">${esc(rulesText('admin@example.com'))}</pre>
+  <pre class="rules" id="rulesBox">${esc(rulesText('mohamedalforjany654@gmail.com'))}</pre>
   <button class="btn" id="copyRules" style="margin-top:10px">${ic('copy', 20)} نسخ القواعد</button>
   </div></div>`;
-  $('#admEmail').oninput = e => { $('#rulesBox').textContent = rulesText(e.target.value.trim() || 'admin@example.com'); };
+  $('#admEmail').oninput = e => { $('#rulesBox').textContent = rulesText(e.target.value.trim() || 'mohamedalforjany654@gmail.com'); };
   $('#copyRules').onclick = () => { navigator.clipboard.writeText($('#rulesBox').textContent).then(() => toast('تم النسخ', 'good')); };
 }
 
