@@ -971,6 +971,11 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
+    // تنبيهات Telegram — للإدارة فقط (تحتوي أرقام محادثات المدراء)
+    match /tgConfig/{id} { allow read, write: if isAdmin(); }
+    match /telegramLinks/{id} { allow read, write: if isAdmin(); }
+    match /tgOutbox/{id} { allow read, write: if isAdmin(); }
+
     match /employees/{empId} {
       allow get: if isAdmin() || ownerOnly(empId) || unclaimed();
       allow list, create, delete: if isAdmin();
@@ -1633,7 +1638,8 @@ function adminApp(db, auth) {
     qToday: '', qEmp: '', qRec: '',
     emps: [], locs: [], scheds: [], rulesOld: false, recs: [], today: [],
     idxUrl: '', from: '', to: '', emp: '', hols: [], holKeys: [], set: {},
-    reqs: [], leaves: [], reqsErr: false, admins: [], adminsErr: false, taskTypes: []
+    reqs: [], leaves: [], reqsErr: false, admins: [], adminsErr: false, taskTypes: [],
+    tg: {}, tgOld: false, tgLink: ''
   };
   S.from = dayKey(new Date(Date.now() - 6 * 86400000)); S.to = dayKey(new Date());
   const base = location.origin + location.pathname;
@@ -1745,6 +1751,7 @@ function adminApp(db, auth) {
         const od = ad.docs.find(d => d.id === 'owner'); S.ownerEmail = od ? (od.data().email || '') : '';
         S.adminsErr = false;
       } catch (e2) { S.admins = []; if (e2.code === 'permission-denied') S.adminsErr = true; else console.warn(e2); }
+      try { const tgd = await getDoc(doc(db, 'tgConfig', 'main')); S.tg = tgd.exists() ? tgd.data() : {}; S.tgOld = false; } catch (e2) { S.tg = {}; if (e2.code === 'permission-denied') S.tgOld = true; else console.warn(e2); }
       await migrateLocs();
       await loadRecs();
       await startTodayFeed();
@@ -2120,6 +2127,36 @@ function adminApp(db, auth) {
 
   /* --- 3. تبويب الدوام + الإجازات والعطلات + إعدادات المنشأة (منظم بـ 3 تبويبات فرعية) --- */
   const TZ_OPTS = [[-180, 'UTC−3'], [-120, 'UTC−2'], [-60, 'UTC−1'], [0, 'UTC+0'], [60, 'UTC+1'], [120, 'UTC+2 — طرابلس (الافتراضي)'], [180, 'UTC+3'], [210, 'UTC+3:30'], [240, 'UTC+4'], [300, 'UTC+5'], [360, 'UTC+6'], [420, 'UTC+7'], [480, 'UTC+8']];
+  /* --- تنبيهات Telegram --- */
+  function tgCardHtml() {
+    const t = S.tg || {}, n = (t.adminChats || []).length;
+    const hrs = Array.from({ length: 24 }, (_, h) => h);
+    const cb = (id, label, on) => `<label style="display:flex;align-items:center;gap:8px;font-size:14px;cursor:pointer"><input type="checkbox" id="${id}" ${on ? 'checked' : ''} style="width:18px;height:18px"> ${label}</label>`;
+    return `<div class="card" style="margin-top:16px">
+      ${ch('send', 'تنبيهات Telegram (مجانية)')}
+      ${S.tgOld ? `<div class="notice"><b>تحديث مطلوب:</b> لحفظ إعدادات التنبيهات يلزم تحديث قواعد Firestore. اضغط الزر ثم الصقها في Firestore › Rules واضغط Publish.<div style="margin-top:10px"><button class="btn sm" data-act="copyRules">${ic('copy', 16)} نسخ القواعد الجديدة</button></div></div>` : ''}
+      <p class="muted" style="font-size:13px;margin:0 0 12px">تصلك طلبات الإجازة والتصحيح وملخص الحضور اليومي على Telegram. تحتاج مرة واحدة: إنشاء بوت من <b dir="ltr">@BotFather</b> ونشر دوال التنبيه (راجع ملف <b dir="ltr">TELEGRAM_SETUP.md</b>).</p>
+      <div class="row">
+        <div class="field" style="max-width:260px"><label>اسم البوت (بدون @)</label><input id="tgBot" dir="ltr" value="${esc(t.botUsername || '')}" placeholder="MyCompany_bot"></div>
+        <div class="field" style="max-width:200px"><label>وقت الملخص اليومي</label><select id="tgHour">${hrs.map(h => `<option value="${h}" ${(t.summaryHour != null ? +t.summaryHour : 20) === h ? 'selected' : ''}>${String(h).padStart(2, '0')}:00</option>`).join('')}</select></div>
+      </div>
+      <div style="display:flex;flex-wrap:wrap;gap:18px;margin:6px 0 14px">
+        ${cb('tgOn', 'تفعيل التنبيهات', !!t.enabled)}
+        ${cb('tgReq', 'تنبيه عند كل طلب جديد', t.notifyReq !== false)}
+        ${cb('tgSum', 'ملخص يومي', t.summary !== false)}
+      </div>
+      <div style="display:flex;flex-wrap:wrap;gap:10px">
+        <button class="btn" data-act="tgSave">${ic('check', 18)} حفظ</button>
+        <button class="btn sec" data-act="tgLink">${ic('send', 18)} إنشاء رابط الربط</button>
+        <button class="btn sec" data-act="tgRefresh">${ic('refresh', 18)} تحديث الحالة</button>
+        <button class="btn sec" data-act="tgTest" ${n ? '' : 'disabled'}>رسالة تجريبية</button>
+        ${n ? `<button class="btn sec" data-act="tgUnlink">فصل الحسابات</button>` : ''}
+      </div>
+      <p style="margin:14px 0 0;font-size:14px">${n ? `<span class="badge b-ok">مرتبط: ${n} حساب</span>` : '<span class="badge b-mute">لا يوجد حساب مرتبط بعد</span>'}</p>
+      ${S.tgLink ? `<div class="notice" style="margin-top:12px"><b>رابط الربط</b> (صالح 30 دقيقة، يُستخدم مرة واحدة): افتحه من هاتفك أو حاسوبك الذي عليه Telegram واضغط <b>Start</b>، ثم اضغط «تحديث الحالة».<div dir="ltr" style="margin:8px 0;word-break:break-all;font-size:13px">${esc(S.tgLink)}</div><a class="btn sm" href="${esc(S.tgLink)}" target="_blank" rel="noopener">فتح في Telegram</a> <button class="btn sm sec" data-act="tgCopyLink">${ic('copy', 16)} نسخ الرابط</button></div>` : ''}
+    </div>`;
+  }
+
   function viewSched(el) {
     const cnt = id => S.emps.filter(e => e.scheduleId === id).length;
     el.innerHTML = `
@@ -2172,7 +2209,7 @@ function adminApp(db, auth) {
             <button class="btn" data-act="saveSet">${ic('check', 18)} حفظ الإعدادات</button>
           </div>
           <p class="muted" style="font-size:13px;margin:12px 0 0">المنطقة الزمنية تثبّت أسماء الأيام والحدود اليومية في كل التقارير على جهاز أي مدير مهما كانت ساعة جهازه.<br>سياسة «نسيان الانصراف» تُطبَّق على الراتب الشهري (من الراتب اليومي) وعلى الأجر بالساعة (من ساعات اليوم المجدولة). ويظهر للإدارة تنبيه في «اليوم» وعلى تبويب التقارير إلى أن تُصحَّح البصمة، وعند التصحيح يُلغى الخصم تلقائياً.</p>
-        </div>`
+        </div>${tgCardHtml()}`
       }`;
   }
 
@@ -2668,6 +2705,30 @@ function adminApp(db, auth) {
         await addDoc(collection(db, 'locations'), { name, lat, lng, radius, active: true, ...geoK(lat) });
         await loadAll(); toast('تمت إضافة الموقع', 'good');
       }
+      if (act === 'tgSave' || act === 'tgLink') {
+        const bot = ($('#tgBot').value || '').trim().replace(/^@/, '');
+        if (bot && !/^[A-Za-z0-9_]{5,32}$/.test(bot)) return toast('اسم البوت غير صحيح (حروف إنجليزية وأرقام و _ فقط)', 'err');
+        const patch = { botUsername: bot, summaryHour: +$('#tgHour').value, enabled: $('#tgOn').checked, notifyReq: $('#tgReq').checked, summary: $('#tgSum').checked, updatedAt: serverTimestamp() };
+        await setDoc(doc(db, 'tgConfig', 'main'), patch, { merge: true });
+        S.tg = { ...S.tg, ...patch };
+        if (act === 'tgLink') {
+          if (!bot) return toast('اكتب اسم البوت أولاً (من @BotFather)', 'err');
+          const bytes = crypto.getRandomValues(new Uint8Array(24));
+          const code = Array.from(bytes, x => 'abcdefghijklmnopqrstuvwxyz0123456789'[x % 36]).join('');
+          await setDoc(doc(db, 'telegramLinks', code), { createdAt: serverTimestamp(), expiresAt: Timestamp.fromMillis(Date.now() + 30 * 60000), by: (auth.currentUser && auth.currentUser.email) || '' });
+          S.tgLink = `https://t.me/${bot}?start=${code}`;
+          toast('أُنشئ رابط الربط', 'good');
+        } else toast('تم حفظ إعدادات التنبيهات', 'good');
+        return render();
+      }
+      if (act === 'tgRefresh') {
+        const tgd = await getDoc(doc(db, 'tgConfig', 'main')); S.tg = tgd.exists() ? tgd.data() : {};
+        if ((S.tg.adminChats || []).length) S.tgLink = '';
+        toast('تم تحديث الحالة', 'good'); return render();
+      }
+      if (act === 'tgCopyLink') { await navigator.clipboard.writeText(S.tgLink); return toast('تم نسخ الرابط', 'good'); }
+      if (act === 'tgTest') { await addDoc(collection(db, 'tgOutbox'), { text: '✅ رسالة تجريبية من ميقات — التنبيهات تعمل.', createdAt: serverTimestamp() }); return toast('أُرسل الطلب — تصل الرسالة خلال ثوانٍ إن كانت الدوال منشورة', 'good'); }
+      if (act === 'tgUnlink') { if (!confirm('فصل كل حسابات Telegram المرتبطة؟')) return; await setDoc(doc(db, 'tgConfig', 'main'), { adminChats: [] }, { merge: true }); S.tg = { ...S.tg, adminChats: [] }; return render(); }
       if (act === 'copyRules') {
         const me = ((auth.currentUser && auth.currentUser.email) || '').toLowerCase();
         const isSec = S.admins.some(x => x.id === auth.currentUser.uid || String(x.email || x.id).toLowerCase() === me);

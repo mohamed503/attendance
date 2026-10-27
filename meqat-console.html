@@ -720,6 +720,11 @@ service cloud.firestore {
       allow write: if isAdmin();
     }
 
+    // تنبيهات Telegram — للإدارة فقط (تحتوي أرقام محادثات المدراء)
+    match /tgConfig/{id} { allow read, write: if isAdmin(); }
+    match /telegramLinks/{id} { allow read, write: if isAdmin(); }
+    match /tgOutbox/{id} { allow read, write: if isAdmin(); }
+
     match /employees/{empId} {
       allow get: if isAdmin() || ownerOnly(empId) || unclaimed();
       allow list, create, delete: if isAdmin();
