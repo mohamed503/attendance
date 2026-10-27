@@ -898,8 +898,89 @@ function getDeviceId() { try { let id = localStorage.getItem('att_dev'); if (!id
 
 const configured = firebaseConfig.apiKey !== "YOUR_API_KEY" && !!firebaseConfig.apiKey;
 const params = new URLSearchParams(location.search);
-const empToken = params.get('e');
+/* ---------- بيئة التشغيل: متصفح داخلي؟ تطبيق مثبّت؟ ---------- */
+const UA = navigator.userAgent || '';
+const isIOS = /iPhone|iPad|iPod/i.test(UA) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+const isAndroid = /Android/i.test(UA);
+const standaloneNow = isStandalone(); // الدالة معرّفة أعلاه
+// المتصفحات الداخلية (واتساب/فيسبوك/تيليغرام...) لها تخزين معزول يسبب ضياع ربط الجهاز، لذلك لا نربط داخلها
+const isInApp = !standaloneNow && (/FBAN|FBAV|FB_IAB|Instagram|MicroMessenger|Telegram|TikTok|musical_ly|Snapchat|Twitter|Line\/|; wv\)/i.test(UA) || (isIOS && !/Safari\//.test(UA)));
+let empToken = params.get('e');
+const wantAdmin = params.get('admin') === '1';
+if (!empToken && standaloneNow && !wantAdmin) { try { empToken = localStorage.getItem('att_emp_tok') || null; } catch {} }
+const needActivation = !empToken && standaloneNow && !wantAdmin && (() => { try { return localStorage.getItem('att_admin_hint') !== '1'; } catch { return true; } })();
 const root = $('#app');
+
+// ملف manifest ديناميكي يحمل رمز الموظف في start_url فيفتح التطبيق المثبّت على صفحته مباشرة
+function setEmpManifest(token) {
+  try {
+    const base = location.origin + location.pathname;
+    const man = { id: base + '?e=' + token, name: 'مِيقَاتْ للحضور والانصراف', short_name: 'ميقات', lang: 'ar', dir: 'rtl',
+      start_url: base + '?e=' + token, scope: new URL('./', base).href, display: 'standalone', background_color: '#EAF4EE', theme_color: '#0E6B4D',
+      icons: [{ src: new URL('icon.svg', base).href, sizes: 'any', type: 'image/svg+xml', purpose: 'any' }] };
+    const url = URL.createObjectURL(new Blob([JSON.stringify(man)], { type: 'application/manifest+json' }));
+    let l = document.querySelector('link[rel="manifest"]');
+    if (!l) { l = document.createElement('link'); l.rel = 'manifest'; document.head.appendChild(l); }
+    l.href = url;
+  } catch {}
+}
+
+// شاشة «افتح الرابط في المتصفح» بدل الربط داخل متصفح داخلي
+function showInAppGuide(token) {
+  const link = location.origin + location.pathname + '?e=' + token;
+  root.innerHTML = `<div class="emp-bg"><div class="emp-wrap"><div class="card center" style="margin-top:40px;line-height:1.9">
+    <h3 style="margin:0 0 10px">افتح الرابط في المتصفح</h3>
+    <p style="margin:0 0 10px">أنت تفتح الرابط من داخل تطبيق آخر (واتساب أو فيسبوك أو غيره)، وهذا يسبب مشاكل في ربط جهازك. لم يتم تسجيل أي ربط بعد.</p>
+    <p style="margin:0 0 12px;font-weight:700">${isIOS ? 'اضغط زر المشاركة أو ⋯ ثم «فتح في Safari».' : 'اضغط ⋮ ثم «فتح في المتصفح» (Chrome).'}</p>
+    <input id="ilk" dir="ltr" readonly value="${esc(link)}" style="width:100%;margin-bottom:10px">
+    <button class="btn" id="icp" type="button">نسخ الرابط</button>
+    ${isAndroid ? '<button class="btn sec" id="ich" type="button" style="margin-top:8px">فتح في Chrome</button>' : ''}
+    <p id="imsg" class="muted" style="font-size:13px;margin:10px 0 0"></p></div></div></div>`;
+  $('#icp').onclick = async () => {
+    let ok = false;
+    try { await navigator.clipboard.writeText(link); ok = true; } catch {}
+    if (!ok) { try { const i = $('#ilk'); i.select(); i.setSelectionRange(0, 999); ok = document.execCommand('copy'); } catch {} }
+    $('#imsg').textContent = ok ? 'تم النسخ — الصقه في المتصفح.' : 'اضغط مطولاً على الرابط أعلاه وانسخه.';
+  };
+  if (isAndroid) {
+    const go = () => { location.href = `intent://${location.host}${location.pathname}?e=${token}#Intent;scheme=https;package=com.android.chrome;S.browser_fallback_url=${encodeURIComponent(link)};end`; };
+    $('#ich').onclick = go;
+    try { if (!sessionStorage.getItem('att_intent')) { sessionStorage.setItem('att_intent', '1'); go(); } } catch {}
+  }
+}
+
+// تطبيق مثبّت بلا رمز موظف محفوظ: نطلب لصق الرابط مرة واحدة
+function showActivation() {
+  root.innerHTML = `<div class="emp-bg"><div class="emp-wrap"><div class="card center" style="margin-top:40px;line-height:1.9">
+    <h3 style="margin:0 0 10px">تفعيل التطبيق</h3>
+    <p style="margin:0 0 12px">الصق رابطك الشخصي الذي أرسلته لك الإدارة (أو الرمز الطويل الذي فيه).</p>
+    <input id="actIn" dir="ltr" placeholder="https://..." style="width:100%;margin-bottom:10px">
+    <button class="btn" id="actGo" type="button">تفعيل</button>
+    <p style="margin:14px 0 0;font-size:13px"><a href="?admin=1">دخول الإدارة</a></p></div></div></div>`;
+  $('#actGo').onclick = () => {
+    const v = $('#actIn').value.trim();
+    const m = v.match(/[?&]e=([0-9a-f]{32})/i) || v.match(/^([0-9a-f]{32})$/i);
+    if (!m) return toast('الرابط غير صحيح — الصق الرابط كاملاً كما وصلك', 'err');
+    location.href = location.pathname + '?e=' + m[1];
+  };
+}
+
+// تلميح تثبيت التطبيق على الشاشة الرئيسية
+function installHint() {
+  try { if (standaloneNow || localStorage.getItem('att_hint_off') === '1' || document.getElementById('instHint')) return; } catch {}
+  if (!isIOS && !isAndroid) return;
+  setTimeout(() => {
+    if (document.getElementById('instHint')) return;
+    const d = document.createElement('div'); d.id = 'instHint';
+    d.style.cssText = 'position:fixed;left:12px;right:12px;bottom:12px;z-index:50;background:#fff;border:1px solid #cfe3d8;border-radius:14px;padding:12px 14px;box-shadow:0 6px 24px rgba(0,0,0,.18);font-size:13.5px;line-height:1.8';
+    d.innerHTML = `<b>ثبّت التطبيق على هاتفك</b><div class="muted">${isIOS ? 'من Safari: زر المشاركة ثم «إضافة إلى الشاشة الرئيسية»، ثم افتحه من الأيقونة (سيطلب منك رمز الأجهزة مرة واحدة).' : 'اضغط ⋮ ثم «تثبيت التطبيق».'}</div>
+      <div style="margin-top:8px;display:flex;gap:8px">${_deferredPwaPrompt ? '<button class="btn sm" id="ihGo" type="button">تثبيت</button>' : ''}<button class="btn sm sec" id="ihNo" type="button">لاحقاً</button></div>`;
+    document.body.appendChild(d);
+    const off = () => { try { localStorage.setItem('att_hint_off', '1'); } catch {} d.remove(); };
+    $('#ihNo').onclick = off;
+    if ($('#ihGo')) $('#ihGo').onclick = async () => { try { await window.__installPWA(); } catch {} off(); };
+  }, 1500);
+}
 
 /* ---------- الهوية: الاسم والشعار ---------- */
 const BRAND = 'مِيقَاتْ';
@@ -941,12 +1022,21 @@ service cloud.firestore {
     }
 
     // صاحب الرابط: هوية مجهولة مرتبطة بوصف الموظف — تمنع نسخ att_dev أو انتحال الجهاز
-    function ownerOnly(empId) {
+    function isOwnerData(d) {
       return request.auth != null
-        && get(/databases/$(database)/documents/employees/$(empId)).data.get('uid', null) == request.auth.uid;
+        && (d.get('uid', null) == request.auth.uid
+            || (d.get('devices', null) != null && request.auth.uid in d.devices.values()));
+    }
+    function ownerOnly(empId) {
+      return isOwnerData(get(/databases/$(database)/documents/employees/$(empId)).data);
     }
 
     match /admins/{uid} {
+      allow read, write: if isAdmin();
+    }
+
+    // رمز الأجهزة (PIN) لكل موظف — للمدير فقط
+    match /pins/{id} {
       allow read, write: if isAdmin();
     }
 
@@ -974,39 +1064,78 @@ service cloud.firestore {
     match /employees/{empId} {
       allow get: if isAdmin() || ownerOnly(empId) || unclaimed();
       allow list, create, delete: if isAdmin();
-      allow update: if isAdmin() || claimDevice() || bindUid() || rebindDevice() || punchState();
+      allow update: if isAdmin() || claimDevice() || migrateLegacy() || rebindLegacy() || rebindMap() || joinDevice() || punchState();
 
-      // الرابط لم يُربط بهوية بعد: يمكن قراءته لأجل ربطه
+      // الرابط لم يُربط بعد: يمكن قراءته لأجل ربطه
       function unclaimed() {
         return request.auth != null
           && resource.data.get('uid', null) == null
+          && resource.data.get('devices', null) == null
           && resource.data.active == true;
       }
 
-      // أول فتح للرابط: ربط الجهاز + الهوية معاً
+      // أول فتح للرابط: ربط الجهاز الأول (أو ترقية رابط قديم بجهاز فقط بإثبات رمز الجهاز)
       function claimDevice() {
-        return request.auth != null
-          && resource.data.get('deviceId', null) == null
-          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['deviceId', 'uid'])
-          && request.resource.data.uid == request.auth.uid;
+        let n = request.resource.data;
+        return unclaimed()
+          && (resource.data.get('deviceId', null) == null
+              || n.get('rebindProof', null) == resource.data.get('deviceId', null))
+          && n.diff(resource.data).affectedKeys().hasOnly(['deviceId', 'devices', 'rebindProof'])
+          && n.devices.size() == 1
+          && n.devices.values().hasOnly([request.auth.uid])
+          && n.devices.keys().hasOnly([n.deviceId]);
       }
 
-      // ترقية رابط قديم (جهاز فقط) إلى نظام الهوية
-      function bindUid() {
+      // ترقية رابط قديم (uid بلا خريطة أجهزة) إلى نظام الأجهزة المتعددة
+      function migrateLegacy() {
+        let n = request.resource.data;
         return request.auth != null
-          && resource.data.get('uid', null) == null
-          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['uid'])
-          && request.resource.data.uid == request.auth.uid;
+          && resource.data.get('devices', null) == null
+          && resource.data.get('uid', null) == request.auth.uid
+          && n.diff(resource.data).affectedKeys().hasOnly(['devices', 'uid'])
+          && n.get('uid', null) == null
+          && n.devices.size() == 1
+          && n.devices.values().hasOnly([request.auth.uid]);
       }
 
-      // استعادة ربط نفس الجهاز (مثلاً عند مسح جلسة Auth المجهولة مع بقاء رمز الجهاز أو العكس)
-      function rebindDevice() {
+      // استعادة رابط قديم عند ضياع جلسة الهوية: إثبات الجهاز برمز att_dev
+      function rebindLegacy() {
+        let n = request.resource.data;
         return request.auth != null
           && resource.data.active == true
+          && resource.data.get('devices', null) == null
+          && resource.data.get('uid', null) != null
           && resource.data.get('deviceId', null) != null
-          && request.resource.data.get('deviceId', null) == resource.data.get('deviceId', null)
-          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['uid'])
-          && request.resource.data.uid == request.auth.uid;
+          && n.get('rebindProof', null) == resource.data.get('deviceId', null)
+          && n.diff(resource.data).affectedKeys().hasOnly(['uid', 'rebindProof'])
+          && n.uid == request.auth.uid;
+      }
+
+      // استعادة نفس الجهاز عند ضياع جلسة الهوية: يعرف مفتاح الجهاز (att_dev) الموجود في الخريطة
+      function rebindMap() {
+        let n = request.resource.data;
+        return request.auth != null
+          && resource.data.active == true
+          && resource.data.get('devices', null) != null
+          && n.diff(resource.data).affectedKeys().hasOnly(['devices'])
+          && n.devices.diff(resource.data.devices).affectedKeys().size() == 1
+          && n.devices.diff(resource.data.devices).changedKeys().size() == 1
+          && n.devices.size() == resource.data.devices.size()
+          && request.auth.uid in n.devices.values();
+      }
+
+      // جهاز إضافي برمز الأجهزة (PIN): حد أقصى 3 أجهزة
+      function joinDevice() {
+        let n = request.resource.data;
+        return request.auth != null
+          && resource.data.active == true
+          && resource.data.get('devices', null) != null
+          && n.diff(resource.data).affectedKeys().hasOnly(['devices'])
+          && n.devices.diff(resource.data.devices).addedKeys().size() == 1
+          && n.devices.diff(resource.data.devices).affectedKeys().size() == 1
+          && n.devices.size() <= 3
+          && request.auth.uid in n.devices.values()
+          && exists(/databases/$(database)/documents/employees/$(empId)/joins/$(request.auth.uid));
       }
 
       // تحديث حالة الموظف مسموح فقط لصاحب الهوية ومع إنشاء سجل في نفس الدفعة (batch)
@@ -1020,6 +1149,18 @@ service cloud.firestore {
           && a.lastRecId is string
           && !exists(/databases/$(database)/documents/employees/$(empId)/records/$(a.lastRecId))
           && existsAfter(/databases/$(database)/documents/employees/$(empId)/records/$(a.lastRecId));
+      }
+
+      // طلبات إضافة جهاز: لا تُقبل إلا برمز الأجهزة الصحيح (المخزّن في /pins ولا يقرؤه إلا المدير)
+      match /joins/{jid} {
+        allow read: if isAdmin();
+        allow create, update: if request.auth != null
+          && request.auth.uid == jid
+          && request.resource.data.keys().hasOnly(['pin', 'ua', 'at'])
+          && request.resource.data.pin is string
+          && request.resource.data.pin == get(/databases/$(database)/documents/pins/$(empId)).data.pin
+          && request.resource.data.at == request.time;
+        allow delete: if isAdmin();
       }
 
       match /records/{recId} {
@@ -1037,7 +1178,7 @@ service cloud.firestore {
           let dx = (d.lng - l.lng) * l.kx;
           let dy = (d.lat - l.lat) * l.ky;
           return request.auth != null
-            && e.get('uid', null) == request.auth.uid
+            && isOwnerData(e)
             && d.keys().hasOnly(['type','time','lat','lng','accuracy','distance','locationId','locationName','empName','deviceId'])
             && d.keys().hasAll(['type','time','lat','lng','accuracy','distance','locationId','locationName','empName','deviceId'])
             && d.time == request.time
@@ -1071,7 +1212,7 @@ service cloud.firestore {
           let d = request.resource.data;
           let e = get(/databases/$(database)/documents/employees/$(empId)).data;
           return request.auth != null
-            && e.get('uid', null) == request.auth.uid
+            && isOwnerData(e)
             && d.keys().hasOnly(['kind','type','typeName','from','to','fixIn','fixOut','note','status','empName','createdAt','taskId','taskName','qty'])
             && d.keys().hasAll(['kind','from','to','status','empName','createdAt'])
             && e.active == true
@@ -1137,8 +1278,17 @@ else {
   const app = initializeApp(firebaseConfig);
   const db = getFirestore(app);
   const auth = getAuth(app);
-  if (empToken) employeeApp(db, auth, empToken);
-  else { onAuthStateChanged(auth, u => u ? adminApp(db, auth) : loginPage(auth)); }
+  if (empToken) {
+    if (isInApp) showInAppGuide(empToken);
+    else {
+      setEmpManifest(empToken);
+      // تطبيق Firebase مستقل للموظف: جلسته لا تتصادم مع جلسة المدير في نفس المتصفح
+      const eApp = initializeApp(firebaseConfig, 'emp');
+      employeeApp(getFirestore(eApp), getAuth(eApp), empToken);
+    }
+  }
+  else if (needActivation) showActivation();
+  else { onAuthStateChanged(auth, u => { if (u) { try { localStorage.setItem('att_admin_hint', '1'); } catch {} adminApp(db, auth); } else loginPage(auth); }); }
 }
 
 /* =====================================================================
@@ -1162,27 +1312,64 @@ async function employeeApp(db, auth, token) {
         ? 'تسجيل الدخول المجهول (Anonymous) غير مفعّل في هذا المشروع. اطلب من الإدارة: Firebase Console › Authentication › Sign-in method ثم تفعيل Anonymous، ثم أعد المحاولة.'
         : 'تعذر الاتصال بالنظام. تحقق من الإنترنت وحاول مجدداً.');
   }
+  // شاشة رمز الأجهزة: تُضيف هذا الجهاز كجهاز إضافي (حد أقصى 3) بعد التحقق من الرمز في القواعد
+  const askPin = () => new Promise(resolve => {
+    root.innerHTML = `<div class="emp-bg"><div class="emp-wrap"><div class="card center" style="margin-top:40px;line-height:1.9">
+      <h3 style="margin:0 0 10px">جهاز جديد</h3>
+      <p style="margin:0 0 12px">هذا الجهاز أو المتصفح غير مسجَّل لرابطك. أدخل «رمز الأجهزة» الذي أعطتك إياه الإدارة لإضافته (الحد الأقصى 3 أجهزة).</p>
+      <input id="pinIn" inputmode="numeric" autocomplete="off" dir="ltr" placeholder="الرمز" style="width:100%;margin-bottom:10px;text-align:center">
+      <button class="btn" id="pinGo" type="button">إضافة هذا الجهاز</button>
+      <p id="pinMsg" class="bad-txt" style="font-size:13px;margin:10px 0 0"></p></div></div></div>`;
+    const go = async () => {
+      const pin = $('#pinIn').value.trim(); if (!pin) return;
+      const b = $('#pinGo'), msg = $('#pinMsg'); b.disabled = true; msg.textContent = '';
+      try { await setDoc(doc(db, 'employees', token, 'joins', uid), { pin, ua: (navigator.userAgent || '').slice(0, 90), at: serverTimestamp() }); }
+      catch { msg.textContent = 'الرمز غير صحيح، أو الرابط غير صالح/موقوف. تأكد من الرمز مع الإدارة.'; b.disabled = false; return; }
+      try { await updateDoc(ref, { ['devices.' + myDev]: uid }); }
+      catch { msg.textContent = 'تعذر إضافة الجهاز: وصلت الحد الأقصى (3 أجهزة) أو الرابط قديم. اطلب من الإدارة إعادة ضبط الأجهزة.'; b.disabled = false; return; }
+      resolve(true);
+    };
+    $('#pinGo').onclick = go; $('#pinIn').onkeydown = e => { if (e.key === 'Enter') go(); };
+  });
   let cfgSt = null, cfgHit = null, cfgLocRaw = [];
   try {
-    const snap = await getDoc(ref);
+    let snap = null;
+    try { snap = await getDoc(ref); }
+    catch (e) {
+      if (!e || e.code !== 'permission-denied') throw e;
+      // لم نعد مالكين للوثيقة: إما ضاعت جلسة الهوية على نفس الجهاز، أو هذا جهاز جديد
+      let rec = false;
+      try { await updateDoc(ref, { ['devices.' + myDev]: uid }); rec = true; } catch {}
+      if (!rec) { try { await updateDoc(ref, { uid, rebindProof: myDev }); rec = true; } catch {} }
+      if (rec) { try { snap = await getDoc(ref); } catch {} }
+      if (!snap) { await askPin(); snap = await getDoc(ref); }
+    }
     if (!snap.exists() || !snap.data().active) return showErr('الرابط غير صالح أو تم إيقافه. تواصل مع الإدارة.');
     emp = snap.data();
-    if (!emp.deviceId && !emp.uid) {
-      await updateDoc(ref, { deviceId: myDev, uid });
-      emp.deviceId = myDev; emp.uid = uid;
-    } else if (emp.uid === uid && emp.deviceId !== myDev) {
-      try { localStorage.setItem('att_dev', emp.deviceId); } catch {}
-    } else if (emp.deviceId === myDev && emp.uid !== uid) {
-      try { await updateDoc(ref, { uid }); emp.uid = uid; }
-      catch { return showErr('هذا الرابط مرتبط بجهاز آخر. اطلب من الإدارة إعادة ضبط الجهاز.'); }
-    } else if (emp.uid && emp.uid !== uid) {
-      return showErr('هذا الرابط مرتبط بجهاز آخر. اطلب من الإدارة إعادة ضبط الجهاز.');
+    if (emp.devices) {
+      if (emp.devices[myDev] !== uid) {
+        const k = Object.keys(emp.devices).find(x => emp.devices[x] === uid);
+        if (k) { try { localStorage.setItem('att_dev', k); } catch {} }
+        else return showErr('هذا الرابط مرتبط بأجهزة أخرى. اطلب من الإدارة إعادة ضبط الأجهزة.');
+      }
     } else if (!emp.uid) {
-      await updateDoc(ref, { uid });
-      emp.uid = uid;
-    } else if (emp.deviceId !== myDev) {
-      return showErr('هذا الرابط مرتبط بجهاز آخر. اطلب من الإدارة إعادة ضبط الجهاز.');
+      // أول فتح (أو ترقية رابط قديم مربوط بجهاز فقط من نفس الجهاز)
+      if (emp.deviceId && emp.deviceId !== myDev) return showErr('هذا الرابط قديم ومرتبط بجهاز آخر. اطلب من الإدارة إعادة ضبط الأجهزة.');
+      const upd = { deviceId: myDev, devices: { [myDev]: uid } };
+      if (emp.deviceId) upd.rebindProof = myDev;
+      await updateDoc(ref, upd);
+      emp.deviceId = myDev; emp.devices = { [myDev]: uid };
+    } else if (emp.uid === uid) {
+      // رابط قديم (uid بلا خريطة أجهزة): ترقية
+      const key = emp.deviceId || myDev;
+      await updateDoc(ref, { devices: { [key]: uid }, uid: null });
+      try { localStorage.setItem('att_dev', key); } catch {}
+      emp.devices = { [key]: uid }; emp.uid = null; emp.deviceId = key;
+    } else {
+      return showErr('هذا الرابط مرتبط بجهاز آخر. اطلب من الإدارة إعادة ضبط الأجهزة.');
     }
+    try { localStorage.setItem('att_emp_tok', token); } catch {}
+    installHint();
     try { cfgSt = await getDoc(doc(db, 'settings', 'general')); } catch {}
     const cv = cfgSt && cfgSt.exists() ? cfgSt.data().cfgVersion : null;
     let cc = null; try { cc = JSON.parse(localStorage.getItem('att_cfg_v1') || 'null'); } catch {}
@@ -2085,19 +2272,20 @@ function adminApp(db, auth) {
  <span class="av">${ini(e.name)}</span>
  <div class="er-n"><b>${esc(e.name)}</b>${e.empType === 'task' ? '<span class="badge b-pri">موظف مهام</span>' : ''}</div>
  <div class="er-b">${e.dept ? `<span class="badge b-warn">${esc(e.dept)}</span>` : ''}${e.empType === 'task' ? '<span class="badge b-mute">حسب المهام</span>' : sname(e.scheduleId) ? `<span class="badge b-pri">${esc(sname(e.scheduleId))}</span>` : '<span class="badge b-mute">دوام غير محدد</span>'}</div>
- <div class="er-b">${e.active ? '<span class="badge b-ok">مفعّل</span>' : '<span class="badge b-bad">موقوف</span>'}${e.deviceId ? '<span class="badge b-ok">الجهاز مرتبط</span>' : '<span class="badge b-mute">جهاز جديد</span>'}</div>
+ <div class="er-b">${e.active ? '<span class="badge b-ok">مفعّل</span>' : '<span class="badge b-bad">موقوف</span>'}${(() => { const n = e.devices ? Object.keys(e.devices).length : (e.deviceId ? 1 : 0); return n ? `<span class="badge b-ok">الأجهزة: ${n}/3</span>` : '<span class="badge b-mute">جهاز جديد</span>'; })()}</div>
  <div class="er-a">
  <button class="btn sm sec" data-act="editEmp" data-id="${e.id}">${ic('edit', 16)} تعديل</button>
  <button class="btn sm" data-act="copy" data-id="${e.id}">${ic('link', 16)} نسخ الرابط</button>
  <button class="btn sm ok" data-act="wa" data-id="${e.id}">${ic('send', 16)} واتساب</button>
  <details class="act-menu"><summary>المزيد</summary><div class="act-drop">
- <button data-act="resetDev" data-id="${e.id}">${ic('device', 18)} إعادة ضبط الجهاز</button>
+ <button data-act="devPin" data-id="${e.id}">${ic('device', 18)} رمز الأجهزة (PIN)</button>
+ <button data-act="resetDev" data-id="${e.id}">${ic('device', 18)} إعادة ضبط الأجهزة</button>
  <button data-act="toggle" data-id="${e.id}">${ic('power', 18)} ${e.active ? 'إيقاف الموظف' : 'تفعيل الموظف'}</button>
  ${!e.active ? `<button class="bad-txt" data-act="hardDelEmp" data-id="${e.id}">${ic('trash', 18)} حذف نهائي</button>` : ''}
  </div></details>
  </div></div>`).join('') || '<div class="empty">لا يوجد موظفون</div>'}
  </div>
-          <p class="muted" style="font-size:13px;margin:14px 0 0">يرتبط الرابط تلقائياً بأول جهاز يفتحه لمنع مشاركته بين الموظفين. وإن غيّر الموظف هاتفه فاختر «إعادة ضبط الجهاز» من قائمة «المزيد».</p>
+          <p class="muted" style="font-size:13px;margin:14px 0 0">يرتبط الرابط تلقائياً بأول جهاز يفتحه، ويمكن للموظف إضافة حتى 3 أجهزة أو متصفحات بإدخال «رمز الأجهزة» (من قائمة «المزيد»). وإن غيّر هاتفه أو بلغ الحد فاختر «إعادة ضبط الأجهزة».</p>
         </div>`
       : `
         <div class="card">
@@ -2622,15 +2810,26 @@ function adminApp(db, auth) {
         const phone = $('#ePhone').value.replace(/\D/g, '');
         const nid = randToken(); const isTask = !!($('#eType') && $('#eType').value === 'task');
         await setDoc(doc(db, 'employees', nid), { name, phone, active: true, deviceId: null, scheduleId: (isTask ? '' : ($('#eSched') ? $('#eSched').value : '')), empType: isTask ? 'task' : 'staff', payMode: isTask ? 'task' : 'none', payAmount: 0, rotOffset: 0, startDate: dayKey(new Date()), createdAt: serverTimestamp() });
-        await loadAll(); toast('تمت الإضافة — انسخ الرابط وأرسله للموظف', 'good');
+        const newPin = String(Math.floor(100000 + Math.random() * 900000)); await setDoc(doc(db, 'pins', nid), { pin: newPin });
+        await loadAll(); toast('تمت الإضافة — انسخ الرابط وأرسله للموظف (رمز الأجهزة من «المزيد»)', 'good');
       }
       if (act === 'copy') { await navigator.clipboard.writeText(linkOf(id)); toast('تم نسخ رابط الموظف', 'good'); }
       if (act === 'wa') {
         const e = S.emps.find(x => x.id === id);
-        const msg = `مرحباً ${e.name}، هذا رابطك الشخصي في «${BRAND}» لتسجيل الحضور والانصراف (لا تشاركه مع أحد):\n${linkOf(id)}`;
+        let pinTxt = '';
+        try { const s = await getDoc(doc(db, 'pins', id)); if (s.exists()) pinTxt = `\n\nرمز الأجهزة (يُطلب منك مرة واحدة عند فتح التطبيق من أيقونة الشاشة الرئيسية أو من متصفح آخر): ${s.data().pin}`; } catch {}
+        const msg = `مرحباً ${e.name}، هذا رابطك الشخصي في «${BRAND}» لتسجيل الحضور والانصراف (لا تشاركه مع أحد):\n${linkOf(id)}\n\nافتحه من متصفح Chrome أو Safari وليس من داخل واتساب.${pinTxt}`;
         const a = document.createElement('a'); a.href = `https://wa.me/${e.phone || ''}?text=${encodeURIComponent(msg)}`; a.target = '_blank'; a.rel = 'noopener noreferrer'; a.click();
       }
-      if (act === 'resetDev') { if (confirm('إعادة ضبط الجهاز المرتبط بهذا الموظف؟ سيتوجب عليه فتح الرابط من جهازه بعد ذلك.')) { await updateDoc(doc(db, 'employees', id), { deviceId: null, uid: null }); await loadAll(); toast('تمت إعادة الضبط', 'good'); } }
+      if (act === 'devPin') {
+        const e = S.emps.find(x => x.id === id);
+        const gen = () => String(Math.floor(100000 + Math.random() * 900000));
+        let pin = null;
+        try { const s = await getDoc(doc(db, 'pins', id)); if (s.exists()) pin = s.data().pin; } catch {}
+        if (!pin) { pin = gen(); await setDoc(doc(db, 'pins', id), { pin }); alert(`رمز الأجهزة لـ «${e.name}»:\n\n${pin}\n\nيُطلب منه عند إضافة جهاز أو متصفح جديد (حد أقصى 3 أجهزة).`); }
+        else if (confirm(`رمز الأجهزة الحالي لـ «${e.name}»: ${pin}\n\nموافق = توليد رمز جديد (القديم يتوقف)\nإلغاء = إبقاء الرمز كما هو`)) { pin = gen(); await setDoc(doc(db, 'pins', id), { pin }); alert(`الرمز الجديد: ${pin}`); }
+      }
+      if (act === 'resetDev') { if (confirm('إعادة ضبط كل الأجهزة المرتبطة بهذا الموظف؟ سيتوجب عليه فتح الرابط من جهازه بعد ذلك.')) { await updateDoc(doc(db, 'employees', id), { deviceId: null, uid: null, devices: null, rebindProof: null }); await loadAll(); toast('تمت إعادة الضبط', 'good'); } }
       if (act === 'toggle') {
         const e = S.emps.find(x => x.id === id);
         if (e.active && !confirm(`إيقاف «${e.name}»؟\nتبقى سجلاته وتقاريره السابقة محفوظة، ولا يُحتسب غيابه بعد اليوم.`)) return;
@@ -2641,7 +2840,7 @@ function adminApp(db, auth) {
         const empToDel = S.emps.find(x => x.id === id);
         if (!empToDel || empToDel.active) return toast('الحذف النهائي متاح فقط للموظفين الموقوفين/المُرشَّفين', 'err');
         if (!confirm(`حذف «${empToDel.name}» نهائياً مع كل سجلاته وطلباته؟ لا يمكن التراجع.`)) return;
-        for (const sub of ['records', 'requests']) {
+        for (const sub of ['records', 'requests', 'joins']) {
           for (;;) {
             const grp = await getDocs(query(collection(db, 'employees', id, sub), limit(300)));
             if (!grp.size) break;

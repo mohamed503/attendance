@@ -690,12 +690,21 @@ service cloud.firestore {
     }
 
     // صاحب الرابط: هوية مجهولة مرتبطة بوصف الموظف — تمنع نسخ att_dev أو انتحال الجهاز
-    function ownerOnly(empId) {
+    function isOwnerData(d) {
       return request.auth != null
-        && get(/databases/$(database)/documents/employees/$(empId)).data.get('uid', null) == request.auth.uid;
+        && (d.get('uid', null) == request.auth.uid
+            || (d.get('devices', null) != null && request.auth.uid in d.devices.values()));
+    }
+    function ownerOnly(empId) {
+      return isOwnerData(get(/databases/$(database)/documents/employees/$(empId)).data);
     }
 
     match /admins/{uid} {
+      allow read, write: if isAdmin();
+    }
+
+    // رمز الأجهزة (PIN) لكل موظف — للمدير فقط
+    match /pins/{id} {
       allow read, write: if isAdmin();
     }
 
@@ -723,39 +732,78 @@ service cloud.firestore {
     match /employees/{empId} {
       allow get: if isAdmin() || ownerOnly(empId) || unclaimed();
       allow list, create, delete: if isAdmin();
-      allow update: if isAdmin() || claimDevice() || bindUid() || rebindDevice() || punchState();
+      allow update: if isAdmin() || claimDevice() || migrateLegacy() || rebindLegacy() || rebindMap() || joinDevice() || punchState();
 
-      // الرابط لم يُربط بهوية بعد: يمكن قراءته لأجل ربطه
+      // الرابط لم يُربط بعد: يمكن قراءته لأجل ربطه
       function unclaimed() {
         return request.auth != null
           && resource.data.get('uid', null) == null
+          && resource.data.get('devices', null) == null
           && resource.data.active == true;
       }
 
-      // أول فتح للرابط: ربط الجهاز + الهوية معاً
+      // أول فتح للرابط: ربط الجهاز الأول (أو ترقية رابط قديم بجهاز فقط بإثبات رمز الجهاز)
       function claimDevice() {
-        return request.auth != null
-          && resource.data.get('deviceId', null) == null
-          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['deviceId', 'uid'])
-          && request.resource.data.uid == request.auth.uid;
+        let n = request.resource.data;
+        return unclaimed()
+          && (resource.data.get('deviceId', null) == null
+              || n.get('rebindProof', null) == resource.data.get('deviceId', null))
+          && n.diff(resource.data).affectedKeys().hasOnly(['deviceId', 'devices', 'rebindProof'])
+          && n.devices.size() == 1
+          && n.devices.values().hasOnly([request.auth.uid])
+          && n.devices.keys().hasOnly([n.deviceId]);
       }
 
-      // ترقية رابط قديم (جهاز فقط) إلى نظام الهوية
-      function bindUid() {
+      // ترقية رابط قديم (uid بلا خريطة أجهزة) إلى نظام الأجهزة المتعددة
+      function migrateLegacy() {
+        let n = request.resource.data;
         return request.auth != null
-          && resource.data.get('uid', null) == null
-          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['uid'])
-          && request.resource.data.uid == request.auth.uid;
+          && resource.data.get('devices', null) == null
+          && resource.data.get('uid', null) == request.auth.uid
+          && n.diff(resource.data).affectedKeys().hasOnly(['devices', 'uid'])
+          && n.get('uid', null) == null
+          && n.devices.size() == 1
+          && n.devices.values().hasOnly([request.auth.uid]);
       }
 
-      // استعادة ربط نفس الجهاز (مثلاً عند مسح جلسة Auth المجهولة مع بقاء رمز الجهاز أو العكس)
-      function rebindDevice() {
+      // استعادة رابط قديم عند ضياع جلسة الهوية: إثبات الجهاز برمز att_dev
+      function rebindLegacy() {
+        let n = request.resource.data;
         return request.auth != null
           && resource.data.active == true
+          && resource.data.get('devices', null) == null
+          && resource.data.get('uid', null) != null
           && resource.data.get('deviceId', null) != null
-          && request.resource.data.get('deviceId', null) == resource.data.get('deviceId', null)
-          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['uid'])
-          && request.resource.data.uid == request.auth.uid;
+          && n.get('rebindProof', null) == resource.data.get('deviceId', null)
+          && n.diff(resource.data).affectedKeys().hasOnly(['uid', 'rebindProof'])
+          && n.uid == request.auth.uid;
+      }
+
+      // استعادة نفس الجهاز عند ضياع جلسة الهوية: يعرف مفتاح الجهاز (att_dev) الموجود في الخريطة
+      function rebindMap() {
+        let n = request.resource.data;
+        return request.auth != null
+          && resource.data.active == true
+          && resource.data.get('devices', null) != null
+          && n.diff(resource.data).affectedKeys().hasOnly(['devices'])
+          && n.devices.diff(resource.data.devices).affectedKeys().size() == 1
+          && n.devices.diff(resource.data.devices).changedKeys().size() == 1
+          && n.devices.size() == resource.data.devices.size()
+          && request.auth.uid in n.devices.values();
+      }
+
+      // جهاز إضافي برمز الأجهزة (PIN): حد أقصى 3 أجهزة
+      function joinDevice() {
+        let n = request.resource.data;
+        return request.auth != null
+          && resource.data.active == true
+          && resource.data.get('devices', null) != null
+          && n.diff(resource.data).affectedKeys().hasOnly(['devices'])
+          && n.devices.diff(resource.data.devices).addedKeys().size() == 1
+          && n.devices.diff(resource.data.devices).affectedKeys().size() == 1
+          && n.devices.size() <= 3
+          && request.auth.uid in n.devices.values()
+          && exists(/databases/$(database)/documents/employees/$(empId)/joins/$(request.auth.uid));
       }
 
       // تحديث حالة الموظف مسموح فقط لصاحب الهوية ومع إنشاء سجل في نفس الدفعة (batch)
@@ -769,6 +817,18 @@ service cloud.firestore {
           && a.lastRecId is string
           && !exists(/databases/$(database)/documents/employees/$(empId)/records/$(a.lastRecId))
           && existsAfter(/databases/$(database)/documents/employees/$(empId)/records/$(a.lastRecId));
+      }
+
+      // طلبات إضافة جهاز: لا تُقبل إلا برمز الأجهزة الصحيح (المخزّن في /pins ولا يقرؤه إلا المدير)
+      match /joins/{jid} {
+        allow read: if isAdmin();
+        allow create, update: if request.auth != null
+          && request.auth.uid == jid
+          && request.resource.data.keys().hasOnly(['pin', 'ua', 'at'])
+          && request.resource.data.pin is string
+          && request.resource.data.pin == get(/databases/$(database)/documents/pins/$(empId)).data.pin
+          && request.resource.data.at == request.time;
+        allow delete: if isAdmin();
       }
 
       match /records/{recId} {
@@ -786,7 +846,7 @@ service cloud.firestore {
           let dx = (d.lng - l.lng) * l.kx;
           let dy = (d.lat - l.lat) * l.ky;
           return request.auth != null
-            && e.get('uid', null) == request.auth.uid
+            && isOwnerData(e)
             && d.keys().hasOnly(['type','time','lat','lng','accuracy','distance','locationId','locationName','empName','deviceId'])
             && d.keys().hasAll(['type','time','lat','lng','accuracy','distance','locationId','locationName','empName','deviceId'])
             && d.time == request.time
@@ -820,7 +880,7 @@ service cloud.firestore {
           let d = request.resource.data;
           let e = get(/databases/$(database)/documents/employees/$(empId)).data;
           return request.auth != null
-            && e.get('uid', null) == request.auth.uid
+            && isOwnerData(e)
             && d.keys().hasOnly(['kind','type','typeName','from','to','fixIn','fixOut','note','status','empName','createdAt','taskId','taskName','qty'])
             && d.keys().hasAll(['kind','from','to','status','empName','createdAt'])
             && e.active == true
