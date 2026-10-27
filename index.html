@@ -952,18 +952,38 @@ function showInAppGuide(token) {
 // تطبيق مثبّت بلا رمز موظف محفوظ: نطلب لصق الرابط مرة واحدة
 function showActivation() {
   root.innerHTML = `<div class="emp-bg"><div class="emp-wrap"><div class="card center" style="margin-top:40px;line-height:1.9">
-    <h3 style="margin:0 0 10px">تفعيل التطبيق</h3>
+    <h3 id="actTitle" style="margin:0 0 10px">تفعيل التطبيق</h3>
     <p style="margin:0 0 12px">الصق رابطك الشخصي الذي أرسلته لك الإدارة (أو الرمز الطويل الذي فيه).</p>
     <input id="actIn" dir="ltr" placeholder="https://..." style="width:100%;margin-bottom:10px">
     <button class="btn" id="actGo" type="button">تفعيل</button>
-    <p style="margin:14px 0 0;font-size:13px"><a href="?admin=1">دخول الإدارة</a></p></div></div></div>`;
+    </div></div></div>`;
   $('#actGo').onclick = () => {
     const v = $('#actIn').value.trim();
     const m = v.match(/[?&]e=([0-9a-f]{32})/i) || v.match(/^([0-9a-f]{32})$/i);
     if (!m) return toast('الرابط غير صحيح — الصق الرابط كاملاً كما وصلك', 'err');
     location.href = location.pathname + '?e=' + m[1];
   };
+  // مدخل المدير مخفي: 5 ضغطات متتالية على العنوان
+  let taps = 0;
+  $('#actTitle').onclick = () => { if (++taps >= 5) location.href = location.pathname + '?admin=1'; };
 }
+
+// التطبيق المثبّت (خصوصاً iPhone) بلا شريط متصفح ولا سحب للتحديث: نوفر زر تحديث وسحباً للتحديث
+function enableStandaloneRefresh() {
+  if (!standaloneNow || document.getElementById('stRefresh')) return;
+  const b = document.createElement('button');
+  b.id = 'stRefresh'; b.type = 'button'; b.setAttribute('aria-label', 'تحديث الصفحة'); b.textContent = '↻';
+  b.style.cssText = 'position:fixed;top:calc(env(safe-area-inset-top,0px) + 8px);left:10px;z-index:60;width:38px;height:38px;border-radius:50%;border:1px solid #cfe3d8;background:#fff;color:#0E6B4D;font-size:20px;line-height:1;padding:0;box-shadow:0 2px 10px rgba(0,0,0,.15);opacity:.9';
+  b.onclick = () => { b.style.transition = 'transform .6s'; b.style.transform = 'rotate(360deg)'; setTimeout(() => location.reload(), 150); };
+  document.body.appendChild(b);
+  let y0 = null;
+  addEventListener('touchstart', e => {
+    const bad = e.target && e.target.closest && e.target.closest('input,textarea,select,.modal,[role="dialog"]');
+    y0 = (!bad && (window.scrollY || 0) <= 0 && e.touches.length === 1) ? e.touches[0].clientY : null;
+  }, { passive: true });
+  addEventListener('touchmove', e => { if (y0 !== null && e.touches[0].clientY - y0 > 110) { y0 = null; location.reload(); } }, { passive: true });
+}
+enableStandaloneRefresh();
 
 // تلميح تثبيت التطبيق على الشاشة الرئيسية
 function installHint() {
