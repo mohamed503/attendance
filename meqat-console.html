@@ -227,6 +227,7 @@ a.btn{text-decoration:none}
     <div class="top-tools">
       <button id="impBtn" class="pillb" type="button"></button>
       <button id="expBtn" class="pillb dark" type="button"></button>
+      <button id="licJsonBtn" class="pillb" type="button" title="تنزيل ملف التراخيص السحابي لرفعه على موقعك وتمديد العملاء عن بُعد"></button>
       <button id="themeBtn" type="button" aria-label="تبديل الوضع الليلي"></button>
     </div>
   </header>
@@ -328,7 +329,7 @@ async function buildPack(c, html, tplUrl, isDemo) {
 
 /* ============ الثيم ============ */
 if (localStorage.getItem('mc_theme') === 'dark') document.documentElement.setAttribute('data-theme', 'dark');
-const setTheme = () => { const on = document.documentElement.getAttribute('data-theme') === 'dark'; $('#themeBtn').innerHTML = ic(on ? 'sun' : 'moon'); $('#themeBtn').setAttribute('aria-label', on ? 'التبديل إلى الوضع النهاري' : 'التبديل إلى الوضع الليلي'); $('#impBtn').innerHTML = ic('up', 18) + '<span>استيراد الأرشيف</span>'; $('#expBtn').innerHTML = ic('down', 18) + '<span>تصدير الأرشيف</span>'; };
+const setTheme = () => { const on = document.documentElement.getAttribute('data-theme') === 'dark'; $('#themeBtn').innerHTML = ic(on ? 'sun' : 'moon'); $('#themeBtn').setAttribute('aria-label', on ? 'التبديل إلى الوضع النهاري' : 'التبديل إلى الوضع الليلي'); $('#impBtn').innerHTML = ic('up', 18) + '<span>استيراد الأرشيف</span>'; $('#expBtn').innerHTML = ic('down', 18) + '<span>تصدير الأرشيف</span>'; $('#licJsonBtn').innerHTML = ic('globe', 18) + '<span>ملف التراخيص (Cloud)</span>'; };
 $('#themeBtn').onclick = () => { const on = document.documentElement.getAttribute('data-theme') === 'dark'; if (on) document.documentElement.removeAttribute('data-theme'); else document.documentElement.setAttribute('data-theme', 'dark'); localStorage.setItem('mc_theme', on ? 'light' : 'dark'); setTheme(); };
 setTheme();
 
@@ -558,6 +559,28 @@ $('#expBtn').onclick = () => {
   download(JSON.stringify(data, null, 2), `meqat_archive_${todayKey()}.json`, 'application/json');
   toast('نُزّل ملف الأرشيف — احفظه في مكان آمن', 'good');
 };
+$('#licJsonBtn').onclick = () => {
+  const clientsMap = {};
+  getClients().forEach(c => {
+    const l = licFor(c);
+    // لا ننشر أي مفاتيح سرية، فقط حالة الاشتراك والحدود وتاريخ الانتهاء
+    clientsMap[c.id] = {
+      company: l.company,
+      plan: l.plan,
+      planName: l.planName,
+      status: l.status,
+      maxEmployees: l.maxEmployees,
+      features: l.features,
+      start: l.start,
+      expires: l.expires,
+      permanent: l.permanent,
+      support: l.support
+    };
+  });
+  const payload = { app: 'meqat-cloud-licenses', updatedAt: todayKey(), clients: clientsMap };
+  download(JSON.stringify(payload, null, 2), 'licenses.json', 'application/json');
+  toast('نُزّل ملف licenses.json — ارفعه في جذر موقعك لتتحدث اشتراكات كل العملاء عن بُعد ✅', 'good');
+};
 $('#impBtn').onclick = () => $('#impFile').click();
 $('#impFile').onchange = e => {
   const f = e.target.files[0]; if (!f) return;
@@ -657,7 +680,10 @@ function licFor(c) {
   const start = c.start || todayKey();
   const isDemo = c.kind === 'demo';
   const demo = store.get('mc_demo', {});
+  const remoteUrl = store.get('mc_remote_lic_url', '');
   const lic = {
+    clientId: c.id || '',
+    remoteUrl: isDemo ? '' : remoteUrl,
     plan: isDemo ? 'demo' : p.id,
     planName: isDemo ? 'نسخة عرض' : p.name,
     status: isDemo ? 'demo' : (c.kind === 'trial' ? 'trial' : 'paid'),
@@ -885,7 +911,7 @@ service cloud.firestore {
             && d.keys().hasAll(['kind','from','to','status','empName','createdAt'])
             && e.active == true
             && d.status == 'pending'
-            && d.kind in ['leave', 'fix', 'task']
+            && d.kind in ['leave', 'fix', 'task', 'loan', 'cert']
             && d.empName == e.name
             && d.createdAt == request.time
             && d.from is string && d.from.matches('[0-9]{4}-[0-9]{2}-[0-9]{2}')
@@ -940,6 +966,7 @@ function renderGen(el) {
       <div class="field" style="min-width:230px"><label>العميل</label>
         <select id="gClient"><option value="">— اختر عميلاً من الأرشيف —</option>${list.map(c => `<option value="${esc(c.id)}">${esc(c.company)}${cliStatus(c).expired ? ' (منتهي)' : ''}</option>`).join('')}</select></div>
       <div class="field" style="min-width:260px"><label>رابط قالب النظام المنشور (موقعك)</label><input id="tplUrl" dir="ltr" placeholder="https://meqat-app.netlify.app/" value="${esc(tplUrl)}"></div>
+      <div class="field" style="min-width:260px"><label>رابط ملف التراخيص السحابي (اختياري — للتمديد عن بُعد)</label><input id="remoteLicUrl" dir="ltr" placeholder="https://meqat-app.netlify.app/licenses.json" value="${esc(store.get('mc_remote_lic_url', ''))}"></div>
       <button class="btn" id="gRun" type="button">توليد الحزمة وتنزيلها</button>
     </div>
     <p class="hint">استضافة مجانية سريعة للتسليم: <b>Netlify Drop</b> (اسحب المجلد وأفلته) أو Firebase Hosting.</p>
@@ -982,6 +1009,7 @@ function renderGen(el) {
 }
 
 async function genFile() {
+  if ($('#remoteLicUrl')) store.set('mc_remote_lic_url', $('#remoteLicUrl').value.trim());
   const sel = $('#gClient'), out = $('#gOut'), btn = $('#gRun');
   const c = getClients().find(x => x.id === sel.value);
   if (!c) return toast('اختر العميل أولاً', 'err');
