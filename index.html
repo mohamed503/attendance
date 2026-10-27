@@ -1047,21 +1047,56 @@ if ('serviceWorker' in navigator && (location.protocol === 'https:' || ['localho
 
 /* ---------- صفحة الإعداد ---------- */
 function rulesText(email0) {
-const email = String(email0 || '').trim().toLowerCase().replace(/[^a-z0-9@._+\-]/g, '');
-return `rules_version = '2';
+  const email = String(email0 || '').trim().toLowerCase().replace(/[^a-z0-9@._+\-]/g, '');
+  return `rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-
-    // الإدارة: البريد المكتوب هنا يبقى «المالك» دائماً (للاسترجاع) + أي مشرف مضاف في /admins
-    function isAdmin() {
-      return request.auth != null
-        && (request.auth.token.email == '${email}'
-            || exists(/databases/$(database)/documents/admins/$(request.auth.uid))
-            || (request.auth.token.get('email_verified', false) == true
-                && exists(/databases/$(database)/documents/admins/$(request.auth.token.email))));
+    // المالك المعرّف عند توليد القواعد يبقى super_admin لاستعادة الوصول.
+    function isOwnerEmail() {
+      return request.auth != null && request.auth.token.get('email', '') == '${email}';
     }
-
-    // صاحب الرابط: هوية مجهولة مرتبطة بوصف الموظف — تمنع نسخ att_dev أو انتحال الجهاز
+    function uidAdminPath() {
+      return /databases/$(database)/documents/admins/$(request.auth.uid);
+    }
+    function emailAdminPath() {
+      return /databases/$(database)/documents/admins/$(request.auth.token.email);
+    }
+    function currentAdminData() {
+      let up = uidAdminPath();
+      let ep = emailAdminPath();
+      return exists(up) ? get(up).data
+        : (request.auth.token.get('email_verified', false) == true && exists(ep) ? get(ep).data : {});
+    }
+    // لا يُمنح أي دور افتراضيًا لمجرد وجود حساب Firebase؛ الوثيقة المفقودة = رفض.
+    // الوثائق القديمة التي لا تحتوي role تُعامل كمدقق للقراءة فقط، لا كمدير عام.
+    function roleIs(wanted) {
+      let up = uidAdminPath();
+      let ep = emailAdminPath();
+      return request.auth != null && (
+        (isOwnerEmail() && wanted == 'super_admin')
+        || (exists(up) && get(up).data.get('role', 'auditor') == wanted)
+        || (request.auth.token.get('email_verified', false) == true
+            && exists(ep) && get(ep).data.get('role', 'auditor') == wanted)
+      );
+    }
+    function isSuperAdmin() { return roleIs('super_admin'); }
+    function isHrAdmin() { return roleIs('hr_admin'); }
+    function isPayrollAdmin() { return roleIs('payroll_admin'); }
+    function isManager() { return roleIs('manager'); }
+    function isAuditor() { return roleIs('auditor'); }
+    function isAdmin() {
+      return isSuperAdmin() || isHrAdmin() || isPayrollAdmin() || isManager() || isAuditor();
+    }
+    function managerScope() {
+      return currentAdminData().get('deptScope', '');
+    }
+    function managerCanReadEmployee(empId) {
+      return isManager() && managerScope() is string && managerScope() != ''
+        && get(/databases/$(database)/documents/employees/$(empId)).data.get('dept', '') == managerScope();
+    }
+    function globalReadRole() {
+      return isSuperAdmin() || isHrAdmin() || isPayrollAdmin() || isAuditor();
+    }
     function isOwnerData(d) {
       return request.auth != null
         && (d.get('uid', null) == request.auth.uid
@@ -1070,144 +1105,144 @@ service cloud.firestore {
     function ownerOnly(empId) {
       return isOwnerData(get(/databases/$(database)/documents/employees/$(empId)).data);
     }
+    function validAdminProfile() {
+      let d = request.resource.data;
+      return d.keys().hasOnly(['name', 'email', 'role', 'deptScope', 'addedAt'])
+        && d.keys().hasAll(['name', 'email', 'role'])
+        && d.name is string && d.name.size() > 0 && d.name.size() <= 100
+        && d.email is string && d.email.size() <= 254
+        && d.role in ['super_admin', 'hr_admin', 'payroll_admin', 'manager', 'auditor']
+        && (d.role != 'manager' || (d.get('deptScope', '') is string && d.get('deptScope', '').size() > 0 && d.get('deptScope', '').size() <= 100));
+    }
 
     match /admins/{uid} {
-      allow read, write: if isAdmin();
+      // المشرف يقرأ ملفه فقط؛ تعداد أو تعديل صلاحيات المشرفين للمدير العام وحده.
+      allow get: if isSuperAdmin() || (request.auth != null && (request.auth.uid == uid
+        || (request.auth.token.get('email_verified', false) == true && request.auth.token.get('email', '') == uid)));
+      allow list: if isSuperAdmin();
+      allow create: if isSuperAdmin() && (validAdminProfile()
+        || (uid == 'owner' && request.resource.data.keys().hasOnly(['name', 'email', 'addedAt'])
+            && request.resource.data.name is string && request.resource.data.email is string));
+      allow update: if isSuperAdmin() && uid != 'owner' && validAdminProfile();
+      allow delete: if isSuperAdmin() && uid != 'owner';
     }
-
-    // رمز الأجهزة (PIN) لكل موظف — للمدير فقط
     match /pins/{id} {
-      allow read, write: if isAdmin();
+      allow read, write: if isSuperAdmin() || isHrAdmin();
     }
-
     match /locations/{id} {
       allow read: if request.auth != null;
-      allow write: if isAdmin();
+      allow write: if isSuperAdmin() || isHrAdmin();
     }
     match /schedules/{id} {
       allow read: if request.auth != null;
-      allow write: if isAdmin();
+      allow write: if isSuperAdmin() || isHrAdmin();
     }
     match /holidays/{id} {
       allow read: if request.auth != null;
-      allow write: if isAdmin();
+      allow write: if isSuperAdmin() || isHrAdmin();
     }
     match /settings/{id} {
       allow read: if request.auth != null;
-      allow write: if isAdmin();
+      allow create: if isSuperAdmin() || (isHrAdmin()
+        && request.resource.data.keys().hasOnly(['orgName', 'tzOffset', 'forgotDeductDays', 'empNotice', 'leaveTypes', 'cfgVersion', 'updatedAt']));
+      allow update: if isSuperAdmin() || (isHrAdmin()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['orgName', 'tzOffset', 'forgotDeductDays', 'empNotice', 'leaveTypes', 'cfgVersion', 'updatedAt']));
+      allow delete: if isSuperAdmin();
     }
     match /taskTypes/{id} {
       allow read: if request.auth != null;
-      allow write: if isAdmin();
+      allow write: if isSuperAdmin() || isHrAdmin();
     }
 
     match /employees/{empId} {
-      allow get: if isAdmin() || ownerOnly(empId) || unclaimed();
-      allow list, create, delete: if isAdmin();
-      allow update: if isAdmin() || claimDevice() || migrateLegacy() || rebindLegacy() || rebindMap() || joinDevice() || punchState();
+      allow get: if isSuperAdmin() || isHrAdmin() || isPayrollAdmin() || isAuditor()
+        || managerCanReadEmployee(empId) || ownerOnly(empId) || unclaimed();
+      // Firestore Rules are not filters: manager queries must include dept == their deptScope.
+      allow list: if globalReadRole() || (isManager() && managerScope() is string
+        && managerScope() != '' && resource.data.get('dept', '') == managerScope());
+      allow create: if isSuperAdmin() || isHrAdmin();
+      allow delete: if isSuperAdmin();
+      allow update: if isSuperAdmin()
+        || (isHrAdmin() && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'name','phone','dept','jobTitle','contractEnd','docExpiry','bioId','assets','scheduleId','rotOffset',
+          'startDate','leaveQuota','empType','locs','taskPrices','active','deviceId','uid','devices','rebindProof'
+        ]))
+        || (isPayrollAdmin() && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'payMode','payAmount','allowance','bonus','penalty','loanTotal','loanInst','lyStatutory','familyStatus',
+          'nationalId','bankName','iban'
+        ]))
+        || claimDevice() || migrateLegacy() || rebindLegacy() || rebindMap() || joinDevice() || punchState();
 
-      // الرابط لم يُربط بعد: يمكن قراءته لأجل ربطه
       function unclaimed() {
-        return request.auth != null
+        return request.auth != null && request.auth.token.firebase.sign_in_provider == 'anonymous'
           && resource.data.get('uid', null) == null
-          && resource.data.get('devices', null) == null
-          && resource.data.active == true;
+          && resource.data.get('devices', null) == null && resource.data.active == true;
       }
-
-      // أول فتح للرابط: ربط الجهاز الأول (أو ترقية رابط قديم بجهاز فقط بإثبات رمز الجهاز)
       function claimDevice() {
         let n = request.resource.data;
-        return unclaimed()
-          && (resource.data.get('deviceId', null) == null
-              || n.get('rebindProof', null) == resource.data.get('deviceId', null))
+        return unclaimed() && (resource.data.get('deviceId', null) == null
+            || n.get('rebindProof', null) == resource.data.get('deviceId', null))
           && n.diff(resource.data).affectedKeys().hasOnly(['deviceId', 'devices', 'rebindProof'])
-          && n.devices.size() == 1
-          && n.devices.values().hasOnly([request.auth.uid])
+          && n.devices.size() == 1 && n.devices.values().hasOnly([request.auth.uid])
           && n.devices.keys().hasOnly([n.deviceId]);
       }
-
-      // ترقية رابط قديم (uid بلا خريطة أجهزة) إلى نظام الأجهزة المتعددة
       function migrateLegacy() {
         let n = request.resource.data;
-        return request.auth != null
-          && resource.data.get('devices', null) == null
+        return request.auth != null && resource.data.get('devices', null) == null
           && resource.data.get('uid', null) == request.auth.uid
           && n.diff(resource.data).affectedKeys().hasOnly(['devices', 'uid'])
-          && n.get('uid', null) == null
-          && n.devices.size() == 1
+          && n.get('uid', null) == null && n.devices.size() == 1
           && n.devices.values().hasOnly([request.auth.uid]);
       }
-
-      // استعادة رابط قديم عند ضياع جلسة الهوية: إثبات الجهاز برمز att_dev
       function rebindLegacy() {
         let n = request.resource.data;
-        return request.auth != null
-          && resource.data.active == true
-          && resource.data.get('devices', null) == null
-          && resource.data.get('uid', null) != null
+        return request.auth != null && resource.data.active == true
+          && resource.data.get('devices', null) == null && resource.data.get('uid', null) != null
           && resource.data.get('deviceId', null) != null
           && n.get('rebindProof', null) == resource.data.get('deviceId', null)
-          && n.diff(resource.data).affectedKeys().hasOnly(['uid', 'rebindProof'])
-          && n.uid == request.auth.uid;
+          && n.diff(resource.data).affectedKeys().hasOnly(['uid', 'rebindProof']) && n.uid == request.auth.uid;
       }
-
-      // استعادة نفس الجهاز عند ضياع جلسة الهوية: يعرف مفتاح الجهاز (att_dev) الموجود في الخريطة
       function rebindMap() {
         let n = request.resource.data;
-        return request.auth != null
-          && resource.data.active == true
+        return request.auth != null && resource.data.active == true
           && resource.data.get('devices', null) != null
           && n.diff(resource.data).affectedKeys().hasOnly(['devices'])
           && n.devices.diff(resource.data.devices).affectedKeys().size() == 1
           && n.devices.diff(resource.data.devices).changedKeys().size() == 1
-          && n.devices.size() == resource.data.devices.size()
-          && request.auth.uid in n.devices.values();
+          && n.devices.size() == resource.data.devices.size() && request.auth.uid in n.devices.values();
       }
-
-      // جهاز إضافي برمز الأجهزة (PIN): حد أقصى 3 أجهزة
       function joinDevice() {
         let n = request.resource.data;
-        return request.auth != null
-          && resource.data.active == true
+        return request.auth != null && resource.data.active == true
           && resource.data.get('devices', null) != null
           && n.diff(resource.data).affectedKeys().hasOnly(['devices'])
           && n.devices.diff(resource.data.devices).addedKeys().size() == 1
           && n.devices.diff(resource.data.devices).affectedKeys().size() == 1
-          && n.devices.size() <= 3
-          && request.auth.uid in n.devices.values()
+          && n.devices.size() <= 3 && request.auth.uid in n.devices.values()
           && exists(/databases/$(database)/documents/employees/$(empId)/joins/$(request.auth.uid));
       }
-
-      // تحديث حالة الموظف مسموح فقط لصاحب الهوية ومع إنشاء سجل في نفس الدفعة (batch)
       function punchState() {
         let a = request.resource.data;
-        return ownerOnly(empId)
-          && resource.data.active == true
+        return ownerOnly(empId) && resource.data.active == true
           && a.diff(resource.data).affectedKeys().hasOnly(['state', 'lastAt', 'lastRecId'])
-          && a.state in ['in', 'out']
-          && a.lastAt == request.time
-          && a.lastRecId is string
+          && a.state in ['in', 'out'] && a.lastAt == request.time && a.lastRecId is string
           && !exists(/databases/$(database)/documents/employees/$(empId)/records/$(a.lastRecId))
           && existsAfter(/databases/$(database)/documents/employees/$(empId)/records/$(a.lastRecId));
       }
-
-      // طلبات إضافة جهاز: لا تُقبل إلا برمز الأجهزة الصحيح (المخزّن في /pins ولا يقرؤه إلا المدير)
       match /joins/{jid} {
-        allow read: if isAdmin();
-        allow create, update: if request.auth != null
-          && request.auth.uid == jid
+        allow read: if isSuperAdmin() || isHrAdmin();
+        allow create, update: if request.auth != null && request.auth.uid == jid
           && request.resource.data.keys().hasOnly(['pin', 'ua', 'at'])
           && request.resource.data.pin is string
           && request.resource.data.pin == get(/databases/$(database)/documents/pins/$(empId)).data.pin
           && request.resource.data.at == request.time;
-        allow delete: if isAdmin();
+        allow delete: if isSuperAdmin() || isHrAdmin();
       }
-
       match /records/{recId} {
-        allow read: if isAdmin() || ownerOnly(empId);
-        allow create: if isAdmin() || validRecord();
-        allow update, delete: if isAdmin();
-
+        allow read: if isSuperAdmin() || isHrAdmin() || isPayrollAdmin() || isAuditor()
+          || managerCanReadEmployee(empId) || ownerOnly(empId);
+        allow create: if isSuperAdmin() || isHrAdmin() || validRecord();
+        allow update, delete: if isSuperAdmin() || isHrAdmin();
         function validRecord() {
           let d = request.resource.data;
           let e = get(/databases/$(database)/documents/employees/$(empId)).data;
@@ -1217,73 +1252,69 @@ service cloud.firestore {
           let last = e.get('lastAt', null);
           let dx = (d.lng - l.lng) * l.kx;
           let dy = (d.lat - l.lat) * l.ky;
-          return request.auth != null
-            && isOwnerData(e)
+          return request.auth != null && isOwnerData(e)
             && d.keys().hasOnly(['type','time','lat','lng','accuracy','distance','locationId','locationName','empName','deviceId'])
             && d.keys().hasAll(['type','time','lat','lng','accuracy','distance','locationId','locationName','empName','deviceId'])
-            && d.time == request.time
-            && d.type in ['in', 'out']
-            && e.active == true
-            && d.empName == e.name
-            && d.deviceId == e.get('deviceId', null)
+            && d.time == request.time && d.type in ['in', 'out'] && e.active == true
+            && d.empName == e.name && d.deviceId == e.get('deviceId', null)
             && d.lat is number && d.lng is number
             && d.lat >= -90 && d.lat <= 90 && d.lng >= -180 && d.lng <= 180
             && d.accuracy is number && d.accuracy >= 0 && d.accuracy <= 250
-            && d.distance is number
-            && d.locationId is string && d.locationName == l.name
+            && d.distance is number && d.locationId is string && d.locationName == l.name
             && (!('locs' in e) || e.locs.size() == 0 || d.locationId in e.locs)
-            && l.get('active', true) != false
-            && math.sqrt(dx * dx + dy * dy) <= l.radius + 10
+            && l.get('active', true) != false && math.sqrt(dx * dx + dy * dy) <= l.radius + 10
             && a.get('lastRecId', null) == recId && a.get('state', null) == d.type
             && (last == null || request.time.toMillis() - last.toMillis() >= 20000)
             && ((d.type == 'in' && (st == null || st == 'out' || (last != null && request.time.toMillis() - last.toMillis() >= 50400000)))
               || (d.type == 'out' && (st == null || st == 'in')));
         }
       }
-
-      // طلبات الإجازة والتصحيح — القراءة والكتابة لصاحب الهوية أو الإدارة فقط
       match /requests/{rid} {
-        allow read: if isAdmin() || ownerOnly(empId);
-        allow create: if isAdmin() || validRequest();
-        allow update: if isAdmin();
-        allow delete: if isAdmin() || (ownerOnly(empId) && resource.data.status == 'pending');
-
+        allow read: if isSuperAdmin() || isHrAdmin() || isPayrollAdmin() || isAuditor()
+          || managerCanReadEmployee(empId) || ownerOnly(empId);
+        allow create: if isSuperAdmin() || isHrAdmin() || validRequest();
+        allow update: if isSuperAdmin() || isHrAdmin() || payrollDecision();
+        allow delete: if isSuperAdmin() || isHrAdmin()
+          || (ownerOnly(empId) && resource.data.status == 'pending');
+        function payrollDecision() {
+          return isPayrollAdmin() && resource.data.kind in ['loan', 'task']
+            && resource.data.status == 'pending' && request.resource.data.status in ['approved', 'rejected']
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+              'status','reviewedAt','reviewedBy','qtyApproved','unitPrice','amount'
+            ]);
+        }
         function validRequest() {
           let d = request.resource.data;
           let e = get(/databases/$(database)/documents/employees/$(empId)).data;
-          return request.auth != null
-            && isOwnerData(e)
+          return request.auth != null && isOwnerData(e)
             && d.keys().hasOnly(['kind','type','typeName','from','to','fixIn','fixOut','note','status','empName','createdAt','taskId','taskName','qty'])
             && d.keys().hasAll(['kind','from','to','status','empName','createdAt'])
-            && e.active == true
-            && d.status == 'pending'
-            && d.kind in ['leave', 'fix', 'task', 'loan', 'cert']
-            && d.empName == e.name
+            && e.active == true && d.status == 'pending'
+            && d.kind in ['leave', 'fix', 'task', 'loan', 'cert'] && d.empName == e.name
             && d.createdAt == request.time
             && d.from is string && d.from.matches('[0-9]{4}-[0-9]{2}-[0-9]{2}')
-            && d.to is string && d.to.matches('[0-9]{4}-[0-9]{2}-[0-9]{2}')
-            && d.from <= d.to
+            && d.to is string && d.to.matches('[0-9]{4}-[0-9]{2}-[0-9]{2}') && d.from <= d.to
             && d.get('note', '') is string && d.get('note', '').size() <= 300
             && d.get('type', '') is string && d.get('type', '').size() <= 40
             && d.get('typeName', '') is string && d.get('typeName', '').size() <= 60
             && d.get('fixIn', '') is string && d.get('fixIn', '').size() <= 5
             && d.get('fixOut', '') is string && d.get('fixOut', '').size() <= 5
             && (d.kind != 'task' || (e.get('empType', 'staff') == 'task'
-                && d.get('taskId', '') is string && d.get('taskId', '').size() > 0 && d.get('taskId', '').size() <= 40
-                && exists(/databases/$(database)/documents/taskTypes/$(d.get('taskId', '')))
-                && get(/databases/$(database)/documents/taskTypes/$(d.get('taskId', ''))).data.name == d.get('taskName', '')
-                && get(/databases/$(database)/documents/taskTypes/$(d.get('taskId', ''))).data.get('active', true) != false
-                && d.get('taskName', '').size() <= 80
-                && d.get('qty', 0) is number && d.get('qty', 0) >= 1 && d.get('qty', 0) <= 500));
+              && d.get('taskId', '') is string && d.get('taskId', '').size() > 0 && d.get('taskId', '').size() <= 40
+              && exists(/databases/$(database)/documents/taskTypes/$(d.get('taskId', '')))
+              && get(/databases/$(database)/documents/taskTypes/$(d.get('taskId', ''))).data.name == d.get('taskName', '')
+              && get(/databases/$(database)/documents/taskTypes/$(d.get('taskId', ''))).data.get('active', true) != false
+              && d.get('taskName', '').size() <= 80
+              && d.get('qty', 0) is number && d.get('qty', 0) >= 1 && d.get('qty', 0) <= 500));
         }
       }
     }
-
+    // Collection-group access is intentionally limited to global roles; managers read by authorized employee path.
     match /{path=**}/records/{recId} {
-      allow read: if isAdmin();
+      allow read: if globalReadRole();
     }
     match /{path=**}/requests/{rid} {
-      allow read: if isAdmin();
+      allow read: if globalReadRole();
     }
   }
 }`;
@@ -1921,9 +1952,45 @@ function adminApp(db, auth) {
     qToday: '', qEmp: '', qRec: '',
     emps: [], locs: [], scheds: [], rulesOld: false, recs: [], today: [],
     idxUrl: '', from: '', to: '', emp: '', hols: [], holKeys: [], set: {},
-    reqs: [], leaves: [], reqsErr: false, admins: [], adminsErr: false, taskTypes: []
+    reqs: [], leaves: [], reqsErr: false, admins: [], adminsErr: false, taskTypes: [],
+    role: 'unknown', deptScope: ''
   };
   S.from = dayKey(new Date(Date.now() - 6 * 86400000)); S.to = dayKey(new Date());
+  async function resolveAdminRole() {
+    const u = auth.currentUser;
+    if (!u) throw new Error('admin-auth-required');
+    const paths = [u.uid];
+    if (u.emailVerified && u.email) paths.push(u.email.toLowerCase());
+    for (const key of [...new Set(paths)]) {
+      try {
+        const snap = await getDoc(doc(db, 'admins', key));
+        if (snap.exists()) {
+          const d = snap.data();
+          const valid = ['super_admin', 'hr_admin', 'payroll_admin', 'manager', 'auditor'];
+          S.role = valid.includes(d.role) ? d.role : 'auditor';
+          S.deptScope = S.role === 'manager' && typeof d.deptScope === 'string' ? d.deptScope.trim() : '';
+          if (S.role === 'manager' && !S.deptScope) throw new Error('manager-scope-required');
+          return;
+        }
+      } catch (err) {
+        if (err.code !== 'permission-denied') throw err;
+      }
+    }
+    let canReadOwnerProfile = false;
+    try {
+      const owner = await getDoc(doc(db, 'admins', 'owner'));
+      canReadOwnerProfile = true;
+      if (owner.exists() && String(owner.data().email || '').toLowerCase() === String(u.email || '').toLowerCase()) {
+        S.role = 'super_admin'; S.deptScope = ''; return;
+      }
+    } catch (err) { if (err.code !== 'permission-denied') throw err; }
+    // يظل المالك الأول قادرًا على الإعداد لأن قواعده تسمح له بقراءة /admins/owner حتى قبل إنشاء الوثيقة.
+    if (canReadOwnerProfile) { S.role = 'super_admin'; S.deptScope = ''; return; }
+    S.role = 'unknown'; S.deptScope = '';
+  }
+  const isSuper = () => S.role === 'super_admin';
+  const isHr = () => S.role === 'hr_admin';
+  const isManager = () => S.role === 'manager';
   const base = location.origin + location.pathname;
   const linkOf = id => `${base}?e=${id}`;
   const brandName = () => (S.set && S.set.orgName) ? S.set.orgName : BRAND;
@@ -1935,6 +2002,15 @@ function adminApp(db, auth) {
 
   async function fetchRecs(a, b) {
     const map = d => ({ id: d.id, empId: d.ref.parent.parent.id, ...d.data(), t: d.data().time?.toDate() });
+    if (isManager()) {
+      if (!S.deptScope) throw new Error('manager-scope-required');
+      const target = S.emp ? S.emps.filter(e => e.id === S.emp) : S.emps.filter(e => e.empType !== 'task');
+      const chunks = await Promise.all(target.map(e => getDocs(query(
+        collection(db, 'employees', e.id, 'records'),
+        where('time', '>=', Timestamp.fromDate(a)), where('time', '<', Timestamp.fromDate(b)), orderBy('time')
+      )).then(q => q.docs.map(map))));
+      return chunks.flat().filter(x => x.t).sort((x, y) => x.t - y.t);
+    }
     try {
       const s = await getDocs(query(collectionGroup(db, 'records'), where('time', '>=', Timestamp.fromDate(a)), where('time', '<', Timestamp.fromDate(b)), orderBy('time')));
       return s.docs.map(map).filter(x => x.t);
@@ -1952,6 +2028,7 @@ function adminApp(db, auth) {
   }
   async function loadRecs() { S.recs = await fetchRecs(new Date(dayStart(S.from).getTime() - 86400000), dayEnd(S.to)); }
   async function migrateLocs() {
+    if (!isSuper() && !isHr()) return;
     for (const l of S.locs) if (!(l.kx > 0) || !(l.ky > 0)) { const k = geoK(l.lat); await updateDoc(doc(db, 'locations', l.id), k); Object.assign(l, k); }
   }
   /* ---- تبويب «اليوم»: أمس يُجلب مرة واحدة + مستمع لحظي لسجلات اليوم ----
@@ -1978,10 +2055,11 @@ function adminApp(db, auth) {
       const done = () => { if (first) { first = false; resolve(); } else refreshTodayView(); };
       const slowPoll = async () => {   // احتياط إذا تعذّر المستمع (مثلاً الفهرس غير منشأ): تحديث كل 5 دقائق فقط
         clearInterval(window.__meqatPoll);
-        const pull = async () => { try { S.todayLive = await fetchRecs(dayStart(key), dayEnd(key)); mergeToday(); } catch {} done(); };
+        const pull = async () => { try { S.todayLive = await fetchRecs(dayStart(key), dayEnd(key)); mergeToday(); } catch (err) { console.warn(err); } done(); };
         await pull();
         window.__meqatPoll = setInterval(() => { if (!document.hidden && auth.currentUser) pull(); }, 300000);
       };
+      if (isManager()) { slowPoll(); return; }
       const q = query(collectionGroup(db, 'records'), where('time', '>=', Timestamp.fromDate(dayStart(key))), where('time', '<', Timestamp.fromDate(dayEnd(key))), orderBy('time'));
       try {
         window.__meqatUnsub = onSnapshot(q, snap => {
@@ -2002,7 +2080,11 @@ function adminApp(db, auth) {
     _sumC = null;
     S.idxUrl = '';
     try {
-      const [e, l] = await Promise.all([getDocs(collection(db, 'employees')), getDocs(collection(db, 'locations'))]);
+      await resolveAdminRole();
+      const empQuery = isManager()
+        ? query(collection(db, 'employees'), where('dept', '==', S.deptScope))
+        : collection(db, 'employees');
+      const [e, l] = await Promise.all([getDocs(empQuery), getDocs(collection(db, 'locations'))]);
       S.emps = e.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => (a.name || '').localeCompare(b.name || '', 'ar'));
       S.locs = l.docs.map(d => ({ id: d.id, ...d.data() }));
       try {
@@ -2022,17 +2104,27 @@ function adminApp(db, auth) {
       if (S.set && S.set.tzOffset != null && +S.set.tzOffset !== TZOFF) TZOFF = +S.set.tzOffset;
       try { const tk = await getDocs(collection(db, 'taskTypes')); S.taskTypes = tk.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => (a.name || '').localeCompare(b.name || '', 'ar')); } catch (e2) { S.taskTypes = []; if (e2.code !== 'permission-denied') console.warn(e2); }
       try {
-        const rq = await getDocs(collectionGroup(db, 'requests'));
-        S.reqs = rq.docs.map(d => ({ id: d.id, empId: d.ref.parent.parent.id, ...d.data(), cAt: (d.data().createdAt && d.data().createdAt.toMillis ? d.data().createdAt.toMillis() : 0) }));
+        if (isManager()) {
+          const groups = await Promise.all(S.emps.map(async emp => {
+            const q = await getDocs(collection(db, 'employees', emp.id, 'requests'));
+            return q.docs.map(d => ({ id: d.id, empId: emp.id, ...d.data(), cAt: (d.data().createdAt && d.data().createdAt.toMillis ? d.data().createdAt.toMillis() : 0) }));
+          }));
+          S.reqs = groups.flat();
+        } else {
+          const rq = await getDocs(collectionGroup(db, 'requests'));
+          S.reqs = rq.docs.map(d => ({ id: d.id, empId: d.ref.parent.parent.id, ...d.data(), cAt: (d.data().createdAt && d.data().createdAt.toMillis ? d.data().createdAt.toMillis() : 0) }));
+        }
         S.reqsErr = false;
       } catch (e2) { S.reqs = []; if (e2.code === 'permission-denied') S.reqsErr = true; else console.warn(e2); }
       S.leaves = S.reqs.filter(r => r.kind === 'leave' && r.status === 'approved');
-      try {
-        const ad = await getDocs(collection(db, 'admins'));
-        S.admins = ad.docs.filter(d => d.id !== 'owner').map(d => ({ id: d.id, name: d.data().name || '', email: d.data().email || '', role: d.data().role || 'super_admin', deptScope: d.data().deptScope || '' }));
-        const od = ad.docs.find(d => d.id === 'owner'); S.ownerEmail = od ? (od.data().email || '') : '';
-        S.adminsErr = false;
-      } catch (e2) { S.admins = []; if (e2.code === 'permission-denied') S.adminsErr = true; else console.warn(e2); }
+      if (isSuper()) {
+        try {
+          const ad = await getDocs(collection(db, 'admins'));
+          S.admins = ad.docs.filter(d => d.id !== 'owner').map(d => ({ id: d.id, name: d.data().name || '', email: d.data().email || '', role: d.data().role || 'auditor', deptScope: d.data().deptScope || '' }));
+          const od = ad.docs.find(d => d.id === 'owner'); S.ownerEmail = od ? (od.data().email || '') : '';
+          S.adminsErr = false;
+        } catch (e2) { S.admins = []; if (e2.code === 'permission-denied') S.adminsErr = true; else console.warn(e2); }
+      } else { S.admins = []; S.ownerEmail = ''; S.adminsErr = false; }
       await migrateLocs();
       await loadRecs();
       await startTodayFeed();
@@ -2063,7 +2155,7 @@ function adminApp(db, auth) {
       ${S.idxUrl ? `<div class="notice"><b>خطوة لمرة واحدة:</b> يلزم إنشاء فهرس لتسريع التقارير. <a href="${esc(S.idxUrl)}" target="_blank">اضغط هنا لإنشائه</a> وانتظر دقيقة ثم اضغط «تحديث». حتى ذلك الحين تُحمَّل السجلات بالطريقة البديلة الآمنة.</div>` : ''}
       ${S.rulesOld ? `<div class="notice"><b>تحديث لمرة واحدة:</b> لحفظ جداول الدوام يلزم تحديث قواعد Firestore. اضغط الزر لنسخ القواعد الجديدة، ثم افتح Firestore › Rules، وامسح القديم والصق الجديد واضغط Publish، ثم حدّث الصفحة.<div style="margin-top:10px"><button class="btn sm" data-act="copyRules">${ic('copy', 16)} نسخ القواعد الجديدة</button></div></div>` : ''}
       ${S.reqsErr || S.adminsErr ? `<div class="notice"><b>تحديث مطلوب:</b> قواعد Firestore المنشورة حالياً لا تتيح قراءة طلبات الموظفين جماعياً أو بيانات المشرفين. انسخ القواعد الأحدث وانشرها ثم أعد التحميل.<div style="margin-top:10px"><button class="btn sm" data-act="copyRules">${ic('copy', 16)} نسخ القواعد الأحدث</button></div></div>` : ''}
-      ${(()=>{try{return localStorage.getItem('att_rules_v4')}catch{return '1'}})() ? '' : `<div class="notice"><b>تحديث قواعد Firestore (مرة واحدة):</b> القواعد المحدثة تضيف: فرض المواقع المسموحة لكل موظف في الخادم، وتأكيد بريد المشرف، وإتاحة إلغاء الموظف لطلبه المعلّق، وكتالوج المهام وطلبات موظفي المهام. انسخها وانشرها في Firestore › Rules. <b>ولا تنسَ تفعيل «Anonymous» من Authentication › Sign-in method.</b><div style="margin-top:10px"><button class="btn sm" data-act="copyRules">${ic('copy', 16)} نسخ القواعد</button> <button class="btn sm sec" data-act="v2Done">${ic('check', 16)} نشرتها، لا تُظهر هذا التنبيه مجدداً</button></div></div>`}
+      ${(()=>{try{return localStorage.getItem('att_rules_v5')}catch{return '1'}})() ? '' : `<div class="notice"><b>تحديث أمني لقواعد Firestore:</b> القواعد الجديدة تفرض الأدوار في الخادم، وتحصر إدارة المشرفين بالمدير العام، وتقيّد كتابة الحقول حسب الدور، وتشترط نطاقًا لمدير القسم. انسخ القواعد وانشرها في Firestore › Rules، ثم اختبر كل حساب قبل العودة للإنتاج. <b>ولا تنسَ تفعيل «Anonymous» من Authentication › Sign-in method.</b><div style="margin-top:10px"><button class="btn sm" data-act="copyRules">${ic('copy', 16)} نسخ القواعد</button> <button class="btn sm sec" data-act="v2Done">${ic('check', 16)} نشرتها، لا تُظهر هذا التنبيه مجدداً</button></div></div>`}
       <div id="content"></div></main></div>`;
     { const nv = $('#adminNav'), on = nv && nv.querySelector('.tab.on'); if (on) { const a = on.getBoundingClientRect(), b = nv.getBoundingClientRect(); nv.scrollLeft += (a.left + a.width / 2) - (b.left + b.width / 2); } }
     refreshPwaButtons();
@@ -2418,10 +2510,11 @@ function adminApp(db, auth) {
     const q = S.qEmp.trim().toLowerCase();
     const list = q ? S.emps.filter(e => (e.name || '').toLowerCase().includes(q) || (e.dept || '').toLowerCase().includes(q)) : S.emps;
 
+    if (!isSuper() && S.empSub === 'admins') S.empSub = 'list';
     el.innerHTML = `
       <div class="subtabs">
         <button class="stab ${S.empSub === 'list' ? 'on' : ''}" data-esub="list">${ic('users', 20)} قائمة الموظفين (${S.emps.length})</button>
-        <button class="stab ${S.empSub === 'admins' ? 'on' : ''}" data-esub="admins">${ic('lock', 20)} المشرفون والصلاحيات (${S.admins.length})</button>
+        ${isSuper() ? `<button class="stab ${S.empSub === 'admins' ? 'on' : ''}" data-esub="admins">${ic('lock', 20)} المشرفون والصلاحيات (${S.admins.length})</button>` : ''}
       </div>
       ${S.empSub === 'list' ? `
         <details class="fold">
@@ -2461,7 +2554,7 @@ function adminApp(db, auth) {
       : `
 <div class="card">
           ${ch('lock', `المشرفون والأدوار والصلاحيات (${S.admins.length})`)}
-          <p class="hint" style="margin-top:0">اختر دور المشرف بدقة (مدير عام، موارد بشرية، محاسب رواتب، مدير قسم/فرع، أو مدقق للاطلاع فقط). عند اختيار «مدير قسم/فرع» يمكنك كتابة اسم القسم ليقتصر اطلاعه على موظفي قسمه فقط.</p>
+          <p class="hint" style="margin-top:0">الأدوار مفروضة في قواعد Firestore: المدير العام يدير الصلاحيات؛ الموارد البشرية تدير بيانات الدوام؛ محاسب الرواتب مخوّل للقراءة المالية واعتماد السلف والمهام؛ مدير القسم للقراءة ضمن قسم مطابق تمامًا؛ والمدقق للقراءة فقط. يجب أن يطابق نطاق مدير القسم قيمة «القسم / الفرع» المسجلة للموظفين. ملاحظة: الحقول المصرفية والمالية ما زالت ضمن وثيقة الموظف نفسها؛ يلزم فصلها لاحقًا لتطبيق أقل صلاحية على مستوى الحقول.</p>
           <div class="row" style="margin-bottom:16px">
             <div class="field"><label>اسم المشرف</label><input id="aName" placeholder="مسؤول الموارد البشرية"></div>
             <div class="field"><label>البريد الإلكتروني</label><input id="aUid" type="email" dir="ltr" placeholder="hr@example.com"></div>
@@ -3074,6 +3167,7 @@ function adminApp(db, auth) {
   }
 
   function viewRecs(el) {
+    if (!['super_admin', 'payroll_admin'].includes(S.role) && S.recSub === 'payroll') S.recSub = 'summary';
     const sum = summary();
     const pay = payrollRows().filter(r => r.pm !== 'none');
     const raw = filtered();
@@ -3097,7 +3191,7 @@ function adminApp(db, auth) {
 
     <div class="subtabs">
       <button class="stab ${S.recSub === 'summary' ? 'on' : ''}" data-rsub="summary">${ic('clock', 20)} الملخص اليومي (${sum.length})</button>
-      ${licFeatures().payroll === false ? '' : `<button class="stab ${S.recSub === 'payroll' ? 'on' : ''}" data-rsub="payroll">${ic('payroll', 20)} مسير الرواتب الآلي (${pay.length})</button>`}
+      ${licFeatures().payroll === false || !['super_admin', 'payroll_admin'].includes(S.role) ? '' : `<button class="stab ${S.recSub === 'payroll' ? 'on' : ''}" data-rsub="payroll">${ic('payroll', 20)} مسير الرواتب الآلي (${pay.length})</button>`}
       <button class="stab ${S.recSub === 'raw' ? 'on' : ''}" data-rsub="raw">${ic('pin', 20)} سجل البصمات التفصيلي (${raw.length})</button>
     </div>
 
@@ -3132,12 +3226,28 @@ function adminApp(db, auth) {
     });
 
     const tab = ev.target.closest('[data-tab]'); if (tab) { S.tab = tab.dataset.tab; return render(); }
-    const esub = ev.target.closest('[data-esub]'); if (esub) { S.empSub = esub.dataset.esub; return viewEmps($('#content')); }
+    const esub = ev.target.closest('[data-esub]'); if (esub) {
+      if (esub.dataset.esub === 'admins' && !isSuper()) return toast('إدارة الصلاحيات متاحة للمدير العام فقط', 'err');
+      S.empSub = esub.dataset.esub; return viewEmps($('#content'));
+    }
     const ssub = ev.target.closest('[data-ssub]'); if (ssub) { S.schedSub = ssub.dataset.ssub; return viewSched($('#content')); }
-    const rsub = ev.target.closest('[data-rsub]'); if (rsub) { S.recSub = rsub.dataset.rsub; return viewRecs($('#content')); }
+    const rsub = ev.target.closest('[data-rsub]'); if (rsub) {
+      if (rsub.dataset.rsub === 'payroll' && !['super_admin', 'payroll_admin'].includes(S.role)) return toast('عرض الرواتب محصور بالمدير العام ومحاسب الرواتب', 'err');
+      S.recSub = rsub.dataset.rsub; return viewRecs($('#content'));
+    }
 
     const b = ev.target.closest('[data-act]'); if (!b) return;
     const act = b.dataset.act, id = b.dataset.id;
+    const superOnly = new Set(['addAdmin', 'delAdmin', 'copyRules', 'v2Done', 'hardDelEmp', 'backupDB', 'restoreDB']);
+    const viewOnly = new Set(['logout', 'reload', 'copy', 'wa']);
+    const payrollAllowed = new Set(['logout', 'reload', 'xlsx', 'print', 'bankCsv', 'printSlips', 'slipEmp', 'appr', 'rej', 'copy', 'wa']);
+    if (superOnly.has(act) && !isSuper()) return toast('هذه العملية متاحة للمدير العام فقط', 'err');
+    if (['manager', 'auditor'].includes(S.role) && !viewOnly.has(act)) return toast('هذا الدور للعرض فقط', 'err');
+    if (S.role === 'payroll_admin' && !payrollAllowed.has(act)) return toast('هذه العملية ليست ضمن صلاحيات محاسب الرواتب', 'err');
+    if (S.role === 'payroll_admin' && ['appr', 'rej'].includes(act)) {
+      const req = S.reqs.find(x => x.id === id && x.empId === b.dataset.e);
+      if (!req || !['loan', 'task'].includes(req.kind)) return toast('يستطيع محاسب الرواتب اعتماد طلبات السلف والمهام فقط', 'err');
+    }
     try {
       if (act === 'logout') return signOut(auth);
       if (act === 'reload') { await loadAll(); return toast('تم تحديث البيانات', 'good'); }
@@ -3205,6 +3315,7 @@ function adminApp(db, auth) {
         await loadAll(); toast('تمت إضافة الموقع', 'good');
       }
       if (act === 'copyRules') {
+        if (!isSuper()) return toast('نسخ قواعد Firestore محصور بالمدير العام', 'err');
         const me = ((auth.currentUser && auth.currentUser.email) || '').toLowerCase();
         const isSec = S.admins.some(x => x.id === auth.currentUser.uid || String(x.email || x.id).toLowerCase() === me);
         let owner = S.ownerEmail;
@@ -3360,11 +3471,13 @@ function adminApp(db, auth) {
         }
         const role = $('#aRole') ? $('#aRole').value : 'super_admin';
         const deptScope = $('#aDept') ? $('#aDept').value.trim() : '';
-        await setDoc(doc(db, 'admins', key), { name: nm, email: em.toLowerCase(), role, deptScope, addedAt: serverTimestamp() });
+        if (!['super_admin', 'hr_admin', 'payroll_admin', 'manager', 'auditor'].includes(role)) return toast('الدور المحدد غير صالح', 'err');
+        if (role === 'manager' && !deptScope) return toast('حدد قسمًا ثابتًا لمدير القسم؛ لا يمكن ترك النطاق فارغًا', 'err');
+        await setDoc(doc(db, 'admins', key), { name: nm, email: em.toLowerCase(), role, ...(role === 'manager' ? { deptScope } : {}), addedAt: serverTimestamp() });
         await loadAll(); toast(note, 'good');
       }
       if (act === 'delAdmin') { if (confirm('إزالة صلاحيات هذا المشرف؟')) { await deleteDoc(doc(db, 'admins', id)); await loadAll(); } }
-      if (act === 'v2Done') { localStorage.setItem('att_rules_v4', '1'); return render(); }
+      if (act === 'v2Done') { localStorage.setItem('att_rules_v5', '1'); return render(); }
       if (act === 'appr' || act === 'rej') {
         const empId = b.dataset.e;
         const r = S.reqs.find(x => x.id === id && x.empId === empId);
