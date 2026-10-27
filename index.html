@@ -1132,18 +1132,21 @@ service cloud.firestore {
       // تحديث إداري للموظف: يُسمح إما بتحديث حالة البصمة فقط (بلا تدقيق)، أو بكتابة كاملة مع إثبات تدقيق في نفس الدفعة
       function adminEmpWrite() {
         let n = request.resource.data;
-        if (n.diff(resource.data).affectedKeys().hasOnly(['state', 'lastAt', 'lastRecId'])) return isAdmin();
+        let stateOnly = n.diff(resource.data).affectedKeys().hasOnly(['state', 'lastAt', 'lastRecId']);
         let ref = n.get('auditRef', '');
-        if (!(ref is string) || ref.size() < 6 || ref.size() > 120) return false;
-        let a = getAfter(/databases/$(database)/documents/audit/$(ref)).data;
+        let refOk = ref is string && ref.size() >= 6 && ref.size() <= 120;
+        let aud = refOk ? getAfter(/databases/$(database)/documents/audit/$(ref)).data : request.resource.data;
         return isAdmin()
-          && a.kind in ['employee_update', 'employee_delete']
-          && a.empId == empId
-          && a.by == request.auth.uid
-          && a.at == request.time;
+          && (stateOnly
+              || (aud.kind in ['employee_update', 'employee_delete']
+                  && aud.empId == empId
+                  && aud.by == request.auth.uid
+                  && aud.at == request.time));
       }
-      let rebindRules = claimDevice() || migrateLegacy() || rebindLegacy() || rebindMap() || joinDevice() || punchState();
-      allow update: if adminEmpWrite() || rebindRules;
+      function rebindPaths() {
+        return claimDevice() || migrateLegacy() || rebindLegacy() || rebindMap() || joinDevice() || punchState();
+      }
+      allow update: if adminEmpWrite() || rebindPaths();
 
       // الرابط لم يُربط بعد: يمكن قراءته لأجل ربطه
       function unclaimed() {
@@ -1239,7 +1242,7 @@ service cloud.firestore {
           && request.resource.data.get('at', null) == request.time
           && request.resource.data.keys().hasOnly(['at'])
           && (!exists(/databases/$(database)/documents/employees/$(empId)/joinAt/$(request.auth.uid))
-              || resource.data.at < request.time - duration(minutes: 1));
+              || resource.data.at < request.time - duration('1m'));
         // الحذف أثناء تخليص موظف موسوم للحذف النهائي فقط
         allow delete: if isAdmin() && get(/databases/$(database)/documents/employees/$(empId)).data.get('voidMark', false) == true;
       }
@@ -1252,7 +1255,7 @@ service cloud.firestore {
           && request.resource.data.pin == get(/databases/$(database)/documents/pins/$(empId)).data.pin
           && request.resource.data.at == request.time
           && exists(/databases/$(database)/documents/employees/$(empId)/joinAt/$(request.auth.uid))
-          && get(/databases/$(database)/documents/employees/$(empId)/joinAt/$(request.auth.uid)).data.at >= request.time - duration(minutes: 2);
+          && get(/databases/$(database)/documents/employees/$(empId)/joinAt/$(request.auth.uid)).data.at >= request.time - duration('2m');
         // الحذف أثناء تخليص موظف موسوم للحذف النهائي فقط
         allow delete: if isAdmin() && get(/databases/$(database)/documents/employees/$(empId)).data.get('voidMark', false) == true;
       }
@@ -1268,24 +1271,24 @@ service cloud.firestore {
         function adminRecCreate() {
           let d = request.resource.data;
           let ref = d.get('auditRef', '');
-          if (!(ref is string) || ref.size() < 6 || ref.size() > 120) return false;
-          let a = getAfter(/databases/$(database)/documents/audit/$(ref)).data;
-          return a.kind == 'record_fix'
-            && a.empId == empId
-            && a.by == request.auth.uid
-            && a.at == request.time;
+          let refOk = ref is string && ref.size() >= 6 && ref.size() <= 120;
+          let aud = refOk ? getAfter(/databases/$(database)/documents/audit/$(ref)).data : request.resource.data;
+          return aud.kind == 'record_fix'
+            && aud.empId == empId
+            && aud.by == request.auth.uid
+            && aud.at == request.time;
         }
 
         // تعديل/إبطال بصمة من قبل الإدارة: يتطلب إثبات تدقيق في نفس الدفعة
         function adminRecFix() {
           let n = request.resource.data;
           let ref = n.get('auditRef', '');
-          if (!(ref is string) || ref.size() < 6 || ref.size() > 120) return false;
-          let a = getAfter(/databases/$(database)/documents/audit/$(ref)).data;
-          return a.kind == 'record_fix'
-            && a.empId == empId
-            && a.by == request.auth.uid
-            && a.at == request.time;
+          let refOk = ref is string && ref.size() >= 6 && ref.size() <= 120;
+          let aud = refOk ? getAfter(/databases/$(database)/documents/audit/$(ref)).data : request.resource.data;
+          return aud.kind == 'record_fix'
+            && aud.empId == empId
+            && aud.by == request.auth.uid
+            && aud.at == request.time;
         }
 
         function validRecord() {
