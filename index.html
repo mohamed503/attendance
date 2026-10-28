@@ -573,7 +573,7 @@ const licBannerHtml = () => {
 const licGateHtml = () => `<div class="auth-bg"><div style="position:fixed;top:18px;left:18px;z-index:10">${themeBtnHtml()}</div><div class="login"><div class="logo big">${ic('lock', 46)}</div><h1 class="center">${LICENSE && LICENSE.status === 'demo' ? 'انتهت مدة نسخة العرض' : 'انتهت مدة الاستخدام'}</h1><p class="muted center" style="margin:0 0 20px;font-weight:600">بياناتك محفوظة بالكامل ولن تضيع — للتجديد أو الترقية تواصل مع مزوّد الخدمة${LICENSE && LICENSE.support ? `<br><small style="font-weight:700">${esc(LICENSE.support)}</small>` : ''}</p><button class="btn sec" onclick="location.reload()" style="width:100%;margin-top:16px;padding:11px">إعادة المحاولة بعد التجديد</button></div></div>`;
 
 const MAX_ACCURACY = 200;        // أقصى هامش خطأ مقبول لدقة الـ GPS بالمتر
-const FORGOT_MS = 14 * 3600e3;   // بعد هذه المدة يُعتبر الحضور المفتوح «نسيان انصراف» (يجب أن يطابق 50400000 في القواعد)
+const FORGOT_MS = 14 * 3600e3;   // الحد الأدنى لمهلة نسيان الانصراف (يطابق 50400000 في القواعد). المهلة الفعلية لكل موظف = forgotMsOf(جدوله) ≥ هذا الحد، وتُستخدم نفسها في الجهاز واللوحة والتقارير
 const MIN_GAP_MS = 20000;        // أقل فاصل بين عمليتين لنفس الموظف (يطابق 20000 في القواعد)
 const TZ_OFFSET_MIN = 120;       // توقيت طرابلس UTC+2 ثابت (بلا توقيت صيفي). غيّره إن استخدمت النظام في بلد آخر
 
@@ -789,8 +789,10 @@ function forgotMsOf(sc) {
     else if (sc.mode === 'fixed') Object.values(sc.days || {}).forEach(d => { if (d && d.on) (d.p || []).forEach(p => per(p.s, p.e)); });
     else if (sc.mode === 'flex') Object.values(sc.days || {}).forEach(d => { if (d && d.on) mx = Math.max(mx, (+d.h || 0) * 60); });
   }
-  return Math.max(FORGOT_MS, (mx + 240) * 60000);
+  return Math.max(FORGOT_MS, (mx + 240) * 60000);   // أطول فترة دوام + 4 ساعات، وبحد أدنى 14 ساعة
 }
+/* مصدر وحيد لمهلة نسيان الانصراف: الجهاز واللوحة والتقارير تستدعيه. */
+const forgotLimitMs = sc => forgotMsOf(sc);
 
 /* أطول يوم عمل مخطط في الجدول (بالدقائق): يُستخدم حدًّا افتراضيًا للساعات العادية في يوم الراحة/العطلة */
 function typicalDayMin(sc) {
@@ -1351,6 +1353,8 @@ service cloud.firestore {
           let l = get(/databases/$(database)/documents/locations/$(d.locationId)).data;
           let st = e.get('state', null);
           let last = e.get('lastAt', null);
+          // 50400000 = 14 ساعة = FORGOT_MS، وهو الحد الأدنى لمهلة نسيان الانصراف؛ مهلة الجدول (forgotMsOf) لا تقل عنه أبدًا،
+          // فالقاعدة لا تمنع ما يسمح به التطبيق. يجب أن يبقى الرقمان متطابقين (يحرسه الاختبار tests/forgot-limit.test.mjs).
           let dx = (d.lng - l.lng) * l.kx;
           let dy = (d.lat - l.lat) * l.ky;
           return request.auth != null && isOwnerData(e)
@@ -1707,9 +1711,9 @@ async function employeeApp(db, auth, token) {
       $('#hist').innerHTML = rows.length ? rows.map(r => `<tr><td><span class="badge ${r.type === 'in' ? 'b-ok' : 'b-bad'}">${r.type === 'in' ? 'حضور' : 'انصراف'}</span></td><td>${fmtDate(r.t)}</td><td>${fmtTime(r.t)}</td><td class="muted">${esc(r.locationName)}</td></tr>`).join('') : '<tr><td class="muted">لا توجد تسجيلات بعد</td></tr>';
     } catch { $('#hist').innerHTML = '<tr><td class="muted">تعذر تحميل السجل</td></tr>'; }
     const n = now();
-    const forgotLim = Math.min(FORGOT_MS, forgotMsOf(sched));
+    const forgotLim = forgotLimitMs(sched);   // نفس مهلة اللوحة والتقارير (كانت 14 ساعة ثابتة على الجهاز)
     const canIn = !(last && last.type === 'in' && n - last.t < forgotLim);
-    const maxOutSpan = Math.max(forgotMsOf(sched) * 2, 36 * 3600e3);
+    const maxOutSpan = Math.max(forgotLim * 2, 36 * 3600e3);
     const canOut = !!(last && last.type === 'in' && (n - last.t) <= maxOutSpan);
     $('#bIn').disabled = !canIn; $('#bOut').disabled = !canOut;
     $('#state').innerHTML = last ? (last.type === 'in' ? `<span class="badge b-ok">${ic('check', 16)} أنت حاضر منذ ${fmtTime(last.t)}</span>` : `<span class="badge b-mute">آخر انصراف ${fmtTime(last.t)}</span>`) : '';
@@ -2310,7 +2314,7 @@ function adminApp(db, auth) {
     const B = { present: ['b-ok', 'حاضر'], late: ['b-warn', 'حاضر متأخر'], left: ['b-pri', 'انصرف'], forgot: ['b-warn', 'نسي الانصراف'], absent: ['b-bad', 'لم يحضر'], rest: ['b-mute', 'في راحة'], notyet: ['b-mute', 'لم يحن دوامه'], leave: ['b-pri', 'في إجازة'], holiday: ['b-mute', 'عطلة رسمية'] };
     const rows = act.map(e => {
       const sc = scOf(e);
-      const lim = forgotMsOf(sc);
+      const lim = forgotLimitMs(sc);
       const sesAll = pairSessions(S.today.filter(r => r.empId === e.id), lim);
       const lastSes = sesAll.length ? sesAll[sesAll.length - 1] : null;
       let st = 'absent';
@@ -3281,7 +3285,7 @@ function adminApp(db, auth) {
       const sc = emp && emp.scheduleId ? normSched(S.scheds.find(s => s.id === emp.scheduleId) || {}) : null;
       const rot = emp ? (emp.rotOffset || 0) : 0;
       const sd = emp ? emp.startDate : null;
-      const lim = forgotMsOf(sc);
+      const lim = forgotLimitMs(sc);
       const sesAll = pairSessions(rs, lim);
       let k = S.from;
       while (k <= S.to) {

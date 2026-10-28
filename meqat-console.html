@@ -1004,6 +1004,8 @@ service cloud.firestore {
           let l = get(/databases/$(database)/documents/locations/$(d.locationId)).data;
           let st = e.get('state', null);
           let last = e.get('lastAt', null);
+          // 50400000 = 14 ساعة = FORGOT_MS، وهو الحد الأدنى لمهلة نسيان الانصراف؛ مهلة الجدول (forgotMsOf) لا تقل عنه أبدًا،
+          // فالقاعدة لا تمنع ما يسمح به التطبيق. يجب أن يبقى الرقمان متطابقين (يحرسه الاختبار tests/forgot-limit.test.mjs).
           let dx = (d.lng - l.lng) * l.kx;
           let dy = (d.lat - l.lat) * l.ky;
           return request.auth != null && isOwnerData(e)
