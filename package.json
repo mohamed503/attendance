@@ -10,7 +10,7 @@
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit",
     "test:rules": "firebase emulators:exec --only firestore --project meqat-rules-test \"node --test tests/*.test.mjs\"",
-    "test:unit": "node --test tests/admin-migrate.test.mjs"
+    "test:unit": "node --test tests/admin-migrate.test.mjs tests/pin-unit.test.mjs tests/month-summary.test.mjs tests/offday-ot.test.mjs"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",

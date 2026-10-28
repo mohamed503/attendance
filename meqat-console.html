@@ -840,6 +840,18 @@ service cloud.firestore {
         && (d.role != 'manager' || (d.get('deptScope', '') is string && d.get('deptScope', '').size() > 0 && d.get('deptScope', '').size() <= 100));
     }
 
+    // رمز إضافة جهاز: عشوائي (8 خانات فأكثر)، له انتهاء لا يتجاوز 7 أيام من لحظة الإصدار.
+    function validPin() {
+      let d = request.resource.data;
+      return d.keys().hasOnly(['pin', 'exp', 'createdAt'])
+        && d.pin is string && d.pin.size() >= 8 && d.pin.size() <= 32
+        && d.exp is timestamp && d.exp > request.time && d.exp <= request.time + duration.value(7, 'd')
+        && d.createdAt == request.time;
+    }
+    function validMaxDev() {
+      return request.resource.data.get('maxDevices', 2) in [1, 2, 3];
+    }
+
     match /admins/{uid} {
       // المشرف يقرأ ملفه فقط؛ تعداد أو تعديل صلاحيات المشرفين للمدير العام وحده.
       allow get: if isSuperAdmin() || (request.auth != null && (request.auth.uid == uid
@@ -852,7 +864,8 @@ service cloud.firestore {
       allow delete: if isSuperAdmin() && uid != 'owner';
     }
     match /pins/{id} {
-      allow read, write: if isSuperAdmin() || isHrAdmin();
+      allow read, delete: if isSuperAdmin() || isHrAdmin();
+      allow create, update: if (isSuperAdmin() || isHrAdmin()) && validPin();
     }
     match /locations/{id} {
       allow read: if request.auth != null;
@@ -891,8 +904,8 @@ service cloud.firestore {
       allow update: if isSuperAdmin()
         || (isHrAdmin() && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
           'name','phone','dept','jobTitle','contractEnd','docExpiry','bioId','assets','scheduleId','rotOffset',
-          'startDate','leaveQuota','empType','locs','active','deviceId','uid','devices','rebindProof'
-        ]))
+          'startDate','leaveQuota','empType','locs','active','deviceId','uid','devices','rebindProof','maxDevices'
+        ]) && validMaxDev())
         || (isPayrollAdmin() && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
           'payMode','payAmount','allowance','bonus','penalty','loanTotal','loanInst','lyStatutory','familyStatus',
           'nationalId','bankName','iban','taskPrices'
@@ -902,12 +915,13 @@ service cloud.firestore {
       function validHrCreate() {
         let d = request.resource.data;
         return d.keys().hasOnly(['name','phone','dept','jobTitle','contractEnd','docExpiry','bioId','assets',
-            'scheduleId','rotOffset','startDate','leaveQuota','empType','locs','active','deviceId','createdAt','payMode','payAmount'])
+            'scheduleId','rotOffset','startDate','leaveQuota','empType','locs','active','deviceId','createdAt','payMode','payAmount','maxDevices'])
           && d.keys().hasAll(['name','active','empType'])
           && d.name is string && d.name.size() > 0 && d.name.size() <= 100
           && d.active == true && d.empType in ['staff', 'task']
           && d.get('deviceId', null) == null
           && d.get('payMode', 'none') in ['none', 'task'] && d.get('payAmount', 0) == 0
+          && validMaxDev()
           && d.get('createdAt', request.time) == request.time;
       }
       function unclaimed() {
@@ -952,10 +966,11 @@ service cloud.firestore {
         let n = request.resource.data;
         return request.auth != null && resource.data.active == true
           && resource.data.get('devices', null) != null
-          && n.diff(resource.data).affectedKeys().hasOnly(['devices'])
+          && n.diff(resource.data).affectedKeys().hasOnly(['devices', 'lastJoinAt'])
+          && (!('lastJoinAt' in n.diff(resource.data).affectedKeys()) || n.lastJoinAt == request.time)
           && n.devices.diff(resource.data.devices).addedKeys().size() == 1
           && n.devices.diff(resource.data.devices).affectedKeys().size() == 1
-          && n.devices.size() <= 3 && request.auth.uid in n.devices.values()
+          && n.devices.size() <= resource.data.get('maxDevices', 2) && request.auth.uid in n.devices.values()
           && exists(/databases/$(database)/documents/employees/$(empId)/joins/$(request.auth.uid));
       }
       function punchState() {
@@ -972,6 +987,8 @@ service cloud.firestore {
           && request.resource.data.keys().hasOnly(['pin', 'ua', 'at'])
           && request.resource.data.pin is string
           && request.resource.data.pin == get(/databases/$(database)/documents/pins/$(empId)).data.pin
+          && get(/databases/$(database)/documents/pins/$(empId)).data.get('exp', null) != null
+          && request.time < get(/databases/$(database)/documents/pins/$(empId)).data.get('exp', request.time)
           && request.resource.data.at == request.time;
         allow delete: if isSuperAdmin() || isHrAdmin();
       }

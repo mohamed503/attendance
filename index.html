@@ -515,6 +515,17 @@ const firebaseConfig = {
   appId: "1:539190333489:web:b1d975e74a6f51ea038510"
 };
 
+/* App Check (اختياري): ضع مفتاح reCAPTCHA v3 هنا لتفعيله، ثم فعّل «Enforce» في Firebase Console بعد مراقبة الطلبات.
+   تنبيه: أدوات meqat-seed وmeqat-admin-migrate لا تحمل App Check؛ شغّلها قبل التفعيل الإلزامي. */
+const APP_CHECK_SITE_KEY = '';
+async function initAppCheck(app) {
+  if (!APP_CHECK_SITE_KEY) return;
+  try {
+    const m = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-app-check.js');
+    m.initializeAppCheck(app, { provider: new m.ReCaptchaV3Provider(APP_CHECK_SITE_KEY), isTokenAutoRefreshEnabled: true });
+  } catch (e) { console.warn('App Check', e); }
+}
+
 /* ======= الترخيص: تُضخّعه لوحة التسليم (window.MEQAT_LICENSE) — عند غيابه يعمل النظام الكامل بلا قيود ======= */
 const LICENSE = (typeof window !== 'undefined' && window.MEQAT_LICENSE) || null;
 // مزامنة الترخيص السحابي عن بُعد (مجاناً، مرة واحدة كل 12 ساعة) لتمديد الاشتراك أو ترقية الباقة دون إرسال ملف جديد
@@ -710,7 +721,7 @@ const fmtMinsH = m => `${Math.floor(m / 60)} س${m % 60 ? ' و ' + (m % 60) + ' 
 const DAY_NAMES = ['الأحد', 'الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'];
 const DAY_ORDER = [6, 0, 1, 2, 3, 4, 5]; // يبدأ الأسبوع بالسبت
 const MODES = { fixed: 'دوام ثابت', rotation: 'ورديات دورية', flex: 'ساعات مرنة' };
-const OT_DEF = { mode: 'hours', baseH: 0, min: 15, step: 15, capH: 0, rateNormal: 1.5, rateRest: 2, rateHoliday: 2, offDayAll: true };
+const OT_DEF = { mode: 'hours', baseH: 0, min: 15, step: 15, capH: 0, rateNormal: 1.5, rateRest: 2, rateHoliday: 2 };
 
 function normSched(s) {
   if (!s) return null;
@@ -781,6 +792,51 @@ function forgotMsOf(sc) {
   return Math.max(FORGOT_MS, (mx + 240) * 60000);
 }
 
+/* أطول يوم عمل مخطط في الجدول (بالدقائق): يُستخدم حدًّا افتراضيًا للساعات العادية في يوم الراحة/العطلة */
+function typicalDayMin(sc) {
+  let mx = 0;
+  const per = (s, e) => { if (!s || !e) return 0; const a = hm(s); let b = hm(e); if (b <= a) b += 1440; return b - a; };
+  if (sc) {
+    if (sc.mode === 'rotation') (sc.shifts || []).forEach(x => { mx = Math.max(mx, per(x.s, x.e)); });
+    else if (sc.mode === 'fixed') Object.values(sc.days || {}).forEach(d => { if (d && d.on) mx = Math.max(mx, (d.p || []).reduce((a, p) => a + per(p.s, p.e), 0)); });
+    else if (sc.mode === 'flex') Object.values(sc.days || {}).forEach(d => { if (d && d.on) mx = Math.max(mx, (+d.h || 0) * 60); });
+  }
+  return mx;
+}
+
+/* سياسة العمل في يوم الراحة (rest) أو العطلة الرسمية (hol) — مستقلة عن وضع الإضافي في الأيام العادية.
+   all: كل الساعات إضافية بالمعامل · afterBase: عادية حتى حد ثم الزائد إضافي · tiered: معامل للشريحة الأولى وأعلى للزائد
+   fixed: بدل ثابت (ساعات مكافئة) إن بلغ الحضور حدًّا أدنى · normal: ساعات عادية بلا إضافي.
+   تُرجع null إن لم يكن هناك إضافي، وإلا { min: دقائق الإضافي (تُخصم من العادي)، eq: ساعات مكافئة، rate }.
+   الجداول القديمة بلا الحقول الجديدة: تبقى «all» (أو «normal» إن كان وضع الإضافي none) فلا يتغير حسابها. */
+const OFFDAY_MODES = ['all', 'afterBase', 'tiered', 'fixed', 'normal'];
+function offDayOT(ot, dayType, netMin, typicalMin) {
+  const hol = dayType === 'holiday';
+  const pre = hol ? 'hol' : 'rest';
+  let mode = ot[pre + 'Mode'];
+  if (!OFFDAY_MODES.includes(mode)) mode = ot.mode === 'none' ? 'normal' : 'all';
+  if (mode === 'normal' || !(netMin > 0)) return null;
+  const rate = +(hol ? ot.rateHoliday : ot.rateRest) || 0;
+  if (mode === 'fixed') {
+    const minH = +ot[pre + 'MinH'] || 0, fixH = +ot[pre + 'FixedH'] || 0;
+    if (fixH <= 0 || netMin < minH * 60) return null;
+    return { min: fixH * 60, eq: fixH * rate, rate };
+  }
+  const cfg = +ot[pre + 'BaseH'] || 0;
+  const baseMin = mode === 'all' ? 0 : (cfg > 0 ? cfg * 60 : (+ot.baseH > 0 ? ot.baseH * 60 : (typicalMin || 0)));
+  let extra = mode === 'afterBase' ? netMin - baseMin : netMin;
+  if (extra <= 0) return null;
+  if (ot.step > 0) extra = Math.floor(extra / ot.step) * ot.step;
+  if (ot.capH > 0) extra = Math.min(extra, ot.capH * 60);
+  if (!(extra >= ot.min) || extra <= 0) return null;
+  if (mode === 'tiered' && baseMin > 0) {
+    const rb = ot[pre + 'RateBase'] == null ? 1 : (+ot[pre + 'RateBase'] || 0);
+    const a = Math.min(extra, baseMin), b = extra - a;
+    return { min: extra, eq: a / 60 * rb + b / 60 * rate, rate: b > 0 ? rate : rb };
+  }
+  return { min: extra, eq: extra / 60 * rate, rate };
+}
+
 function pairSessions(rs, lim = FORGOT_MS) {
   const maxOutSpan = Math.max(lim * 2, 36 * 3600e3);
   const out = []; let open = null;
@@ -800,6 +856,13 @@ function pairSessions(rs, lim = FORGOT_MS) {
   });
   if (open) out.push({ start: open, end: null });
   return out;
+}
+
+/* دمج سجلات الحضور (مخزَّنة + جديدة): إزالة التكرار بالنوع والزمن ثم ترتيب تصاعدي */
+function mergeRecs(a, b) {
+  const m = new Map();
+  [...(a || []), ...(b || [])].forEach(r => { if (r && r.t && !isNaN(r.t.getTime())) m.set(r.type + '|' + r.t.getTime(), r); });
+  return [...m.values()].sort((x, y) => x.t - y.t);
 }
 
 const localMin = d => ((Math.floor(d.getTime() / 60000 + TZOFF) % 1440) + 1440) % 1440;
@@ -845,7 +908,7 @@ function calcDay(sc, key, sesAll, holidays, rotOffset, opt = {}) {
   res.net = net;
 
   const ot = sc ? Object.assign({}, OT_DEF, sc.ot || {}) : Object.assign({}, OT_DEF);
-  if (ot.mode !== 'none' && net > 0) {
+  if (net > 0 && (ot.mode !== 'none' || res.dayType !== 'work')) {
     let extra = 0;
     if (res.dayType === 'work') {
       if (ot.mode === 'hours') extra = net - (ot.baseH > 0 ? ot.baseH * 60 : res.planned);
@@ -854,7 +917,10 @@ function calcDay(sc, key, sesAll, holidays, rotOffset, opt = {}) {
         const schedEnd = b.periods[b.periods.length - 1].e;
         extra = Math.max(0, endMin - schedEnd);
       }
-    } else extra = net;
+    } else {
+      const o = offDayOT(ot, res.dayType, net, typicalDayMin(sc));
+      if (o) { res.otMin = o.min; res.otEq = o.eq; res.otRate = o.rate; }
+    }
     if (extra > 0) {
       if (ot.step > 0) extra = Math.floor(extra / ot.step) * ot.step;
       if (ot.capH > 0) extra = Math.min(extra, ot.capH * 60);
@@ -910,6 +976,12 @@ function calcDay(sc, key, sesAll, holidays, rotOffset, opt = {}) {
 
 const geoK = lat => { const p = lat * Math.PI / 180; return { ky: 111132.92 - 559.82 * Math.cos(2*p) + 1.175 * Math.cos(4*p), kx: 111412.84 * Math.cos(p) - 93.5 * Math.cos(3*p) + 0.118 * Math.cos(5*p) }; };
 const fmtDur = ms => { const m = Math.round(ms / 60000); return `${Math.floor(m / 60)}س ${m % 60}د`; };
+/* رمز إضافة جهاز: 8 خانات من أبجدية بلا التباس (32 رمزًا ≈ 40 بت) بمولّد آمن؛ 256 تقبل القسمة على 32 فلا انحياز */
+const PIN_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+const PIN_TTL_H = 48;
+const genPin = (len = 8) => Array.from(crypto.getRandomValues(new Uint8Array(len)), b => PIN_ALPHABET[b & 31]).join('');
+const fmtPin = p => String(p).slice(0, 4) + '-' + String(p).slice(4);
+const normPin = v => String(v || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
 const randToken = () => Array.from(crypto.getRandomValues(new Uint8Array(16)), b => b.toString(16).padStart(2, '0')).join('');
 const dist = (a, b, c, d) => { const R = 6371000, r = x => x * Math.PI / 180; const dLat = r(c - a), dLng = r(d - b); const h = Math.sin(dLat/2)**2 + Math.cos(r(a)) * Math.cos(r(c)) * Math.sin(dLng/2)**2; return 2 * R * Math.asin(Math.sqrt(h)); };
 const mapLink = (lat, lng) => `https://www.google.com/maps?q=${lat},${lng}`;
@@ -1115,6 +1187,18 @@ service cloud.firestore {
         && (d.role != 'manager' || (d.get('deptScope', '') is string && d.get('deptScope', '').size() > 0 && d.get('deptScope', '').size() <= 100));
     }
 
+    // رمز إضافة جهاز: عشوائي (8 خانات فأكثر)، له انتهاء لا يتجاوز 7 أيام من لحظة الإصدار.
+    function validPin() {
+      let d = request.resource.data;
+      return d.keys().hasOnly(['pin', 'exp', 'createdAt'])
+        && d.pin is string && d.pin.size() >= 8 && d.pin.size() <= 32
+        && d.exp is timestamp && d.exp > request.time && d.exp <= request.time + duration.value(7, 'd')
+        && d.createdAt == request.time;
+    }
+    function validMaxDev() {
+      return request.resource.data.get('maxDevices', 2) in [1, 2, 3];
+    }
+
     match /admins/{uid} {
       // المشرف يقرأ ملفه فقط؛ تعداد أو تعديل صلاحيات المشرفين للمدير العام وحده.
       allow get: if isSuperAdmin() || (request.auth != null && (request.auth.uid == uid
@@ -1127,7 +1211,8 @@ service cloud.firestore {
       allow delete: if isSuperAdmin() && uid != 'owner';
     }
     match /pins/{id} {
-      allow read, write: if isSuperAdmin() || isHrAdmin();
+      allow read, delete: if isSuperAdmin() || isHrAdmin();
+      allow create, update: if (isSuperAdmin() || isHrAdmin()) && validPin();
     }
     match /locations/{id} {
       allow read: if request.auth != null;
@@ -1166,8 +1251,8 @@ service cloud.firestore {
       allow update: if isSuperAdmin()
         || (isHrAdmin() && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
           'name','phone','dept','jobTitle','contractEnd','docExpiry','bioId','assets','scheduleId','rotOffset',
-          'startDate','leaveQuota','empType','locs','active','deviceId','uid','devices','rebindProof'
-        ]))
+          'startDate','leaveQuota','empType','locs','active','deviceId','uid','devices','rebindProof','maxDevices'
+        ]) && validMaxDev())
         || (isPayrollAdmin() && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
           'payMode','payAmount','allowance','bonus','penalty','loanTotal','loanInst','lyStatutory','familyStatus',
           'nationalId','bankName','iban','taskPrices'
@@ -1177,12 +1262,13 @@ service cloud.firestore {
       function validHrCreate() {
         let d = request.resource.data;
         return d.keys().hasOnly(['name','phone','dept','jobTitle','contractEnd','docExpiry','bioId','assets',
-            'scheduleId','rotOffset','startDate','leaveQuota','empType','locs','active','deviceId','createdAt','payMode','payAmount'])
+            'scheduleId','rotOffset','startDate','leaveQuota','empType','locs','active','deviceId','createdAt','payMode','payAmount','maxDevices'])
           && d.keys().hasAll(['name','active','empType'])
           && d.name is string && d.name.size() > 0 && d.name.size() <= 100
           && d.active == true && d.empType in ['staff', 'task']
           && d.get('deviceId', null) == null
           && d.get('payMode', 'none') in ['none', 'task'] && d.get('payAmount', 0) == 0
+          && validMaxDev()
           && d.get('createdAt', request.time) == request.time;
       }
       function unclaimed() {
@@ -1227,10 +1313,11 @@ service cloud.firestore {
         let n = request.resource.data;
         return request.auth != null && resource.data.active == true
           && resource.data.get('devices', null) != null
-          && n.diff(resource.data).affectedKeys().hasOnly(['devices'])
+          && n.diff(resource.data).affectedKeys().hasOnly(['devices', 'lastJoinAt'])
+          && (!('lastJoinAt' in n.diff(resource.data).affectedKeys()) || n.lastJoinAt == request.time)
           && n.devices.diff(resource.data.devices).addedKeys().size() == 1
           && n.devices.diff(resource.data.devices).affectedKeys().size() == 1
-          && n.devices.size() <= 3 && request.auth.uid in n.devices.values()
+          && n.devices.size() <= resource.data.get('maxDevices', 2) && request.auth.uid in n.devices.values()
           && exists(/databases/$(database)/documents/employees/$(empId)/joins/$(request.auth.uid));
       }
       function punchState() {
@@ -1247,6 +1334,8 @@ service cloud.firestore {
           && request.resource.data.keys().hasOnly(['pin', 'ua', 'at'])
           && request.resource.data.pin is string
           && request.resource.data.pin == get(/databases/$(database)/documents/pins/$(empId)).data.pin
+          && get(/databases/$(database)/documents/pins/$(empId)).data.get('exp', null) != null
+          && request.time < get(/databases/$(database)/documents/pins/$(empId)).data.get('exp', request.time)
           && request.resource.data.at == request.time;
         allow delete: if isSuperAdmin() || isHrAdmin();
       }
@@ -1359,6 +1448,7 @@ function setupPage() {
 if (!configured) { setupPage(); }
 else {
   const app = initializeApp(firebaseConfig);
+  await initAppCheck(app);
   const db = getFirestore(app);
   const auth = getAuth(app);
   if (empToken) {
@@ -1367,6 +1457,7 @@ else {
       setEmpManifest(empToken);
       // تطبيق Firebase مستقل للموظف: جلسته لا تتصادم مع جلسة المدير في نفس المتصفح
       const eApp = initializeApp(firebaseConfig, 'emp');
+      await initAppCheck(eApp);
       employeeApp(getFirestore(eApp), getAuth(eApp), empToken);
     }
   }
@@ -1399,17 +1490,17 @@ async function employeeApp(db, auth, token) {
   const askPin = () => new Promise(resolve => {
     root.innerHTML = `<div class="emp-bg"><div class="emp-wrap"><div class="card center" style="margin-top:40px;line-height:1.9">
       <h3 style="margin:0 0 10px">جهاز جديد</h3>
-      <p style="margin:0 0 12px">هذا الجهاز أو المتصفح غير مسجَّل لرابطك. أدخل «رمز الأجهزة» الذي أعطتك إياه الإدارة لإضافته (الحد الأقصى 3 أجهزة).</p>
-      <input id="pinIn" inputmode="numeric" autocomplete="off" dir="ltr" placeholder="الرمز" style="width:100%;margin-bottom:10px;text-align:center">
+      <p style="margin:0 0 12px">هذا الجهاز أو المتصفح غير مسجَّل لرابطك. أدخل «رمز الأجهزة» الذي أعطتك إياه الإدارة لإضافته. الرمز مؤقت (ينتهي خلال يومين) ويُصدره المسؤول عند الحاجة فقط.</p>
+      <input id="pinIn" autocomplete="off" autocapitalize="characters" spellcheck="false" dir="ltr" placeholder="XXXX-XXXX" style="width:100%;margin-bottom:10px;text-align:center;letter-spacing:2px">
       <button class="btn" id="pinGo" type="button">إضافة هذا الجهاز</button>
       <p id="pinMsg" class="bad-txt" style="font-size:13px;margin:10px 0 0"></p></div></div></div>`;
     const go = async () => {
-      const pin = $('#pinIn').value.trim(); if (!pin) return;
+      const pin = normPin($('#pinIn').value); if (pin.length < 8) { $('#pinMsg').textContent = 'الرمز مكوّن من 8 خانات.'; return; }
       const b = $('#pinGo'), msg = $('#pinMsg'); b.disabled = true; msg.textContent = '';
       try { await setDoc(doc(db, 'employees', token, 'joins', uid), { pin, ua: (navigator.userAgent || '').slice(0, 90), at: serverTimestamp() }); }
-      catch { msg.textContent = 'الرمز غير صحيح، أو الرابط غير صالح/موقوف. تأكد من الرمز مع الإدارة.'; b.disabled = false; return; }
-      try { await updateDoc(ref, { ['devices.' + myDev]: uid }); }
-      catch { msg.textContent = 'تعذر إضافة الجهاز: وصلت الحد الأقصى (3 أجهزة) أو الرابط قديم. اطلب من الإدارة إعادة ضبط الأجهزة.'; b.disabled = false; return; }
+      catch { msg.textContent = 'الرمز غير صحيح أو منتهي، أو الرابط غير صالح/موقوف. اطلب من الإدارة رمزًا جديدًا.'; b.disabled = false; return; }
+      try { await updateDoc(ref, { ['devices.' + myDev]: uid, lastJoinAt: serverTimestamp() }); }
+      catch { msg.textContent = 'تعذر إضافة الجهاز: وصلت الحد الأقصى لأجهزتك أو الرابط قديم. اطلب من الإدارة إلغاء جهاز قديم أو إعادة الضبط.'; b.disabled = false; return; }
       resolve(true);
     };
     $('#pinGo').onclick = go; $('#pinIn').onkeydown = e => { if (e.key === 'Enter') go(); };
@@ -1570,6 +1661,33 @@ async function employeeApp(db, auth, token) {
   let histRid = emp.lastRecId || '', histRows = null;
   const readHist = () => { try { const c = JSON.parse(localStorage.getItem(HK) || 'null'); return c && Array.isArray(c.rows) ? c : null; } catch { return null; } };
   const saveHist = rows => { try { localStorage.setItem(HK, JSON.stringify({ rid: histRid, day: dayKey(now()), rows: rows.map(r => ({ type: r.type, ms: r.t.getTime(), loc: r.locationName || '' })) })); } catch {} };
+  /* سجلات الشهر الحالي كاملة (لا تقتصر على آخر 15): كاش محلي + قراءة تزايدية لما بعد آخر سجل محفوظ.
+     قراءة كاملة جديدة عند تغيّر الشهر أو مرور أكثر من 3 أيام على آخر قراءة كاملة (لالتقاط تصحيحات الإدارة بأثر رجعي). */
+  const MK = 'att_month_' + token, MONTH_FULL_MS = 3 * 86400e3, MONTH_CAP = 1500;
+  const readMonth = () => { try { const c = JSON.parse(localStorage.getItem(MK) || 'null'); return c && Array.isArray(c.rows) ? c : null; } catch { return null; } };
+  const toRec = d => { const x = d.data(); return { type: x.type, t: x.time && x.time.toDate ? x.time.toDate() : null }; };
+  async function loadMonth(force) {
+    const mk = dayKey(now()).slice(0, 7);
+    const from = new Date(dayStart(mk + '-01').getTime() - 86400000);   // يوم قبل الشهر لإكمال الجلسة الليلية العابرة
+    const col = collection(db, 'employees', token, 'records');
+    const c = force ? null : readMonth();
+    let rows = null, fullAt = Date.now();
+    if (c && c.mk === mk && c.fullAt && Date.now() - c.fullAt < MONTH_FULL_MS && c.rows.length) {
+      const cached = c.rows.map(r => ({ type: r.type, t: new Date(r.ms) }));
+      if (c.rid === histRid) rows = cached;
+      else {
+        const lastMs = cached[cached.length - 1].t.getTime();
+        const s = await getDocs(query(col, where('time', '>', Timestamp.fromMillis(lastMs)), orderBy('time', 'asc'), limit(500)));
+        rows = mergeRecs(cached, s.docs.map(toRec)); fullAt = c.fullAt;
+      }
+    }
+    if (!rows) {
+      const s = await getDocs(query(col, where('time', '>=', Timestamp.fromDate(from)), orderBy('time', 'asc'), limit(MONTH_CAP)));
+      rows = mergeRecs([], s.docs.map(toRec));
+    }
+    try { localStorage.setItem(MK, JSON.stringify({ mk, rid: histRid, fullAt, rows: rows.map(r => ({ type: r.type, ms: r.t.getTime() })) })); } catch {}
+    return { rows, mk, capped: rows.length >= MONTH_CAP };
+  }
   async function loadHist(opt = {}) {
     try {
       let rows = null;
@@ -1595,13 +1713,12 @@ async function employeeApp(db, auth, token) {
     const canOut = !!(last && last.type === 'in' && (n - last.t) <= maxOutSpan);
     $('#bIn').disabled = !canIn; $('#bOut').disabled = !canOut;
     $('#state').innerHTML = last ? (last.type === 'in' ? `<span class="badge b-ok">${ic('check', 16)} أنت حاضر منذ ${fmtTime(last.t)}</span>` : `<span class="badge b-mute">آخر انصراف ${fmtTime(last.t)}</span>`) : '';
-    try {
-      const box = $('#myMonthBox');
-      if (box && histRows) {
-        const mk = dayKey(now()).slice(0, 7);
-        const mRecs = histRows.filter(r => dayKey(r.t).startsWith(mk));
-        const ses = pairSessions(mRecs, forgotLim);
-        const daysSet = new Set(ses.map(s => dayKey(s.start)));
+    const box = $('#myMonthBox');
+    if (box) {
+      try {
+        const { rows: allRows, mk, capped } = await loadMonth(!!opt.force);
+        const ses = pairSessions(allRows, forgotLim);
+        const daysSet = new Set(ses.map(x => dayKey(x.start)).filter(k => k.startsWith(mk)));
         let totalMin = 0, lateDays = 0;
         daysSet.forEach(k => {
           const met = calcDay(sched, k, ses, hols, emp.rotOffset || 0, { nowMs: now().getTime(), cap: forgotLim });
@@ -1615,12 +1732,12 @@ async function employeeApp(db, auth, token) {
           : (emp.payMode === 'hourly' && emp.payAmount > 0)
           ? `<div style="margin-top:8px;padding-top:8px;border-top:1px dashed var(--line);font-size:13.5px">المستحق التقديري للشهر: <b>${((totalMin / 60) * emp.payAmount).toFixed(1)} د.ل</b> (${emp.payAmount} د.ل/ساعة)</div>` : '';
         box.innerHTML = `<div style="display:flex;gap:10px;flex-wrap:wrap;justify-content:space-between">
-          <span>أيام الحضور (آخر السجلات): <b>${dCount}</b></span>
+          <span>أيام الحضور هذا الشهر: <b>${dCount}</b></span>
           <span>صافي الساعات: <b>${fmtDur(totalMin * 60000)}</b></span>
           <span>نسبة الانضباط: <b class="badge ${onTimePct >= 90 ? 'b-ok' : 'b-warn'}">${onTimePct}%</b></span>
-        </div>${salInfo}`;
-      }
-    } catch {}
+        </div>${salInfo}${capped ? '<div class="muted" style="margin-top:6px;font-size:12px">عدد تسجيلات الشهر كبير؛ الملخص قد يكون ناقصًا.</div>' : ''}`;
+      } catch (err) { console.warn(err); box.textContent = 'تعذر تحميل ملخص الشهر. تحقق من الاتصال.'; }
+    }
   }
 
   const setMsg = (t, c = '') => { const m = $('#msg'); if (m) { m.className = 'status ' + c; m.textContent = t; } };
@@ -2366,11 +2483,30 @@ function adminApp(db, auth) {
         h += `<div class="field"><label>التقريب للأدنى كل</label>${sel('ot.step', W.ot.step, [[0, 'بدون تقريب'], [5, '5 دقائق'], [10, '10 دقائق'], [15, '15 دقيقة'], [30, '30 دقيقة'], [60, 'ساعة']])}</div>`;
         h += `<div class="field"><label>أقصى إضافي يومياً بالساعات (0 = بلا حد)</label>${nm('ot.capH', W.ot.capH, 'min="0" step="0.25"')}</div>`;
         h += `<div class="field"><label>معامل الإضافي في الأيام العادية</label>${nm('ot.rateNormal', W.ot.rateNormal, 'min="0" step="0.05"')}</div>`;
-        h += `<div class="field"><label>معامل العمل في يوم الراحة</label>${nm('ot.rateRest', W.ot.rateRest, 'min="0" step="0.05"')}</div>`;
-        h += `<div class="field"><label>معامل العمل في العطلة الرسمية</label>${nm('ot.rateHoliday', W.ot.rateHoliday, 'min="0" step="0.05"')}</div>`;
-        h += `<div class="field" style="grid-column:1/-1"><label class="chk"><input type="checkbox" data-k="ot.offDayAll" ${W.ot.offDayAll ? 'checked' : ''}> كل ساعات العمل في يوم الراحة أو العطلة تُحتسب إضافية</label></div>`;
       }
       h += `</div><p class="hint">المعاملات للمحاسب: تُضرب بها ساعات الإضافي لتعطي الساعات المكافئة في التقارير.</p>`;
+      // سياسة العمل في يوم الراحة والعطلة الرسمية (مستقلة عن وضع الإضافي في الأيام العادية)
+      const MODE_OPTS = [['all', 'كل الساعات إضافية'], ['afterBase', 'عادية حتى حد، والزائد إضافي'], ['tiered', 'شرائح: معامل للأولى ومعامل أعلى للزائد'], ['fixed', 'بدل ثابت إن بلغ الحضور حدًّا أدنى'], ['normal', 'ساعات عادية فقط (بلا إضافي)']];
+      const MODE_HINT = {
+        all: 'كل ساعة عمل تُضرب في المعامل. مثال: 6 ساعات × 2 = 12 ساعة مكافئة.',
+        afterBase: 'الساعات حتى الحد تُحتسب عادية، وما زاد عنها يُضرب في المعامل. الحد 0 = أطول يوم في الجدول.',
+        tiered: 'الشريحة الأولى (حتى الحد) بمعاملها، وما زاد بالمعامل الأعلى. الحد 0 = أطول يوم في الجدول.',
+        fixed: 'إن عمل الموظف الحد الأدنى فأكثر يُمنح عددًا ثابتًا من الساعات المكافئة بغض النظر عن ساعاته الفعلية (مثال: يوم كامل = 8).',
+        normal: 'لا إضافي: تُحتسب الساعات عادية. الموظف الشهري لا يتقاضى أكثر من راتبه الشهري على هذا اليوم.'
+      };
+      h += `<div class="sec-t">${ic('payroll', 20)} العمل في يوم الراحة والعطلة الرسمية</div>`;
+      [['rest', 'يوم الراحة', 'rateRest'], ['hol', 'العطلة الرسمية', 'rateHoliday']].forEach(([p, lab, rk]) => {
+        const md = OFFDAY_MODES.includes(W.ot[p + 'Mode']) ? W.ot[p + 'Mode'] : (W.ot.mode === 'none' ? 'normal' : 'all');
+        h += `<div class="g2" style="margin-bottom:6px"><div class="field" style="grid-column:1/-1"><label>${lab}: كيف تُحتسب ساعات العمل؟</label>${sel('ot.' + p + 'Mode', md, MODE_OPTS, true)}</div>`;
+        if (md !== 'normal') h += `<div class="field"><label>${md === 'fixed' ? 'معامل البدل' : md === 'all' ? 'معامل الساعات' : 'معامل الساعات الزائدة'}</label>${nm('ot.' + rk, W.ot[rk], 'min="0" step="0.05"')}</div>`;
+        if (md === 'afterBase' || md === 'tiered') h += `<div class="field"><label>حد الساعات (0 = أطول يوم في الجدول)</label>${nm('ot.' + p + 'BaseH', W.ot[p + 'BaseH'] ?? 0, 'min="0" step="0.25"')}</div>`;
+        if (md === 'tiered') h += `<div class="field"><label>معامل الشريحة الأولى</label>${nm('ot.' + p + 'RateBase', W.ot[p + 'RateBase'] ?? 1, 'min="0" step="0.05"')}</div>`;
+        if (md === 'fixed') {
+          h += `<div class="field"><label>الحد الأدنى للحضور (ساعات)</label>${nm('ot.' + p + 'MinH', W.ot[p + 'MinH'] ?? 0, 'min="0" step="0.25"')}</div>`;
+          h += `<div class="field"><label>الساعات المكافئة الثابتة</label>${nm('ot.' + p + 'FixedH', W.ot[p + 'FixedH'] ?? 8, 'min="0" step="0.25"')}</div>`;
+        }
+        h += `</div><p class="hint" style="margin-top:0">${MODE_HINT[md]}</p>`;
+      });
       return h;
     };
     openModal({
@@ -2403,8 +2539,10 @@ function adminApp(db, auth) {
           if (!c.anchor) return bad('حدد تاريخ اليوم الأول من الدورة');
         }
         ['breakMin', 'graceLate', 'graceEarly'].forEach(k => c[k] = Math.max(0, +c[k] || 0));
-        ['baseH', 'min', 'step', 'capH', 'rateNormal', 'rateRest', 'rateHoliday'].forEach(k => c.ot[k] = Math.max(0, +c.ot[k] || 0));
-        c.ot.offDayAll = !!c.ot.offDayAll;
+        ['baseH', 'min', 'step', 'capH', 'rateNormal', 'rateRest', 'rateHoliday', 'restBaseH', 'holBaseH', 'restMinH', 'holMinH', 'restFixedH', 'holFixedH'].forEach(k => { if (c.ot[k] != null) c.ot[k] = Math.max(0, +c.ot[k] || 0); });
+        ['restRateBase', 'holRateBase'].forEach(k => { if (c.ot[k] != null) c.ot[k] = Math.max(0, +c.ot[k] || 0); });
+        ['rest', 'hol'].forEach(p => { if (!OFFDAY_MODES.includes(c.ot[p + 'Mode'])) c.ot[p + 'Mode'] = c.ot.mode === 'none' ? 'normal' : 'all'; });
+        delete c.ot.offDayAll;   // استُبدل بسياسة يوم الراحة/العطلة الصريحة
         c.updatedAt = serverTimestamp();
         if (ex) await setDoc(doc(db, 'schedules', ex.id), c); else await addDoc(collection(db, 'schedules'), { ...c, createdAt: serverTimestamp() });
         await loadAll(); toast('تم حفظ الجدول', 'good');
@@ -2413,6 +2551,67 @@ function adminApp(db, auth) {
   }
 
 /* --- محرر بيانات الموظف الشامل (360° + الرواتب الليبية + السلف + المصرف) --- */
+  /* ---- الأجهزة والرمز: عرض الأجهزة المسجّلة، إلغاء جهاز بعينه، ضبط الحد الأقصى، وإصدار رمز مؤقت عشوائي ---- */
+  async function deviceManager(e) {
+    if (!e) return;
+    const empRef = doc(db, 'employees', e.id);
+    const W = { max: e.maxDevices || 2, joins: {}, pin: null, pinState: 'none', pinExp: 0, busy: false };
+    try { const js = await getDocs(collection(db, 'employees', e.id, 'joins')); js.docs.forEach(d => { W.joins[d.id] = d.data(); }); } catch {}
+    try {
+      const p = await getDoc(doc(db, 'pins', e.id)); const d = p.exists() ? p.data() : null;
+      W.pinExp = d && d.exp && d.exp.toMillis ? d.exp.toMillis() : 0;
+      W.pinState = W.pinExp > Date.now() ? 'active' : (d ? 'expired' : 'none');
+    } catch {}
+    const stamp = t => t && t.toDate ? `${fmtDate(t.toDate())} ${fmtTime(t.toDate())}` : '';
+    const devRows = () => {
+      const map = e.devices || {}, ks = Object.keys(map);
+      if (!ks.length) return `<p class="muted">${e.deviceId ? 'رابط قديم مربوط بجهاز واحد.' : 'لا توجد أجهزة مسجّلة بعد؛ أول جهاز يفتح الرابط يُسجَّل دون رمز.'}</p>`;
+      return ks.map(k => {
+        const j = W.joins[map[k]];
+        return `<div style="display:flex;gap:10px;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--line)"><div><b dir="ltr" style="font-size:12.5px;word-break:break-all">${j && j.ua ? esc(j.ua) : 'الجهاز الأول (سُجّل دون رمز)'}</b><div class="muted" style="font-size:12px">${esc(stamp(j && j.at))}</div></div><button class="btn sm bad" data-a="rev" data-key="${esc(k)}">إلغاء</button></div>`;
+      }).join('');
+    };
+    const pinBox = () => W.pin
+      ? `<div class="notice" style="text-align:center"><div class="muted">يُعرض مرة واحدة — صالح ${PIN_TTL_H} ساعة</div><div dir="ltr" style="font-size:26px;font-weight:800;letter-spacing:3px;margin:6px 0">${fmtPin(W.pin)}</div><div style="display:flex;gap:8px;justify-content:center"><button class="btn sm sec" data-a="copypin">نسخ</button><button class="btn sm ok" data-a="wapin">إرسال واتساب</button></div></div>`
+      : `<p class="muted">${W.pinState === 'active' ? 'يوجد رمز صالح حتى ' + esc(fmtDate(new Date(W.pinExp)) + ' ' + fmtTime(new Date(W.pinExp))) + ' (لا يمكن عرضه مجددًا؛ أصدر رمزًا جديدًا إن ضاع).' : W.pinState === 'expired' ? 'الرمز السابق منتهٍ.' : 'لا يوجد رمز صالح.'}</p>`;
+    const act = async (a, d) => {
+      try {
+        if (a === 'newpin') {
+          const pin = genPin(); const exp = Date.now() + PIN_TTL_H * 3600e3;
+          await setDoc(doc(db, 'pins', e.id), { pin, exp: Timestamp.fromMillis(exp), createdAt: serverTimestamp() });
+          W.pin = pin; W.pinState = 'active'; W.pinExp = exp; toast('أُصدر رمز جديد وتوقف الرمز السابق', 'good');
+        } else if (a === 'killpin') {
+          await deleteDoc(doc(db, 'pins', e.id)); W.pin = null; W.pinState = 'none'; toast('أُلغي الرمز', 'good');
+        } else if (a === 'copypin' && W.pin) {
+          await navigator.clipboard.writeText(fmtPin(W.pin)); toast('تم النسخ', 'good');
+        } else if (a === 'wapin' && W.pin) {
+          const msg = `مرحباً ${e.name}، رمز إضافة جهاز جديد لرابطك في «${BRAND}»: ${fmtPin(W.pin)}\nصالح ${PIN_TTL_H} ساعة. لا تشاركه مع أحد.`;
+          const l = document.createElement('a'); l.href = `https://wa.me/${e.phone || ''}?text=${encodeURIComponent(msg)}`; l.target = '_blank'; l.rel = 'noopener noreferrer'; l.click();
+        } else if (a === 'rev') {
+          const key = d.key, map = e.devices || {}, uidv = map[key];
+          if (!uidv || !confirm('إلغاء هذا الجهاز؟ سيحتاج صاحبه رمزًا جديدًا لإضافته.')) return;
+          const rest = Object.fromEntries(Object.entries(map).filter(([x]) => x !== key));
+          if (Object.keys(rest).length) { await updateDoc(empRef, { devices: rest }); e.devices = rest; }
+          else { await updateDoc(empRef, { deviceId: null, uid: null, devices: null, rebindProof: null }); e.devices = null; e.uid = null; e.deviceId = null; }
+          try { await deleteDoc(doc(db, 'employees', e.id, 'joins', uidv)); } catch {}
+          delete W.joins[uidv]; toast('أُلغي الجهاز', 'good'); render();
+        }
+      } catch (err) { console.error(err); toast(err && err.code === 'permission-denied' ? 'غير مسموح: انشر قواعد Firestore المحدثة أولًا' : 'تعذرت العملية', 'err'); }
+      m.draw();
+    };
+    const m = openModal({
+      title: `الأجهزة والرمز — ${esc(e.name)}`, saveText: 'حفظ الحد الأقصى',
+      body: () => `<p class="muted">الأجهزة المسجّلة (${e.devices ? Object.keys(e.devices).length : (e.deviceId ? 1 : 0)}/${W.max})</p>${devRows()}
+        <div class="field" style="max-width:260px;margin-top:12px"><label>الحد الأقصى للأجهزة</label><select data-k="max">${[1, 2, 3].map(v => `<option value="${v}" ${W.max === v ? 'selected' : ''}>${v}</option>`).join('')}</select></div>
+        <h4 style="margin:16px 0 6px">رمز إضافة جهاز جديد</h4>${pinBox()}
+        <div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn sm" data-a="newpin">إصدار رمز جديد</button>${W.pinState === 'active' ? '<button class="btn sm sec" data-a="killpin">إلغاء الرمز الحالي</button>' : ''}</div>`,
+      onField: (k, v) => { if (k === 'max') W.max = +v; },
+      onAct: (a, d) => { act(a, d); },
+      onSave: async () => {
+        if (W.max !== (e.maxDevices || 2)) { await updateDoc(empRef, { maxDevices: W.max }); e.maxDevices = W.max; render(); toast('حُفظ الحد الأقصى للأجهزة', 'good'); }
+      }
+    });
+  }
   function employeeEditor(e) {
     const created = e.createdAt && e.createdAt.toDate ? dayKey(e.createdAt.toDate()) : dayKey(new Date());
     const W = {
@@ -2555,7 +2754,7 @@ function adminApp(db, auth) {
  <span class="av">${ini(e.name)}</span>
  <div class="er-n"><b>${esc(e.name)}</b>${e.empType === 'task' ? '<span class="badge b-pri">موظف مهام</span>' : ''}</div>
  <div class="er-b">${e.dept ? `<span class="badge b-warn">${esc(e.dept)}</span>` : ''}${e.empType === 'task' ? '<span class="badge b-mute">حسب المهام</span>' : sname(e.scheduleId) ? `<span class="badge b-pri">${esc(sname(e.scheduleId))}</span>` : '<span class="badge b-mute">دوام غير محدد</span>'}</div>
- <div class="er-b">${e.active ? '<span class="badge b-ok">مفعّل</span>' : '<span class="badge b-bad">موقوف</span>'}${(() => { const n = e.devices ? Object.keys(e.devices).length : (e.deviceId ? 1 : 0); return n ? `<span class="badge b-ok">الأجهزة: ${n}/3</span>` : '<span class="badge b-mute">جهاز جديد</span>'; })()}</div>
+ <div class="er-b">${e.active ? '<span class="badge b-ok">مفعّل</span>' : '<span class="badge b-bad">موقوف</span>'}${(() => { const n = e.devices ? Object.keys(e.devices).length : (e.deviceId ? 1 : 0); return (n ? `<span class="badge b-ok">الأجهزة: ${n}/${e.maxDevices || 2}</span>` : '<span class="badge b-mute">جهاز جديد</span>') + (e.lastJoinAt && e.lastJoinAt.toMillis && Date.now() - e.lastJoinAt.toMillis() < 72 * 3600e3 ? '<span class="badge b-warn">أُضيف جهاز حديثًا</span>' : ''); })()}</div>
  <div class="er-a">
  <button class="btn sm sec" data-act="editEmp" data-id="${e.id}">${ic('edit', 16)} تعديل</button>
  <button class="btn sm" data-act="copy" data-id="${e.id}">${ic('link', 16)} نسخ الرابط</button>
@@ -2563,7 +2762,7 @@ function adminApp(db, auth) {
  <details class="act-menu"><summary>المزيد</summary><div class="act-drop">
  <button data-act="certEmp" data-id="${e.id}">${ic('print', 18)} إفادة عمل / تعريف راتب</button>
  <button data-act="assetDoc" data-id="${e.id}">${ic('print', 18)} محضر عهدة / إخلاء طرف</button>
- <button data-act="devPin" data-id="${e.id}">${ic('device', 18)} رمز الأجهزة (PIN)</button>
+ <button data-act="devPin" data-id="${e.id}">${ic('device', 18)} الأجهزة والرمز</button>
  <button data-act="resetDev" data-id="${e.id}">${ic('device', 18)} إعادة ضبط الأجهزة</button>
  <button data-act="toggle" data-id="${e.id}">${ic('power', 18)} ${e.active ? 'إيقاف الموظف' : 'تفعيل الموظف'}</button>
  ${!e.active ? `<button class="bad-txt" data-act="hardDelEmp" data-id="${e.id}">${ic('trash', 18)} حذف نهائي</button>` : ''}
@@ -3278,25 +3477,16 @@ function adminApp(db, auth) {
         const phone = $('#ePhone').value.replace(/\D/g, '');
         const nid = randToken(); const isTask = !!($('#eType') && $('#eType').value === 'task');
         await setDoc(doc(db, 'employees', nid), { name, phone, active: true, deviceId: null, scheduleId: (isTask ? '' : ($('#eSched') ? $('#eSched').value : '')), empType: isTask ? 'task' : 'staff', payMode: isTask ? 'task' : 'none', payAmount: 0, rotOffset: 0, startDate: dayKey(new Date()), createdAt: serverTimestamp() });
-        const newPin = String(Math.floor(100000 + Math.random() * 900000)); await setDoc(doc(db, 'pins', nid), { pin: newPin });
-        await loadAll(); toast('تمت الإضافة — انسخ الرابط وأرسله للموظف (رمز الأجهزة من «المزيد»)', 'good');
+        await loadAll(); toast('تمت الإضافة — انسخ الرابط وأرسله للموظف', 'good');
       }
       if (act === 'copy') { await navigator.clipboard.writeText(linkOf(id)); toast('تم نسخ رابط الموظف', 'good'); }
       if (act === 'wa') {
         const e = S.emps.find(x => x.id === id);
-        let pinTxt = '';
-        try { const s = await getDoc(doc(db, 'pins', id)); if (s.exists()) pinTxt = `\n\nرمز الأجهزة (يُطلب منك مرة واحدة عند فتح التطبيق من أيقونة الشاشة الرئيسية أو من متصفح آخر): ${s.data().pin}`; } catch {}
+        const pinTxt = '';
         const msg = `مرحباً ${e.name}، هذا رابطك الشخصي في «${BRAND}» لتسجيل الحضور والانصراف (لا تشاركه مع أحد):\n${linkOf(id)}\n\nافتحه من متصفح Chrome أو Safari وليس من داخل واتساب.${pinTxt}`;
         const a = document.createElement('a'); a.href = `https://wa.me/${e.phone || ''}?text=${encodeURIComponent(msg)}`; a.target = '_blank'; a.rel = 'noopener noreferrer'; a.click();
       }
-      if (act === 'devPin') {
-        const e = S.emps.find(x => x.id === id);
-        const gen = () => String(Math.floor(100000 + Math.random() * 900000));
-        let pin = null;
-        try { const s = await getDoc(doc(db, 'pins', id)); if (s.exists()) pin = s.data().pin; } catch {}
-        if (!pin) { pin = gen(); await setDoc(doc(db, 'pins', id), { pin }); alert(`رمز الأجهزة لـ «${e.name}»:\n\n${pin}\n\nيُطلب منه عند إضافة جهاز أو متصفح جديد (حد أقصى 3 أجهزة).`); }
-        else if (confirm(`رمز الأجهزة الحالي لـ «${e.name}»: ${pin}\n\nموافق = توليد رمز جديد (القديم يتوقف)\nإلغاء = إبقاء الرمز كما هو`)) { pin = gen(); await setDoc(doc(db, 'pins', id), { pin }); alert(`الرمز الجديد: ${pin}`); }
-      }
+      if (act === 'devPin') return deviceManager(S.emps.find(x => x.id === id));
       if (act === 'resetDev') { if (confirm('إعادة ضبط كل الأجهزة المرتبطة بهذا الموظف؟ سيتوجب عليه فتح الرابط من جهازه بعد ذلك.')) { await updateDoc(doc(db, 'employees', id), { deviceId: null, uid: null, devices: null, rebindProof: null }); await loadAll(); toast('تمت إعادة الضبط', 'good'); } }
       if (act === 'toggle') {
         const e = S.emps.find(x => x.id === id);
