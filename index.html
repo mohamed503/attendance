@@ -1144,9 +1144,9 @@ service cloud.firestore {
     match /settings/{id} {
       allow read: if request.auth != null;
       allow create: if isSuperAdmin() || (isHrAdmin()
-        && request.resource.data.keys().hasOnly(['orgName', 'tzOffset', 'forgotDeductDays', 'empNotice', 'leaveTypes', 'cfgVersion', 'updatedAt']));
+        && request.resource.data.keys().hasOnly(['orgName', 'tzOffset', 'empNotice', 'leaveTypes', 'cfgVersion', 'updatedAt']));
       allow update: if isSuperAdmin() || (isHrAdmin()
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['orgName', 'tzOffset', 'forgotDeductDays', 'empNotice', 'leaveTypes', 'cfgVersion', 'updatedAt']));
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['orgName', 'tzOffset', 'empNotice', 'leaveTypes', 'cfgVersion', 'updatedAt']));
       allow delete: if isSuperAdmin();
     }
     match /taskTypes/{id} {
@@ -1160,19 +1160,31 @@ service cloud.firestore {
       // Firestore Rules are not filters: manager queries must include dept == their deptScope.
       allow list: if globalReadRole() || (isManager() && managerScope() is string
         && managerScope() != '' && resource.data.get('dept', '') == managerScope());
-      allow create: if isSuperAdmin() || isHrAdmin();
+      // الموارد البشرية تنشئ ملف موظف أساسيًا فقط؛ الحقول المالية والمصرفية وهوية الجهاز لا تُكتب عند الإنشاء.
+      allow create: if isSuperAdmin() || (isHrAdmin() && validHrCreate());
       allow delete: if isSuperAdmin();
       allow update: if isSuperAdmin()
         || (isHrAdmin() && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
           'name','phone','dept','jobTitle','contractEnd','docExpiry','bioId','assets','scheduleId','rotOffset',
-          'startDate','leaveQuota','empType','locs','taskPrices','active','deviceId','uid','devices','rebindProof'
+          'startDate','leaveQuota','empType','locs','active','deviceId','uid','devices','rebindProof'
         ]))
         || (isPayrollAdmin() && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
           'payMode','payAmount','allowance','bonus','penalty','loanTotal','loanInst','lyStatutory','familyStatus',
-          'nationalId','bankName','iban'
+          'nationalId','bankName','iban','taskPrices'
         ]))
         || claimDevice() || migrateLegacy() || rebindLegacy() || rebindMap() || joinDevice() || punchState();
 
+      function validHrCreate() {
+        let d = request.resource.data;
+        return d.keys().hasOnly(['name','phone','dept','jobTitle','contractEnd','docExpiry','bioId','assets',
+            'scheduleId','rotOffset','startDate','leaveQuota','empType','locs','active','deviceId','createdAt','payMode','payAmount'])
+          && d.keys().hasAll(['name','active','empType'])
+          && d.name is string && d.name.size() > 0 && d.name.size() <= 100
+          && d.active == true && d.empType in ['staff', 'task']
+          && d.get('deviceId', null) == null
+          && d.get('payMode', 'none') in ['none', 'task'] && d.get('payAmount', 0) == 0
+          && d.get('createdAt', request.time) == request.time;
+      }
       function unclaimed() {
         return request.auth != null && request.auth.token.firebase.sign_in_provider == 'anonymous'
           && resource.data.get('uid', null) == null
@@ -1990,6 +2002,15 @@ function adminApp(db, auth) {
   }
   const isSuper = () => S.role === 'super_admin';
   const isHr = () => S.role === 'hr_admin';
+  const isPay = () => S.role === 'payroll_admin';
+  // يطابق قيود قواعد Firestore: الموارد البشرية لا تكتب الحقول المالية، والرواتب لا تكتب حقول الموظف/الدوام.
+  const HR_EMP_KEYS = new Set(['name','phone','dept','jobTitle','contractEnd','docExpiry','bioId','assets','scheduleId','rotOffset','startDate','leaveQuota','empType','locs','active']);
+  const PAY_EMP_KEYS = new Set(['payMode','payAmount','allowance','bonus','penalty','loanTotal','loanInst','lyStatutory','familyStatus','nationalId','bankName','iban','taskPrices']);
+  const scopeEmpPatch = p => {
+    if (isSuper()) return p;
+    const allow = isHr() ? HR_EMP_KEYS : isPay() ? PAY_EMP_KEYS : new Set();
+    return Object.fromEntries(Object.entries(p).filter(([k]) => allow.has(k)));
+  };
   const isManager = () => S.role === 'manager';
   const base = location.origin + location.pathname;
   const linkOf = id => `${base}?e=${id}`;
@@ -2482,7 +2503,7 @@ function adminApp(db, auth) {
         };
         if (W.empType === 'task') {
           const tp = {}; Object.entries(W.tp).forEach(([k, v]) => { if (v !== '' && v != null && +v >= 0) tp[k] = +v; });
-          await updateDoc(doc(db, 'employees', e.id), { ...common, empType: 'task', payMode: 'task', payAmount: 0, scheduleId: '', rotOffset: 0, locs: [], taskPrices: tp });
+          await updateDoc(doc(db, 'employees', e.id), scopeEmpPatch({ ...common, empType: 'task', payMode: 'task', payAmount: 0, scheduleId: '', rotOffset: 0, locs: [], taskPrices: tp }));
           await loadAll(); toast('تم حفظ ملف الموظف', 'good'); return;
         }
         const sc = S.scheds.find(x => x.id === W.scheduleId);
@@ -2491,14 +2512,14 @@ function adminApp(db, auth) {
         const ids = Object.keys(W.locs).filter(id => W.locs[id]);
         const amt = +W.payAmount || 0;
         if (W.payMode !== 'none' && !(amt > 0)) { toast('اكتب قيمة الراتب', 'err'); return false; }
-        await updateDoc(doc(db, 'employees', e.id), {
+        await updateDoc(doc(db, 'employees', e.id), scopeEmpPatch({
           ...common, scheduleId: sc ? sc.id : '', rotOffset: rot, startDate: W.startDate || created,
           payMode: W.payMode, payAmount: W.payMode === 'none' ? 0 : amt,
           allowance: Math.max(0, +W.allowance || 0), bonus: Math.max(0, +W.bonus || 0), penalty: Math.max(0, +W.penalty || 0),
           loanTotal: Math.max(0, +W.loanTotal || 0), loanInst: Math.max(0, +W.loanInst || 0),
           lyStatutory: !!W.lyStatutory, familyStatus: W.familyStatus || 'single',
           locs: ids, leaveQuota: Math.max(0, +W.leaveQuota || 21), empType: 'staff'
-        });
+        }));
         await loadAll(); toast('تم حفظ ملف الموظف الشامل', 'good');
       }
     });
@@ -2631,7 +2652,7 @@ function adminApp(db, auth) {
           <div class="row">
             <div class="field" style="max-width:320px"><label>اسم المنشأة (يظهر مكان «مِيقَاتْ» في اللوحة)</label><input id="sOrg" value="${esc((S.set && S.set.orgName) || '')}" placeholder="شركة النور"></div>
             <div class="field" style="max-width:260px"><label>المنطقة الزمنية للتقارير</label><select id="sTz">${TZ_OPTS.map(([v, l]) => `<option value="${v}" ${(S.set && +S.set.tzOffset || TZ_OFFSET_MIN) === v ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
-            <div class="field" style="max-width:300px"><label>عند نسيان الموظف تسجيل الانصراف</label><select id="sForgot">${[[0, 'بلا خصم تلقائي (تنبيه فقط)'], [0.25, 'خصم ربع يوم'], [0.5, 'خصم نصف يوم'], [1, 'خصم يوم كامل']].map(([v, l]) => `<option value="${v}" ${forgotDed() === v ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
+            <div class="field" style="max-width:300px"><label>عند نسيان الموظف تسجيل الانصراف</label><select id="sForgot" ${isSuper() ? '' : 'disabled title="تعديل هذا الخيار للمدير العام فقط"'}>${[[0, 'بلا خصم تلقائي (تنبيه فقط)'], [0.25, 'خصم ربع يوم'], [0.5, 'خصم نصف يوم'], [1, 'خصم يوم كامل']].map(([v, l]) => `<option value="${v}" ${forgotDed() === v ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
             <div class="field" style="grid-column:1/-1;flex:1 1 100%"><label>تعميم / إشعار إداري يظهر أعلى شاشة كل موظف (اتركه فارغاً لإخفائه)</label><input id="sNotice" value="${esc((S.set && S.set.empNotice) || '')}" placeholder="مثال: تذكير: غداً عطلة رسمية بمناسبة..."></div>
             <button class="btn" data-act="saveSet">${ic('check', 18)} حفظ الإعدادات</button>
           </div>
@@ -3240,7 +3261,7 @@ function adminApp(db, auth) {
     const act = b.dataset.act, id = b.dataset.id;
     const superOnly = new Set(['addAdmin', 'delAdmin', 'copyRules', 'v2Done', 'hardDelEmp', 'backupDB', 'restoreDB']);
     const viewOnly = new Set(['logout', 'reload', 'copy', 'wa']);
-    const payrollAllowed = new Set(['logout', 'reload', 'xlsx', 'print', 'bankCsv', 'printSlips', 'slipEmp', 'appr', 'rej', 'copy', 'wa']);
+    const payrollAllowed = new Set(['logout', 'reload', 'editEmp', 'xlsx', 'print', 'bankCsv', 'printSlips', 'slipEmp', 'appr', 'rej', 'copy', 'wa']);
     if (superOnly.has(act) && !isSuper()) return toast('هذه العملية متاحة للمدير العام فقط', 'err');
     if (['manager', 'auditor'].includes(S.role) && !viewOnly.has(act)) return toast('هذا الدور للعرض فقط', 'err');
     if (S.role === 'payroll_admin' && !payrollAllowed.has(act)) return toast('هذه العملية ليست ضمن صلاحيات محاسب الرواتب', 'err');
@@ -3442,7 +3463,7 @@ function adminApp(db, auth) {
         const org = $('#sOrg').value.trim();
         const tz = parseInt($('#sTz').value, 10);
         const fgd = parseFloat($('#sForgot').value);
-        await setDoc(doc(db, 'settings', 'general'), { orgName: org, tzOffset: isNaN(tz) ? TZ_OFFSET_MIN : tz, forgotDeductDays: isNaN(fgd) ? 0 : Math.min(1, Math.max(0, fgd)), empNotice: ($('#sNotice') ? $('#sNotice').value.trim().slice(0, 300) : ''), updatedAt: serverTimestamp() }, { merge: true });
+        await setDoc(doc(db, 'settings', 'general'), { orgName: org, tzOffset: isNaN(tz) ? TZ_OFFSET_MIN : tz, ...(isSuper() ? { forgotDeductDays: isNaN(fgd) ? 0 : Math.min(1, Math.max(0, fgd)) } : {}), empNotice: ($('#sNotice') ? $('#sNotice').value.trim().slice(0, 300) : ''), updatedAt: serverTimestamp() }, { merge: true });
         if (!isNaN(tz) && tz !== TZOFF) TZOFF = tz;
         await loadAll(); toast('حُفظت إعدادات المنشأة', 'good');
       }

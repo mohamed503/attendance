@@ -869,9 +869,9 @@ service cloud.firestore {
     match /settings/{id} {
       allow read: if request.auth != null;
       allow create: if isSuperAdmin() || (isHrAdmin()
-        && request.resource.data.keys().hasOnly(['orgName', 'tzOffset', 'forgotDeductDays', 'empNotice', 'leaveTypes', 'cfgVersion', 'updatedAt']));
+        && request.resource.data.keys().hasOnly(['orgName', 'tzOffset', 'empNotice', 'leaveTypes', 'cfgVersion', 'updatedAt']));
       allow update: if isSuperAdmin() || (isHrAdmin()
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['orgName', 'tzOffset', 'forgotDeductDays', 'empNotice', 'leaveTypes', 'cfgVersion', 'updatedAt']));
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['orgName', 'tzOffset', 'empNotice', 'leaveTypes', 'cfgVersion', 'updatedAt']));
       allow delete: if isSuperAdmin();
     }
     match /taskTypes/{id} {
@@ -885,19 +885,31 @@ service cloud.firestore {
       // Firestore Rules are not filters: manager queries must include dept == their deptScope.
       allow list: if globalReadRole() || (isManager() && managerScope() is string
         && managerScope() != '' && resource.data.get('dept', '') == managerScope());
-      allow create: if isSuperAdmin() || isHrAdmin();
+      // الموارد البشرية تنشئ ملف موظف أساسيًا فقط؛ الحقول المالية والمصرفية وهوية الجهاز لا تُكتب عند الإنشاء.
+      allow create: if isSuperAdmin() || (isHrAdmin() && validHrCreate());
       allow delete: if isSuperAdmin();
       allow update: if isSuperAdmin()
         || (isHrAdmin() && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
           'name','phone','dept','jobTitle','contractEnd','docExpiry','bioId','assets','scheduleId','rotOffset',
-          'startDate','leaveQuota','empType','locs','taskPrices','active','deviceId','uid','devices','rebindProof'
+          'startDate','leaveQuota','empType','locs','active','deviceId','uid','devices','rebindProof'
         ]))
         || (isPayrollAdmin() && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
           'payMode','payAmount','allowance','bonus','penalty','loanTotal','loanInst','lyStatutory','familyStatus',
-          'nationalId','bankName','iban'
+          'nationalId','bankName','iban','taskPrices'
         ]))
         || claimDevice() || migrateLegacy() || rebindLegacy() || rebindMap() || joinDevice() || punchState();
 
+      function validHrCreate() {
+        let d = request.resource.data;
+        return d.keys().hasOnly(['name','phone','dept','jobTitle','contractEnd','docExpiry','bioId','assets',
+            'scheduleId','rotOffset','startDate','leaveQuota','empType','locs','active','deviceId','createdAt','payMode','payAmount'])
+          && d.keys().hasAll(['name','active','empType'])
+          && d.name is string && d.name.size() > 0 && d.name.size() <= 100
+          && d.active == true && d.empType in ['staff', 'task']
+          && d.get('deviceId', null) == null
+          && d.get('payMode', 'none') in ['none', 'task'] && d.get('payAmount', 0) == 0
+          && d.get('createdAt', request.time) == request.time;
+      }
       function unclaimed() {
         return request.auth != null && request.auth.token.firebase.sign_in_provider == 'anonymous'
           && resource.data.get('uid', null) == null

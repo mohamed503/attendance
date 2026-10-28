@@ -1,0 +1,21 @@
+{
+  "id": "./",
+  "name": "مِيقَاتْ للحضور والانصراف",
+  "short_name": "ميقات",
+  "description": "نظام ذكي لإدارة الحضور والانصراف والورديات ومسير الرواتب الآلي عبر GPS.",
+  "lang": "ar",
+  "dir": "rtl",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#EAF4EE",
+  "theme_color": "#0E6B4D",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}
