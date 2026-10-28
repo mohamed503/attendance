@@ -2533,7 +2533,7 @@ function adminApp(db, auth) {
         if (m.dataset.m === 'close') return close();
         m.disabled = true;
         try { const r = await o.onSave(); if (r === false) m.disabled = false; else close(); }
-        catch (e) { console.error(e); toast(e.code === 'permission-denied' ? 'غير مسموح: حدّث قواعد Firestore ثم أعد المحاولة' : 'تعذر الحفظ', 'err'); m.disabled = false; }
+        catch (e) { console.error(e); toast(e.code === 'permission-denied' ? 'غير مسموح: حدّث قواعد Firestore ثم أعد المحاولة' : 'تعذر الحفظ [' + ((e && (e.code || e.message)) || '؟') + ']', 'err'); m.disabled = false; }
         return;
       }
       const a = ev.target.closest('[data-a]'); if (a && o.onAct) { o.onAct(a.dataset.a, a.dataset); redraw(); }
@@ -3937,7 +3937,7 @@ function adminApp(db, auth) {
         const csv = '\ufeff' + rows.map(r => r.map(c => { const s = String(c ?? ''); const safe = /^[=+\-@\t\r]/.test(s) ? "'" + s : s; return `"${safe.replace(/"/g, '""')}"`; }).join(',')).join('\n');
         const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' })); a.download = `meqat_summary_${S.from}_${S.to}.csv`; a.click();
       }
-    } catch (err) { console.error(err); toast('حدث خطأ — تحقق من الاتصال وصلاحيات Firestore', 'err'); }
+    } catch (err) { console.error(err); toast('حدث خطأ [' + ((err && (err.code || err.message)) || '؟') + '] — تحقق من الاتصال وصلاحيات Firestore', 'err'); }
   };
 
   clearInterval(window.__meqatTick);
