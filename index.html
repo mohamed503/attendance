@@ -579,7 +579,7 @@ const TZ_OFFSET_MIN = 120;       // توقيت طرابلس UTC+2 ثابت (بل
 
 import { initializeApp, deleteApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, onAuthStateChanged, signInAnonymously } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import { getFirestore, collection, collectionGroup, doc, getDoc, getDocs, onSnapshot, setDoc as _setDoc, addDoc as _addDoc, updateDoc as _updateDoc, deleteDoc as _deleteDoc, query, where, orderBy, limit, writeBatch, Timestamp, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { getFirestore, initializeFirestore, persistentLocalCache, persistentMultipleTabManager, terminate, clearIndexedDbPersistence, collection, collectionGroup, doc, getDoc as _getDoc, getDocs as _getDocs, onSnapshot as _onSnapshot, setDoc as _setDoc, addDoc as _addDoc, updateDoc as _updateDoc, deleteDoc as _deleteDoc, query, where, orderBy, limit, writeBatch, Timestamp, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 /* رقم إصدار الإعدادات (cfgVersion): يُرفع تلقائياً عند أي تعديل إداري على المواقع/الجداول/العطل/الإعدادات،
    فتعيد صفحات الموظفين جلبها مرة واحدة فقط، وإلا تقرؤها من ذاكرة الجهاز (توفير نحو نصف قراءات كل فتح). */
 const CFG_COLS = ['locations', 'schedules', 'holidays', 'settings'];
@@ -587,6 +587,33 @@ const isCfgRef = r => { try { return CFG_COLS.includes(String(r.path).split('/')
 const bumpCfg = r => { try { return _setDoc(doc(r.firestore, 'settings', 'general'), { cfgVersion: Date.now() }, { merge: true }).catch(() => {}); } catch { return Promise.resolve(); } };
 const cfgGuard = fn => async (r, ...a) => { const out = await fn(r, ...a); if (isCfgRef(r)) await bumpCfg(r); return out; };
 const setDoc = cfgGuard(_setDoc), addDoc = cfgGuard(_addDoc), updateDoc = cfgGuard(_updateDoc), deleteDoc = cfgGuard(_deleteDoc);
+
+/* ---------- عدّاد قراءات Firestore (تقديري) ----------
+   يعدّ كل مستند يُقرأ في هذه الجلسة وفي هذا اليوم على هذا الجهاز. اكتب __meqatReads() في الكونسول، أو انظر الشارة بجانب أزرار الأعلى.
+   الرقم الرسمي الدقيق دائماً في Firebase › Usage. */
+const READS = { session: 0 };
+const readsToday = () => { try { return +localStorage.getItem('meqat_reads_' + new Date().toISOString().slice(0, 10)) || 0; } catch { return 0; } };
+try { const tk = 'meqat_reads_' + new Date().toISOString().slice(0, 10); Object.keys(localStorage).filter(k => k.startsWith('meqat_reads_') && k !== tk).forEach(k => localStorage.removeItem(k)); } catch {}
+const bumpReads = n => {
+  READS.session += n;
+  try { const k = 'meqat_reads_' + new Date().toISOString().slice(0, 10); localStorage.setItem(k, String(readsToday() + n)); } catch {}
+  const el = document.getElementById('readsChip'); if (el) el.textContent = 'قراءات الجلسة: ' + READS.session;
+};
+window.__meqatReads = () => ({ session: READS.session, todayOnThisDevice: readsToday() });
+const getDocs = async q => { const s = await _getDocs(q); bumpReads(Math.max(1, s.size)); return s; };
+const getDoc = async r => { const s = await _getDoc(r); bumpReads(1); return s; };
+const onSnapshot = (q, ok, err) => _onSnapshot(q, snap => { bumpReads(snap.metadata.fromCache ? 0 : snap.docChanges().length); ok(snap); }, err);
+
+/* ---------- كاش الأشهر المغلقة (IndexedDB) ----------
+   سجلات الأشهر المنتهية لا تتغير عملياً، فلا داعي لقراءتها من Firestore في كل مرة يُفتح فيها تقرير أو رواتب. */
+const RecCache = (() => {
+  let p = null;
+  const open = () => p || (p = new Promise((res, rej) => { try { const r = indexedDB.open('meqat_cache', 1); r.onupgradeneeded = () => r.result.createObjectStore('recs'); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); } catch (e) { rej(e); } }));
+  const tx = async (mode, fn) => { const d = await open(); return new Promise((res, rej) => { const t = d.transaction('recs', mode), rq = fn(t.objectStore('recs')); t.oncomplete = () => res(rq && rq.result); t.onerror = t.onabort = () => rej(t.error); }); };
+  return { get: k => tx('readonly', s => s.get(k)).catch(() => null), set: (k, v) => tx('readwrite', s => s.put(v, k)).catch(() => {}), clear: () => tx('readwrite', s => s.clear()).catch(() => {}) };
+})();
+const tsSer = o => { const r = {}; for (const k in o) { const v = o[k]; r[k] = v && typeof v.toMillis === 'function' ? { __ts: v.toMillis() } : v; } return r; };
+const tsDe = o => { const r = {}; for (const k in o) { const v = o[k]; r[k] = v && typeof v === 'object' && v.__ts != null ? Timestamp.fromMillis(v.__ts) : v; } return r; };
 
 /* ---------- نظام الوضع الليلي / النهاري ---------- */
 function initTheme() {
@@ -1453,7 +1480,10 @@ if (!configured) { setupPage(); }
 else {
   const app = initializeApp(firebaseConfig);
   await initAppCheck(app);
-  const db = getFirestore(app);
+  /* كاش Firestore الدائم للوحة الإدارة فقط: يوفّر قراءات المستمع اللحظي عند إعادة فتح الصفحة، ويُمسح عند تسجيل الخروج */
+  let db;
+  if (empToken) db = getFirestore(app);
+  else { try { db = initializeFirestore(app, { localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }) }); } catch (e) { console.warn(e); db = getFirestore(app); } }
   const auth = getAuth(app);
   if (empToken) {
     if (isInApp) showInAppGuide(empToken);
@@ -1798,7 +1828,7 @@ async function employeeApp(db, auth, token) {
   const rqFormEl = $('#rqForm');
   const myLeaves = { list: [] };
   async function refreshMyLeaves() {
-    try { const s = await getDocs(query(collection(db, 'employees', token, 'requests'), where('kind', '==', 'leave'))); myLeaves.list = s.docs.map(d => d.data()); } catch {}
+    try { const y0 = +dayKey(now()).slice(0, 4); const s = await getDocs(query(collection(db, 'employees', token, 'requests'), where('to', '>=', (y0 - 1) + '-12-01'))); myLeaves.list = s.docs.map(d => d.data()).filter(r => r.kind === 'leave'); } catch {}
     return myLeaves.list;
   }
   const annualLeft = () => { const yr = dayKey(now()).slice(0, 4), q = emp.leaveQuota ?? 21; const used = myLeaves.list.filter(r => r.status === 'approved' && leaveDeducts(r)).reduce((a, r) => a + countLeaveDays(r.from, r.to, sched, emp.rotOffset || 0, hols, yr), 0); return { q, used, rem: q - used, yr }; };
@@ -2086,6 +2116,7 @@ function adminApp(db, auth) {
     emps: [], locs: [], scheds: [], rulesOld: false, recs: [], today: [],
     idxUrl: '', from: '', to: '', emp: '', hols: [], holKeys: [], set: {},
     reqs: [], leaves: [], reqsErr: false, admins: [], adminsErr: false, taskTypes: [],
+    reqsFrom: '', idxUrlReq: '', recsFail: [], todayFail: [],
     role: 'unknown', deptScope: ''
   };
   S.from = dayKey(new Date(Date.now() - 6 * 86400000)); S.to = dayKey(new Date());
@@ -2142,16 +2173,20 @@ function adminApp(db, auth) {
   const findLT = r => { const L = leaveTypesOf(S.set); return L.find(x => x.id === r.type) || L.find(x => x.name === r.typeName) || null; };
   const empCtx = empId => { const e = S.emps.find(x => x.id === empId) || {}; const x = S.scheds.find(s => s.id === e.scheduleId); return { sc: x ? normSched(x) : null, rot: e.rotOffset || 0 }; };
 
-  async function fetchRecs(a, b) {
+  /* جلب خام من Firestore. fail: مصفوفة تُملأ بأسماء الموظفين الذين تعذّرت قراءة سجلاتهم، بدل ابتلاع الخطأ بصمت
+     (كان الموظف يظهر «غائباً» في التقارير والرواتب دون أي تنبيه). */
+  async function fetchRecs(a, b, fail = []) {
     const map = d => ({ id: d.id, empId: d.ref.parent.parent.id, ...d.data(), t: d.data().time?.toDate() });
+    const perEmp = async list => {
+      const chunks = await Promise.all(list.map(e =>
+        getDocs(query(collection(db, 'employees', e.id, 'records'), where('time', '>=', Timestamp.fromDate(a)), where('time', '<', Timestamp.fromDate(b)), orderBy('time')))
+          .then(s => s.docs.map(map)).catch(err => { console.warn(err); fail.push(e.name || e.id); return []; })
+      ));
+      return chunks.flat().filter(x => x.t).sort((x, y) => x.t - y.t);
+    };
     if (isManager()) {
       if (!S.deptScope) throw new Error('manager-scope-required');
-      const target = S.emp ? S.emps.filter(e => e.id === S.emp) : S.emps.filter(e => e.empType !== 'task');
-      const chunks = await Promise.all(target.map(e => getDocs(query(
-        collection(db, 'employees', e.id, 'records'),
-        where('time', '>=', Timestamp.fromDate(a)), where('time', '<', Timestamp.fromDate(b)), orderBy('time')
-      )).then(q => q.docs.map(map))));
-      return chunks.flat().filter(x => x.t).sort((x, y) => x.t - y.t);
+      return perEmp(S.emp ? S.emps.filter(e => e.id === S.emp) : S.emps.filter(e => e.empType !== 'task'));
     }
     try {
       const s = await getDocs(query(collectionGroup(db, 'records'), where('time', '>=', Timestamp.fromDate(a)), where('time', '<', Timestamp.fromDate(b)), orderBy('time')));
@@ -2160,15 +2195,40 @@ function adminApp(db, auth) {
       if (err.code !== 'failed-precondition') throw err;
       S.idxUrl = (String(err.message).match(/https:\/\/\S+/) || [''])[0] || 'https://console.firebase.google.com';
       console.warn(err.message);
-      const targetEmps = S.emp ? S.emps.filter(e => e.id === S.emp) : S.emps.filter(e => e.empType !== 'task');
-      const chunks = await Promise.all(targetEmps.map(e =>
-        getDocs(query(collection(db, 'employees', e.id, 'records'), where('time', '>=', Timestamp.fromDate(a)), where('time', '<', Timestamp.fromDate(b)), orderBy('time')))
-          .then(s => s.docs.map(map)).catch(() => [])
-      ));
-      return chunks.flat().filter(x => x.t).sort((x, y) => x.t - y.t);
+      return perEmp(S.emp ? S.emps.filter(e => e.id === S.emp) : S.emps.filter(e => e.empType !== 'task'));
     }
   }
-  async function loadRecs() { S.recs = await fetchRecs(new Date(dayStart(S.from).getTime() - 86400000), dayEnd(S.to)); }
+  /* الأشهر المنتهية (مضى على نهايتها أكثر من يومين) تُقرأ مرة واحدة ثم تُخدم من ذاكرة الجهاز.
+     الصلاحية: 6 ساعات لأول 10 أيام بعد انتهاء الشهر (فترة التصحيحات والرواتب)، ثم 7 أيام. أي تصحيح/استيراد/حذف من هذه اللوحة يمسح الكاش فوراً،
+     وزر «تحديث» يمسحه أيضاً. الشهر الجاري وآخر يومين يُقرآن دائماً من Firestore. */
+  const nextMonthKey = mk => { let y = +mk.slice(0, 4), m = +mk.slice(5, 7) + 1; if (m > 12) { m = 1; y++; } return y + '-' + String(m).padStart(2, '0'); };
+  const hashStr = s => { let h = 5381; for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) | 0; return (h >>> 0).toString(36); };
+  const recScope = () => isManager() ? 'm' + hashStr(S.emps.filter(e => e.empType !== 'task').map(e => e.id).sort().join(',')) : 'all';
+  const recSer = r => { const { t, ...rest } = r; return tsSer(rest); };
+  const recDe = x => { const r = tsDe(x); r.t = r.time && r.time.toDate ? r.time.toDate() : undefined; return r; };
+  async function fetchRecsCached(a, b, fail) {
+    if (isManager() && S.emp) return fetchRecs(a, b, fail);
+    const out = [], now = Date.now(), DAY = 86400000;
+    let cur = a;
+    while (cur < b) {
+      const mk = dayKey(cur).slice(0, 7), ms = dayStart(mk + '-01'), me = dayStart(nextMonthKey(mk) + '-01'), end = me < b ? me : b;
+      if (now - me.getTime() <= 2 * DAY) { out.push(...await fetchRecs(cur, end, fail)); cur = end; continue; }
+      const key = recScope() + '|' + TZOFF + '|' + mk, ttl = now - me.getTime() < 10 * DAY ? 6 * 3600000 : 7 * DAY;
+      let hit = await RecCache.get(key);
+      if (hit && now - hit.at > ttl) hit = null;
+      let rows;
+      if (hit) rows = hit.rows.map(recDe);
+      else if (end - cur >= (me - ms) / 2) {   // الجزء المطلوب نصف الشهر أو أكثر: اقرأ الشهر كاملاً وخزّنه ليخدم الطلبات القادمة
+        const f2 = [], all = await fetchRecs(ms, me, f2);
+        if (!f2.length) await RecCache.set(key, { at: now, rows: all.map(recSer) }); else fail.push(...f2);
+        rows = all;
+      } else rows = await fetchRecs(cur, end, fail);
+      out.push(...rows.filter(r => r.t && r.t >= cur && r.t < end));
+      cur = end;
+    }
+    return out;
+  }
+  async function loadRecs() { S.recsFail = []; S.recs = await fetchRecsCached(new Date(dayStart(S.from).getTime() - 86400000), dayEnd(S.to), S.recsFail); }
   async function migrateLocs() {
     if (!isSuper() && !isHr()) return;
     for (const l of S.locs) if (!(l.kx > 0) || !(l.ky > 0)) { const k = geoK(l.lat); await updateDoc(doc(db, 'locations', l.id), k); Object.assign(l, k); }
@@ -2180,7 +2240,7 @@ function adminApp(db, auth) {
   const mergeToday = () => { S.today = (S.todayPrev || []).concat(S.todayLive || []); };
   function stopTodayFeed() {
     if (window.__meqatUnsub) { try { window.__meqatUnsub(); } catch {} window.__meqatUnsub = null; }
-    clearInterval(window.__meqatPoll);
+    clearInterval(window.__meqatPoll); window.__meqatPoll = 0;
   }
   function refreshTodayView() {
     clearTimeout(_todayRT);
@@ -2190,14 +2250,15 @@ function adminApp(db, auth) {
     stopTodayFeed();
     const nowD = new Date(), key = dayKey(nowD), yKey = dayKey(new Date(nowD.getTime() - 86400000));
     S.todayKey = key; S.todayLive = []; S.todayPrev = [];
-    S.todayPrev = await fetchRecs(dayStart(yKey), dayEnd(yKey));   // أمس: لإكمال جلسات الدوام الليلي — مرة واحدة فقط
+    S.todayFail = [];
+    S.todayPrev = await fetchRecs(dayStart(yKey), dayEnd(yKey), S.todayFail);   // أمس: لإكمال جلسات الدوام الليلي — مرة واحدة فقط
     mergeToday();
     await new Promise(resolve => {
       let first = true;
       const done = () => { if (first) { first = false; resolve(); } else refreshTodayView(); };
       const slowPoll = async () => {   // احتياط إذا تعذّر المستمع (مثلاً الفهرس غير منشأ): تحديث كل 5 دقائق فقط
         clearInterval(window.__meqatPoll);
-        const pull = async () => { try { S.todayLive = await fetchRecs(dayStart(key), dayEnd(key)); mergeToday(); } catch (err) { console.warn(err); } done(); };
+        const pull = async () => { try { S.todayFail = []; S.todayLive = await fetchRecs(dayStart(key), dayEnd(key), S.todayFail); mergeToday(); } catch (err) { console.warn(err); } done(); };
         await pull();
         window.__meqatPoll = setInterval(() => { if (!document.hidden && auth.currentUser) pull(); }, 300000);
       };
@@ -2218,59 +2279,121 @@ function adminApp(db, auth) {
       setTimeout(() => { if (first) { first = false; resolve(); } }, 15000);   // لا نعطّل تحميل اللوحة إذا تأخر الاتصال
     });
   }
-  async function loadAll() {
+  /* ================= جلب مجزّأ =================
+     كل جزء له دالة مستقلة. loadAll (كاملة) تعمل عند الفتح وزر «تحديث» فقط؛ وبعد أي حفظ نعيد جلب الجزء المتأثر وحده عبر refresh(). */
+  const byName = (x, y) => (x.name || '').localeCompare(y.name || '', 'ar');
+  const reqMap = (d, empId) => ({ id: d.id, empId: empId || d.ref.parent.parent.id, ...d.data(), cAt: (d.data().createdAt && d.data().createdAt.toMillis ? d.data().createdAt.toMillis() : 0) });
+  const idxLink = err => (String(err.message).match(/https:\/\/\S+/) || [''])[0] || 'https://console.firebase.google.com';
+  async function loadEmps() {
+    const q = isManager() ? query(collection(db, 'employees'), where('dept', '==', S.deptScope)) : collection(db, 'employees');
+    S.emps = (await getDocs(q)).docs.map(d => ({ id: d.id, ...d.data() })).sort(byName);
+  }
+  async function loadLocs() { S.locs = (await getDocs(collection(db, 'locations'))).docs.map(d => ({ id: d.id, ...d.data() })); }
+  async function loadScheds() {
+    try { S.scheds = (await getDocs(collection(db, 'schedules'))).docs.map(d => ({ id: d.id, ...d.data() })).sort(byName); S.rulesOld = false; }
+    catch (e2) { if (e2.code === 'permission-denied') S.rulesOld = true; else throw e2; }
+  }
+  async function loadHols() {
+    try {
+      const hs = await getDocs(collection(db, 'holidays'));
+      S.hols = hs.docs.map(d => ({ id: d.id, date: d.data().date || d.id, name: d.data().name || '' })).sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+      S.holKeys = S.hols.map(h => h.date || h.id);
+    } catch (e2) { if (e2.code !== 'permission-denied') console.warn(e2); }
+  }
+  async function loadSet() {
+    try { const st = await getDoc(doc(db, 'settings', 'general')); S.set = st.exists() ? st.data() : {}; } catch (e2) { if (e2.code !== 'permission-denied') console.warn(e2); }
+    if (S.set && S.set.tzOffset != null && +S.set.tzOffset !== TZOFF) TZOFF = +S.set.tzOffset;
+  }
+  async function loadTaskTypes() {
+    try { S.taskTypes = (await getDocs(collection(db, 'taskTypes'))).docs.map(d => ({ id: d.id, ...d.data() })).sort(byName); } catch (e2) { S.taskTypes = []; if (e2.code !== 'permission-denied') console.warn(e2); }
+  }
+  async function loadAdmins() {
+    if (!isSuper()) { S.admins = []; S.ownerEmail = ''; S.adminsErr = false; return; }
+    try {
+      const ad = await getDocs(collection(db, 'admins'));
+      S.admins = ad.docs.filter(d => d.id !== 'owner').map(d => ({ id: d.id, name: d.data().name || '', email: d.data().email || '', role: d.data().role || 'auditor', deptScope: d.data().deptScope || '' }));
+      const od = ad.docs.find(d => d.id === 'owner'); S.ownerEmail = od ? (od.data().email || '') : '';
+      S.adminsErr = false;
+    } catch (e2) { S.admins = []; if (e2.code === 'permission-denied') S.adminsErr = true; else console.warn(e2); }
+  }
+  /* المواقع والجداول والعطل: تُقرأ من ذاكرة الجهاز ما دام cfgVersion في settings/general لم يتغيّر (قراءة واحدة بدل عشرات) */
+  const CFG_KEY = 'meqat_admin_cfg_v1';
+  async function loadConfig(force) {
+    await loadSet();
+    const cv = S.set && S.set.cfgVersion, u = auth.currentUser && auth.currentUser.uid;
+    let c = null;
+    if (!force) { try { c = JSON.parse(localStorage.getItem(CFG_KEY) || 'null'); } catch {} }
+    if (c && cv && c.v === cv && c.u === u && c.role === S.role && c.dept === S.deptScope) {
+      S.locs = c.locs.map(tsDe); S.scheds = c.scheds.map(tsDe); S.hols = c.hols; S.holKeys = S.hols.map(h => h.date || h.id); S.rulesOld = false;
+      return;
+    }
+    await Promise.all([loadLocs(), loadScheds(), loadHols()]);
+    if (cv && !S.rulesOld) { try { localStorage.setItem(CFG_KEY, JSON.stringify({ v: cv, u, role: S.role, dept: S.deptScope, locs: S.locs.map(tsSer), scheds: S.scheds.map(tsSer), hols: S.hols })); } catch {} }
+  }
+  /* الطلبات: المعلّقة (أياً كان تاريخها) + طلبات «من أول ديسمبر من السنة الماضية» أو من بداية فترة التقرير إن كانت أقدم. الأقدم يُحمَّل عند الطلب. */
+  const reqWin = () => { let w = (+dayKey(new Date()).slice(0, 4) - 1) + '-12-01'; if (S.from && S.from < w) w = S.from; return w; };
+  async function fetchReqs(w, before) {
+    const byId = new Map();
+    const add = (d, empId) => { const r = reqMap(d, empId); byId.set(r.empId + '/' + r.id, r); };
+    const fromQ = col => before ? query(col, where('from', '>=', w), where('from', '<', before)) : query(col, where('from', '>=', w));
+    const pendQ = col => query(col, where('status', '==', 'pending'));
+    const run = async (col, empId) => { const qs = [getDocs(fromQ(col))]; if (!before) qs.push(getDocs(pendQ(col))); (await Promise.all(qs)).forEach(s => s.docs.forEach(d => add(d, empId))); };
+    if (isManager()) await Promise.all(S.emps.map(emp => run(collection(db, 'employees', emp.id, 'requests'), emp.id)));
+    else await run(collectionGroup(db, 'requests'));
+    return [...byId.values()];
+  }
+  async function loadReqs() {
+    try {
+      const w = reqWin();
+      try { S.reqs = await fetchReqs(w); S.reqsFrom = w; }
+      catch (err) {
+        if (err.code !== 'failed-precondition' || isManager()) throw err;
+        S.idxUrlReq = idxLink(err); console.warn(err.message);
+        S.reqs = (await getDocs(collectionGroup(db, 'requests'))).docs.map(d => reqMap(d)); S.reqsFrom = '';   // احتياط: القراءة الكاملة القديمة إلى أن يُنشأ الفهرس
+      }
+      S.reqsErr = false;
+    } catch (e2) { S.reqs = []; S.reqsFrom = ''; if (e2.code === 'permission-denied') S.reqsErr = true; else console.warn(e2); }
+    S.leaves = S.reqs.filter(r => r.kind === 'leave' && r.status === 'approved');
+  }
+  async function loadReqsBefore(key) {
+    if (!S.reqsFrom || key >= S.reqsFrom) return;
+    const more = await fetchReqs(key, S.reqsFrom), have = new Set(S.reqs.map(r => r.empId + '/' + r.id));
+    S.reqs = S.reqs.concat(more.filter(r => !have.has(r.empId + '/' + r.id)));
+    S.reqsFrom = key;
+    S.leaves = S.reqs.filter(r => r.kind === 'leave' && r.status === 'approved');
+  }
+  const feedAlive = () => S.todayKey === dayKey(new Date()) && (window.__meqatUnsub || window.__meqatPoll);
+  async function loadAll(opts = {}) {
     _sumC = null;
-    S.idxUrl = '';
+    S.idxUrl = ''; S.idxUrlReq = '';
     try {
       await resolveAdminRole();
-      const empQuery = isManager()
-        ? query(collection(db, 'employees'), where('dept', '==', S.deptScope))
-        : collection(db, 'employees');
-      const [e, l] = await Promise.all([getDocs(empQuery), getDocs(collection(db, 'locations'))]);
-      S.emps = e.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => (a.name || '').localeCompare(b.name || '', 'ar'));
-      S.locs = l.docs.map(d => ({ id: d.id, ...d.data() }));
-      try {
-        const sc = await getDocs(collection(db, 'schedules'));
-        S.scheds = sc.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => (a.name || '').localeCompare(b.name || '', 'ar'));
-        S.rulesOld = false;
-      } catch (e2) { if (e2.code === 'permission-denied') S.rulesOld = true; else throw e2; }
-      try {
-        const hs = await getDocs(collection(db, 'holidays'));
-        S.hols = hs.docs.map(d => ({ id: d.id, date: d.data().date || d.id, name: d.data().name || '' })).sort((a, b) => (a.date || '').localeCompare(b.date || ''));
-        S.holKeys = S.hols.map(h => h.date || h.id);
-      } catch (e2) { if (e2.code !== 'permission-denied') console.warn(e2); }
-      try {
-        const st = await getDoc(doc(db, 'settings', 'general'));
-        S.set = st.exists() ? st.data() : {};
-      } catch (e2) { if (e2.code !== 'permission-denied') console.warn(e2); }
-      if (S.set && S.set.tzOffset != null && +S.set.tzOffset !== TZOFF) TZOFF = +S.set.tzOffset;
-      try { const tk = await getDocs(collection(db, 'taskTypes')); S.taskTypes = tk.docs.map(d => ({ id: d.id, ...d.data() })).sort((a, b) => (a.name || '').localeCompare(b.name || '', 'ar')); } catch (e2) { S.taskTypes = []; if (e2.code !== 'permission-denied') console.warn(e2); }
-      try {
-        if (isManager()) {
-          const groups = await Promise.all(S.emps.map(async emp => {
-            const q = await getDocs(collection(db, 'employees', emp.id, 'requests'));
-            return q.docs.map(d => ({ id: d.id, empId: emp.id, ...d.data(), cAt: (d.data().createdAt && d.data().createdAt.toMillis ? d.data().createdAt.toMillis() : 0) }));
-          }));
-          S.reqs = groups.flat();
-        } else {
-          const rq = await getDocs(collectionGroup(db, 'requests'));
-          S.reqs = rq.docs.map(d => ({ id: d.id, empId: d.ref.parent.parent.id, ...d.data(), cAt: (d.data().createdAt && d.data().createdAt.toMillis ? d.data().createdAt.toMillis() : 0) }));
-        }
-        S.reqsErr = false;
-      } catch (e2) { S.reqs = []; if (e2.code === 'permission-denied') S.reqsErr = true; else console.warn(e2); }
-      S.leaves = S.reqs.filter(r => r.kind === 'leave' && r.status === 'approved');
-      if (isSuper()) {
-        try {
-          const ad = await getDocs(collection(db, 'admins'));
-          S.admins = ad.docs.filter(d => d.id !== 'owner').map(d => ({ id: d.id, name: d.data().name || '', email: d.data().email || '', role: d.data().role || 'auditor', deptScope: d.data().deptScope || '' }));
-          const od = ad.docs.find(d => d.id === 'owner'); S.ownerEmail = od ? (od.data().email || '') : '';
-          S.adminsErr = false;
-        } catch (e2) { S.admins = []; if (e2.code === 'permission-denied') S.adminsErr = true; else console.warn(e2); }
-      } else { S.admins = []; S.ownerEmail = ''; S.adminsErr = false; }
+      if (opts.force) { await RecCache.clear(); try { localStorage.removeItem(CFG_KEY); } catch {} }
+      await Promise.all([loadEmps(), loadConfig(!!opts.force)]);
+      await Promise.all([loadTaskTypes(), loadReqs(), loadAdmins()]);
       await migrateLocs();
       await loadRecs();
-      await startTodayFeed();
+      if (opts.force || !feedAlive()) await startTodayFeed();   // المستمع اللحظي يبقى حياً؛ لا نعيد قراءة سجلات اليوم وأمس بلا داعٍ
     } catch (err) { console.error(err); toast('تعذر تحميل البيانات — تأكد أن بريدك مطابق للمكتوب في قواعد Firestore', 'err'); }
+    render();
+  }
+  /* بعد أي حفظ: أعد جلب الأجزاء المتأثرة فقط. الأجزاء: emps locs scheds hols set tasks admins reqs recs */
+  async function refresh(...parts) {
+    const P = new Set(parts);
+    try {
+      if (P.has('emps')) await loadEmps();
+      const jobs = [];
+      if (P.has('locs')) jobs.push(loadLocs().then(migrateLocs));
+      if (P.has('scheds')) jobs.push(loadScheds());
+      if (P.has('hols')) jobs.push(loadHols());
+      if (P.has('set')) jobs.push(loadSet());
+      if (P.has('tasks')) jobs.push(loadTaskTypes());
+      if (P.has('admins')) jobs.push(loadAdmins());
+      await Promise.all(jobs);
+      if (P.has('reqs')) await loadReqs();
+      if (P.has('recs')) await loadRecs();
+    } catch (err) { console.error(err); toast('تعذر تحديث البيانات', 'err'); }
+    _sumC = null;
     render();
   }
 
@@ -2287,6 +2410,7 @@ function adminApp(db, auth) {
  <main class="wrap main">
  <header class="phead"><div><small>${esc(brandName())} · لوحة الإدارة ${licBadgeHtml()}</small><h1>${TT[S.tab] || ''}</h1></div>
  <div class="ptools">
+ <span class="badge b-mute" id="readsChip" title="عدد مستندات Firestore المقروءة في هذه الجلسة (تقديري) — الرقم الرسمي في Firebase › Usage">قراءات الجلسة: ${READS.session}</span>
  <button class="pwa-btn" onclick="window.__installPWA()">${ic('download', 18)} تثبيت</button>
  ${themeBtnHtml()}
  <button class="ib" onclick="window.__openDownloadBox()" title="تحميل ملفات النظام المحدّثة" aria-label="تحميل ملفات النظام المحدّثة">${ic('download', 22)}</button>
@@ -2295,6 +2419,8 @@ function adminApp(db, auth) {
  </div></header>
  ${licBannerHtml()}
       ${S.idxUrl ? `<div class="notice"><b>خطوة لمرة واحدة:</b> يلزم إنشاء فهرس لتسريع التقارير. <a href="${esc(S.idxUrl)}" target="_blank">اضغط هنا لإنشائه</a> وانتظر دقيقة ثم اضغط «تحديث». حتى ذلك الحين تُحمَّل السجلات بالطريقة البديلة الآمنة.</div>` : ''}
+      ${S.idxUrlReq ? `<div class="notice"><b>خطوة لمرة واحدة (لتوفير القراءات):</b> يلزم إنشاء فهرس لطلبات الموظفين. <a href="${esc(S.idxUrlReq)}" target="_blank">اضغط هنا لإنشائه</a> وانتظر دقيقة ثم اضغط «تحديث». قد يظهر رابط ثانٍ بعد الأول، أنشئه أيضاً. حتى ذلك الحين تُقرأ كل الطلبات بالطريقة القديمة.</div>` : ''}
+      ${(S.recsFail.length || S.todayFail.length) ? `<div class="notice"><b>تحذير — بيانات ناقصة:</b> تعذّرت قراءة سجلات: ${esc([...new Set([...S.recsFail, ...S.todayFail])].join('، '))}. قد يظهرون غائبين خطأً في اليوم والتقارير والرواتب. اضغط «تحديث» قبل اعتماد أي رواتب.</div>` : ''}
       ${S.rulesOld ? `<div class="notice"><b>تحديث لمرة واحدة:</b> لحفظ جداول الدوام يلزم تحديث قواعد Firestore. اضغط الزر لنسخ القواعد الجديدة، ثم افتح Firestore › Rules، وامسح القديم والصق الجديد واضغط Publish، ثم حدّث الصفحة.<div style="margin-top:10px"><button class="btn sm" data-act="copyRules">${ic('copy', 16)} نسخ القواعد الجديدة</button></div></div>` : ''}
       ${S.reqsErr || S.adminsErr ? `<div class="notice"><b>تحديث مطلوب:</b> قواعد Firestore المنشورة حالياً لا تتيح قراءة طلبات الموظفين جماعياً أو بيانات المشرفين. انسخ القواعد الأحدث وانشرها ثم أعد التحميل.<div style="margin-top:10px"><button class="btn sm" data-act="copyRules">${ic('copy', 16)} نسخ القواعد الأحدث</button></div></div>` : ''}
       ${(()=>{try{return localStorage.getItem('att_rules_v5')}catch{return '1'}})() ? '' : `<div class="notice"><b>تحديث أمني لقواعد Firestore:</b> القواعد الجديدة تفرض الأدوار في الخادم، وتحصر إدارة المشرفين بالمدير العام، وتقيّد كتابة الحقول حسب الدور، وتشترط نطاقًا لمدير القسم. انسخ القواعد وانشرها في Firestore › Rules، ثم اختبر كل حساب قبل العودة للإنتاج. <b>ولا تنسَ تفعيل «Anonymous» من Authentication › Sign-in method.</b><div style="margin-top:10px"><button class="btn sm" data-act="copyRules">${ic('copy', 16)} نسخ القواعد</button> <button class="btn sm sec" data-act="v2Done">${ic('check', 16)} نشرتها، لا تُظهر هذا التنبيه مجدداً</button></div></div>`}
@@ -2549,7 +2675,7 @@ function adminApp(db, auth) {
         delete c.ot.offDayAll;   // استُبدل بسياسة يوم الراحة/العطلة الصريحة
         c.updatedAt = serverTimestamp();
         if (ex) await setDoc(doc(db, 'schedules', ex.id), c); else await addDoc(collection(db, 'schedules'), { ...c, createdAt: serverTimestamp() });
-        await loadAll(); toast('تم حفظ الجدول', 'good');
+        await refresh('scheds'); toast('تم حفظ الجدول', 'good');
       }
     });
   }
@@ -2707,7 +2833,7 @@ function adminApp(db, auth) {
         if (W.empType === 'task') {
           const tp = {}; Object.entries(W.tp).forEach(([k, v]) => { if (v !== '' && v != null && +v >= 0) tp[k] = +v; });
           await updateDoc(doc(db, 'employees', e.id), scopeEmpPatch({ ...common, empType: 'task', payMode: 'task', payAmount: 0, scheduleId: '', rotOffset: 0, locs: [], taskPrices: tp }));
-          await loadAll(); toast('تم حفظ ملف الموظف', 'good'); return;
+          await refresh('emps'); toast('تم حفظ ملف الموظف', 'good'); return;
         }
         const sc = S.scheds.find(x => x.id === W.scheduleId);
         const n = sc && sc.mode === 'rotation' ? (sc.cycle || []).length : 0;
@@ -2723,7 +2849,7 @@ function adminApp(db, auth) {
           lyStatutory: !!W.lyStatutory, familyStatus: W.familyStatus || 'single',
           locs: ids, leaveQuota: Math.max(0, +W.leaveQuota || 21), empType: 'staff'
         }));
-        await loadAll(); toast('تم حفظ ملف الموظف الشامل', 'good');
+        await refresh('emps'); toast('تم حفظ ملف الموظف الشامل', 'good');
       }
     });
   }
@@ -2891,7 +3017,7 @@ function adminApp(db, auth) {
           out.push({ id: x.id, name, pct: Math.min(100, Math.max(0, +x.pct || 0)), deduct: !!x.deduct, cap: Math.max(0, Math.round(+x.cap || 0)) });
         }
         await setDoc(doc(db, 'settings', 'general'), { leaveTypes: out, updatedAt: serverTimestamp() }, { merge: true });
-        await loadAll(); toast('حُفظت أنواع الإجازات', 'good');
+        await refresh('set'); toast('حُفظت أنواع الإجازات', 'good');
       }
     });
   }
@@ -3002,7 +3128,7 @@ function adminApp(db, auth) {
         obs.disconnect();
         if (ex) await updateDoc(doc(db, 'locations', ex.id), { name: W.name.trim(), lat: W.lat, lng: W.lng, radius: Math.round(W.radius), ...geoK(W.lat) });
         else await addDoc(collection(db, 'locations'), { name: W.name.trim(), lat: W.lat, lng: W.lng, radius: Math.round(W.radius), active: true, ...geoK(W.lat) });
-        await loadAll(); toast('تم حفظ الموقع', 'good');
+        await refresh('locs'); toast('تم حفظ الموقع', 'good');
       }
     });
   }
@@ -3249,7 +3375,7 @@ function adminApp(db, auth) {
     <div class="g2" style="align-items:start">
       <div class="card">${ch('check', 'آخر القرارات المعتمدة/المرفوضة')}<div class="tw"><table><thead><tr><th>الموظف</th><th>الطلب</th><th>القرار</th></tr></thead><tbody>
       ${dec.map(r => `<tr><td>${esc(cname(r.empId))}</td><td>${det(r)}</td><td><span class="badge ${r.status === 'approved' ? 'b-ok' : 'b-bad'}">${r.status === 'approved' ? 'مقبول' : 'مرفوض'}</span></td></tr>`).join('') || '<tr><td colspan="3" class="muted center">لا توجد قرارات بعد</td></tr>'}
-      </tbody></table></div></div>
+      </tbody></table></div>${S.reqsFrom ? `<div style="padding:10px 14px"><button class="btn sm" data-act="moreReqs">تحميل طلبات أقدم (حتى ${+S.reqsFrom.slice(0, 4) - 1})</button></div>` : ''}</div>
       <div class="card">${ch('sun', `رصيد الإجازات السنوية — ${dayKey(new Date()).slice(0, 4)}`)}<div class="tw"><table><thead><tr><th>الموظف</th><th>الحصة</th><th>المستهلك</th><th>المتبقي</th></tr></thead><tbody>
       ${S.emps.filter(e => e.active && e.empType !== 'task').map(e => { const q = e.leaveQuota ?? 21, u = annualUsed(e.id, dayKey(new Date()).slice(0, 4)), rem = q - u; return `<tr><td><b>${esc(e.name)}</b></td><td>${q} يوم</td><td>${u} يوم</td><td><span class="badge ${rem < 0 ? 'b-bad' : rem <= 3 ? 'b-warn' : 'b-ok'}">${rem} يوم</span></td></tr>`; }).join('') || '<tr><td colspan="4" class="muted center">لا يوجد موظفون</td></tr>'}
       </tbody></table></div></div>
@@ -3463,8 +3589,8 @@ function adminApp(db, auth) {
     const b = ev.target.closest('[data-act]'); if (!b) return;
     const act = b.dataset.act, id = b.dataset.id;
     const superOnly = new Set(['addAdmin', 'delAdmin', 'copyRules', 'v2Done', 'hardDelEmp', 'backupDB', 'restoreDB']);
-    const viewOnly = new Set(['logout', 'reload', 'copy', 'wa']);
-    const payrollAllowed = new Set(['logout', 'reload', 'editEmp', 'xlsx', 'print', 'bankCsv', 'printSlips', 'slipEmp', 'appr', 'rej', 'copy', 'wa']);
+    const viewOnly = new Set(['logout', 'reload', 'copy', 'wa', 'moreReqs']);
+    const payrollAllowed = new Set(['logout', 'reload', 'moreReqs', 'editEmp', 'xlsx', 'print', 'bankCsv', 'printSlips', 'slipEmp', 'appr', 'rej', 'copy', 'wa']);
     if (superOnly.has(act) && !isSuper()) return toast('هذه العملية متاحة للمدير العام فقط', 'err');
     if (['manager', 'auditor'].includes(S.role) && !viewOnly.has(act)) return toast('هذا الدور للعرض فقط', 'err');
     if (S.role === 'payroll_admin' && !payrollAllowed.has(act)) return toast('هذه العملية ليست ضمن صلاحيات محاسب الرواتب', 'err');
@@ -3472,16 +3598,25 @@ function adminApp(db, auth) {
       const req = S.reqs.find(x => x.id === id && x.empId === b.dataset.e);
       if (!req || !['loan', 'task'].includes(req.kind)) return toast('يستطيع محاسب الرواتب اعتماد طلبات السلف والمهام فقط', 'err');
     }
+    if (S.recsFail.length && ['xlsx', 'bankCsv', 'printSlips', 'slipEmp'].includes(act) && !confirm('تنبيه: تعذّرت قراءة سجلات: ' + [...new Set(S.recsFail)].join('، ') + '\nقد تكون الأرقام ناقصة (غياب خاطئ). هل تتابع رغم ذلك؟')) return;
     try {
-      if (act === 'logout') return signOut(auth);
-      if (act === 'reload') { await loadAll(); return toast('تم تحديث البيانات', 'good'); }
+      if (act === 'logout') {
+        // نمسح كل ما خُزّن على الجهاز (كاش الإعدادات والأشهر وكاش Firestore) ثم نعيد تحميل الصفحة
+        try { localStorage.removeItem(CFG_KEY); } catch {}
+        await RecCache.clear(); stopTodayFeed();
+        await signOut(auth);
+        try { await terminate(db); await clearIndexedDbPersistence(db); } catch {}
+        return location.reload();
+      }
+      if (act === 'moreReqs') { if (!S.reqsFrom) return; await loadReqsBefore((+S.reqsFrom.slice(0, 4) - 1) + '-01-01'); render(); return toast('تم تحميل طلبات أقدم', 'good'); }
+      if (act === 'reload') { await loadAll({ force: true }); return toast('تم تحديث البيانات', 'good'); }
       if (act === 'addEmp') {
         const name = $('#eName').value.trim(); if (!name) return toast('اكتب اسم الموظف', 'err');
         if (LICENSE && LICENSE.maxEmployees > 0 && S.emps.filter(x => x.active).length >= LICENSE.maxEmployees) return toast(`وصلتَ حد باقتك (${LICENSE.maxEmployees} موظفاً) — للترقية تواصل مع مزوّد الخدمة`, 'err');
         const phone = $('#ePhone').value.replace(/\D/g, '');
         const nid = randToken(); const isTask = !!($('#eType') && $('#eType').value === 'task');
         await setDoc(doc(db, 'employees', nid), { name, phone, active: true, deviceId: null, scheduleId: (isTask ? '' : ($('#eSched') ? $('#eSched').value : '')), empType: isTask ? 'task' : 'staff', payMode: isTask ? 'task' : 'none', payAmount: 0, rotOffset: 0, startDate: dayKey(new Date()), createdAt: serverTimestamp() });
-        await loadAll(); toast('تمت الإضافة — انسخ الرابط وأرسله للموظف', 'good');
+        await refresh('emps'); toast('تمت الإضافة — انسخ الرابط وأرسله للموظف', 'good');
       }
       if (act === 'copy') { await navigator.clipboard.writeText(linkOf(id)); toast('تم نسخ رابط الموظف', 'good'); }
       if (act === 'wa') {
@@ -3491,12 +3626,12 @@ function adminApp(db, auth) {
         const a = document.createElement('a'); a.href = `https://wa.me/${e.phone || ''}?text=${encodeURIComponent(msg)}`; a.target = '_blank'; a.rel = 'noopener noreferrer'; a.click();
       }
       if (act === 'devPin') return deviceManager(S.emps.find(x => x.id === id));
-      if (act === 'resetDev') { if (confirm('إعادة ضبط كل الأجهزة المرتبطة بهذا الموظف؟ سيتوجب عليه فتح الرابط من جهازه بعد ذلك.')) { await updateDoc(doc(db, 'employees', id), { deviceId: null, uid: null, devices: null, rebindProof: null }); await loadAll(); toast('تمت إعادة الضبط', 'good'); } }
+      if (act === 'resetDev') { if (confirm('إعادة ضبط كل الأجهزة المرتبطة بهذا الموظف؟ سيتوجب عليه فتح الرابط من جهازه بعد ذلك.')) { await updateDoc(doc(db, 'employees', id), { deviceId: null, uid: null, devices: null, rebindProof: null }); await refresh('emps'); toast('تمت إعادة الضبط', 'good'); } }
       if (act === 'toggle') {
         const e = S.emps.find(x => x.id === id);
         if (e.active && !confirm(`إيقاف «${e.name}»؟\nتبقى سجلاته وتقاريره السابقة محفوظة، ولا يُحتسب غيابه بعد اليوم.`)) return;
         await updateDoc(doc(db, 'employees', id), e.active ? { active: false, archivedAt: serverTimestamp() } : { active: true, archivedAt: null });
-        await loadAll();
+        await refresh('emps');
       }
       if (act === 'hardDelEmp') {
         const empToDel = S.emps.find(x => x.id === id);
@@ -3513,7 +3648,7 @@ function adminApp(db, auth) {
           }
         }
         await deleteDoc(doc(db, 'employees', id));
-        await loadAll(); toast('حُذف الموظف وسجلاته نهائياً', 'good');
+        await RecCache.clear(); S.reqs = S.reqs.filter(r => r.empId !== id); S.leaves = S.leaves.filter(r => r.empId !== id); S.recs = S.recs.filter(r => r.empId !== id); S.todayPrev = (S.todayPrev || []).filter(r => r.empId !== id); S.todayLive = (S.todayLive || []).filter(r => r.empId !== id); mergeToday(); await refresh('emps'); toast('حُذف الموظف وسجلاته نهائياً', 'good');
       }
       if (act === 'myLoc') {
         toast('جاري تحديد موقعك…');
@@ -3527,7 +3662,7 @@ function adminApp(db, auth) {
         const lat = parseFloat(m[1]), lng = parseFloat(m[2]);
         if (Math.abs(lat) > 90 || Math.abs(lng) > 180) return toast('إحداثيات غير صحيحة', 'err');
         await addDoc(collection(db, 'locations'), { name, lat, lng, radius, active: true, ...geoK(lat) });
-        await loadAll(); toast('تمت إضافة الموقع', 'good');
+        await refresh('locs'); toast('تمت إضافة الموقع', 'good');
       }
       if (act === 'copyRules') {
         if (!isSuper()) return toast('نسخ قواعد Firestore محصور بالمدير العام', 'err');
@@ -3582,7 +3717,7 @@ function adminApp(db, auth) {
               await b.commit();
             }
             await bumpCfg(doc(db, 'settings', 'general'));
-            await loadAll(); toast('تمت استعادة النسخة الاحتياطية بنجاح', 'good');
+            await loadAll({ force: true }); toast('تمت استعادة النسخة الاحتياطية بنجاح', 'good');
           } catch (err) { console.error(err); toast('فشلت الاستعادة', 'err'); }
         };
         inp.click(); return;
@@ -3631,17 +3766,17 @@ function adminApp(db, auth) {
               });
               await b.commit();
             }
-            await loadAll(); toast(`تم استيراد ${recs.length} بصمة بنجاح ✅`, 'good');
+            await RecCache.clear(); await refresh('emps', 'recs'); toast(`تم استيراد ${recs.length} بصمة بنجاح ✅`, 'good');
           } catch (err) { console.error(err); toast('فشل استيراد ملف البصمات', 'err'); }
         };
         inp.click(); return;
       }
       if (act === 'newSched') scheduleEditor(null);
       if (act === 'editSched') scheduleEditor(S.scheds.find(x => x.id === id));
-      if (act === 'dupSched') { const x = JSON.parse(JSON.stringify(S.scheds.find(y => y.id === id))); delete x.id; delete x.createdAt; delete x.updatedAt; x.name += ' (نسخة)'; await addDoc(collection(db, 'schedules'), { ...x, createdAt: serverTimestamp() }); await loadAll(); toast('تم نسخ الجدول', 'good'); }
-      if (act === 'delSched') { const n = S.emps.filter(e => e.scheduleId === id).length; if (confirm(n ? `هذا الجدول مرتبط بـ ${n} موظف وسيصبحون بدون جدول. هل تريد حذفه؟` : 'حذف هذا الجدول؟')) { await deleteDoc(doc(db, 'schedules', id)); await loadAll(); } }
+      if (act === 'dupSched') { const x = JSON.parse(JSON.stringify(S.scheds.find(y => y.id === id))); delete x.id; delete x.createdAt; delete x.updatedAt; x.name += ' (نسخة)'; await addDoc(collection(db, 'schedules'), { ...x, createdAt: serverTimestamp() }); await refresh('scheds'); toast('تم نسخ الجدول', 'good'); }
+      if (act === 'delSched') { const n = S.emps.filter(e => e.scheduleId === id).length; if (confirm(n ? `هذا الجدول مرتبط بـ ${n} موظف وسيصبحون بدون جدول. هل تريد حذفه؟` : 'حذف هذا الجدول؟')) { await deleteDoc(doc(db, 'schedules', id)); await refresh('scheds'); } }
       if (act === 'editEmp') employeeEditor(S.emps.find(x => x.id === id));
-      if (act === 'delLoc') { if (confirm('حذف هذا الموقع؟')) { await deleteDoc(doc(db, 'locations', id)); await loadAll(); } }
+      if (act === 'delLoc') { if (confirm('حذف هذا الموقع؟')) { await deleteDoc(doc(db, 'locations', id)); await refresh('locs'); } }
       if (act === 'mapLoc') return locEditor(null);
       if (act === 'editLoc') { const x = S.locs.find(y => y.id === id); if (x) return locEditor(x); }
       if (act === 'xlsx') { toast('جاري تجهيز ملف Excel…'); await exportExcel(); return; }
@@ -3650,16 +3785,16 @@ function adminApp(db, auth) {
         const d = $('#hDay').value, n = $('#hName').value.trim();
         if (!d || !n) return toast('حدد تاريخ العطلة واسمها', 'err');
         await setDoc(doc(db, 'holidays', d), { date: d, name: n, createdAt: serverTimestamp() });
-        await loadAll(); toast('أُضيفت العطلة الرسمية', 'good');
+        await refresh('hols'); toast('أُضيفت العطلة الرسمية', 'good');
       }
-      if (act === 'delHol') { if (confirm('حذف هذه العطلة؟')) { await deleteDoc(doc(db, 'holidays', id)); await loadAll(); } }
+      if (act === 'delHol') { if (confirm('حذف هذه العطلة؟')) { await deleteDoc(doc(db, 'holidays', id)); await refresh('hols'); } }
       if (act === 'saveSet') {
         const org = $('#sOrg').value.trim();
         const tz = parseInt($('#sTz').value, 10);
         const fgd = parseFloat($('#sForgot').value);
         await setDoc(doc(db, 'settings', 'general'), { orgName: org, tzOffset: isNaN(tz) ? TZ_OFFSET_MIN : tz, ...(isSuper() ? { forgotDeductDays: isNaN(fgd) ? 0 : Math.min(1, Math.max(0, fgd)) } : {}), empNotice: ($('#sNotice') ? $('#sNotice').value.trim().slice(0, 300) : ''), updatedAt: serverTimestamp() }, { merge: true });
         if (!isNaN(tz) && tz !== TZOFF) TZOFF = tz;
-        await loadAll(); toast('حُفظت إعدادات المنشأة', 'good');
+        await refresh('set', 'recs'); toast('حُفظت إعدادات المنشأة', 'good');
       }
       if (act === 'addAdmin') {
         const nm = ($('#aName') ? $('#aName').value.trim() : '');
@@ -3689,9 +3824,9 @@ function adminApp(db, auth) {
         if (!['super_admin', 'hr_admin', 'payroll_admin', 'manager', 'auditor'].includes(role)) return toast('الدور المحدد غير صالح', 'err');
         if (role === 'manager' && !deptScope) return toast('حدد قسمًا ثابتًا لمدير القسم؛ لا يمكن ترك النطاق فارغًا', 'err');
         await setDoc(doc(db, 'admins', key), { name: nm, email: em.toLowerCase(), role, ...(role === 'manager' ? { deptScope } : {}), addedAt: serverTimestamp() });
-        await loadAll(); toast(note, 'good');
+        await refresh('admins'); toast(note, 'good');
       }
-      if (act === 'delAdmin') { if (confirm('إزالة صلاحيات هذا المشرف؟')) { await deleteDoc(doc(db, 'admins', id)); await loadAll(); } }
+      if (act === 'delAdmin') { if (confirm('إزالة صلاحيات هذا المشرف؟')) { await deleteDoc(doc(db, 'admins', id)); await refresh('admins'); } }
       if (act === 'v2Done') { localStorage.setItem('att_rules_v5', '1'); return render(); }
       if (act === 'appr' || act === 'rej') {
         const empId = b.dataset.e;
@@ -3756,7 +3891,12 @@ function adminApp(db, auth) {
           batch.update(doc(db, 'employees', empId), { loanTotal: (+empDoc.loanTotal || 0) + addAmt, loanInst: newInst });
         }
         await batch.commit();
-        await loadAll(); toast(st === 'approved' ? 'تم اعتماد الطلب' : 'تم رفض الطلب', 'good');
+        if (st === 'approved' && r.kind === 'fix') await RecCache.clear();
+        try {
+          const nd = await getDoc(doc(db, 'employees', empId, 'requests', id));
+          if (nd.exists()) { const nr = reqMap(nd, empId), i = S.reqs.findIndex(x => x.id === id && x.empId === empId); if (i >= 0) S.reqs[i] = nr; else S.reqs.push(nr); S.leaves = S.reqs.filter(x => x.kind === 'leave' && x.status === 'approved'); }
+        } catch (e3) { console.warn(e3); }
+        await refresh(...(st === 'approved' && ['fix', 'loan'].includes(r.kind) ? ['emps'] : []), ...(st === 'approved' && r.kind === 'fix' ? ['recs'] : [])); toast(st === 'approved' ? 'تم اعتماد الطلب' : 'تم رفض الطلب', 'good');
         if (st === 'approved' && r && r.kind === 'cert') {
           setTimeout(() => printCertificate(S.emps.find(x => x.id === empId)), 300);
         }
@@ -3766,7 +3906,7 @@ function adminApp(db, auth) {
         const name = $('#tkName').value.trim(), price = parseFloat($('#tkPrice').value);
         if (!name || isNaN(price) || price < 0) return toast('اكتب اسم المهمة وسعرها', 'err');
         await addDoc(collection(db, 'taskTypes'), { name: name.slice(0, 80), price, active: true, createdAt: serverTimestamp() });
-        await loadAll(); toast('أُضيفت المهمة للكتالوج', 'good');
+        await refresh('tasks'); toast('أُضيفت المهمة للكتالوج', 'good');
       }
       if (act === 'editTask') {
         const x = S.taskTypes.find(v => v.id === id); if (!x) return;
@@ -3774,15 +3914,15 @@ function adminApp(db, auth) {
         const p = prompt('سعر الوحدة:', String(x.price)); if (p === null) return;
         const pv = parseFloat(p); if (!n.trim() || isNaN(pv) || pv < 0) return toast('بيانات غير صحيحة', 'err');
         await updateDoc(doc(db, 'taskTypes', id), { name: n.trim().slice(0, 80), price: pv });
-        await loadAll(); toast('تم التحديث — الأسعار المعتمدة سابقاً لا تتغيّر', 'good');
+        await refresh('tasks'); toast('تم التحديث — الأسعار المعتمدة سابقاً لا تتغيّر', 'good');
       }
-      if (act === 'toggleTask') { const x = S.taskTypes.find(v => v.id === id); await updateDoc(doc(db, 'taskTypes', id), { active: x.active === false }); await loadAll(); }
-      if (act === 'delTask') { if (confirm('حذف هذه المهمة من الكتالوج؟ تبقى مهامها المعتمدة سابقاً محفوظة.')) { await deleteDoc(doc(db, 'taskTypes', id)); await loadAll(); } }
+      if (act === 'toggleTask') { const x = S.taskTypes.find(v => v.id === id); await updateDoc(doc(db, 'taskTypes', id), { active: x.active === false }); await refresh('tasks'); }
+      if (act === 'delTask') { if (confirm('حذف هذه المهمة من الكتالوج؟ تبقى مهامها المعتمدة سابقاً محفوظة.')) { await deleteDoc(doc(db, 'taskTypes', id)); await refresh('tasks'); } }
       if (act === 'filter') {
         const f = $('#fFrom').value, t = $('#fTo').value;
         if (!f || !t || t < f) return toast('حدد فترة صحيحة', 'err');
         if ((dayStart(t) - dayStart(f)) / 86400000 > 92) return toast('الحد الأقصى للفترة 3 أشهر', 'err');
-        S.from = f; S.to = t; S.emp = $('#fEmp').value; _sumC = null; await loadRecs(); _sumC = null; render();
+        S.from = f; S.to = t; S.emp = $('#fEmp').value; _sumC = null; await loadReqsBefore(f); await loadRecs(); _sumC = null; render();
       }
       if (act === 'csv') {
         const rows = [['الموظف', 'التاريخ', 'الحالة', 'أول حضور', 'آخر انصراف', 'متأخر (د)', 'مبكر (د)', 'صافي العمل (د)', 'إضافي (ساعات مكافئة)']];
