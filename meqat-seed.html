@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>أداة بذر البيانات التجريبية — ميقات</title>
+<link href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;500;600;700;800&family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box}
+:root{--bg:#EAF4EE;--card:#fff;--surface:#F2F8F4;--ink:#0E2A20;--mute:#587265;--line:#D3E5DA;--pri:#0E6B4D;--pri-l:#D3EBDD;--navy:#0A5139;--ok:#0E6B4D;--bad:#C23B1B;--warn:#8A6100;--grad:#0E6B4D;--sh:none}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:"Rubik","IBM Plex Sans Arabic",Tahoma,sans-serif;font-size:15px;line-height:1.65}
+.top{background:var(--pri);color:#fff;padding:16px 18px 50px;border-radius:0 0 34px 34px}
+.top b{font-size:19px}.top small{opacity:.85;display:block}
+.wrap{max-width:880px;margin:0 auto;padding:0 14px 40px}
+.tabs-bar{display:flex;gap:8px;background:var(--card);padding:8px;border-radius:18px;box-shadow:none;border:1px solid var(--line);margin:-34px 0 16px;overflow-x:auto}
+.card{background:var(--card);border:1px solid var(--line);border-radius:28px;padding:18px;margin-bottom:14px}
+h3{margin:0 0 8px}.hint{font-size:13px;color:var(--mute);margin:4px 0 10px}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end}
+.field{display:flex;flex-direction:column;gap:5px;flex:1;min-width:min(100%,160px)}
+.field label{font-size:12.5px;color:var(--mute);font-weight:700}
+input,textarea{border:1.5px solid var(--line);border-radius:16px;padding:10px 14px;background:var(--surface);color:var(--ink);width:100%;font:inherit}
+input:focus,textarea:focus{outline:none;border-color:var(--pri)}
+.btn{display:inline-flex;align-items:center;gap:7px;border:0;background:var(--grad);color:#fff;padding:10px 18px;border-radius:99px;cursor:pointer;font-weight:700;font-size:14px}
+.btn:hover{filter:brightness(1.07)}.btn:disabled{opacity:.4;cursor:not-allowed}
+.btn.sec{background:var(--pri-l);color:var(--pri)}.btn.ok{background:#BDE96B;color:#1E3A07}
+.btn.bad{background:#FF7352;color:#3D1005}
+.log{background:#0B1F16;color:#E9F6EE;border-radius:20px;padding:12px;font-size:12.5px;direction:rtl;max-height:320px;overflow:auto;white-space:pre-wrap;word-break:break-word}
+.stepper{display:flex;gap:8px;flex-wrap:wrap}
+.step{border:1px solid var(--line);border-radius:14px;padding:8px 12px;font-size:13px;font-weight:700;background:var(--surface)}
+.step.done{background:rgba(16,185,129,.12);color:var(--ok);border-color:var(--ok)}
+.step.run{background:var(--pri-l);color:var(--pri);border-color:var(--pri)}
+</style>
+</head>
+<body>
+<div class="top"><div class="wrap" style="padding-bottom:0"><b>أداة بذر البيانات التجريبية — «مِيقَاتْ»</b><small>تُنشئ إعدادات وموظفين و30 يوماً من السجلات في مشروع Firebase تجريبي (الديمو)</small></div></div>
+<div class="wrap">
+  <div class="tabs-bar"><div class="step" id="st0">التهيئة</div><div class="step" id="st1">الموظفون</div><div class="step" id="st2">السجلات</div><div class="step" id="st3">الطلبات</div><div class="step" id="st4">اكتمل</div></div>
+
+  <div class="card">
+    <h3>1) بيانات المشروع والحساب</h3>
+    <p class="hint">الصق بلوك <b dir="ltr">firebaseConfig</b> كاملاً (يُقرأ منه apiKey و projectId و appId فقط). يجب أن يكون حساب المشرف <u>موجوداً مسبقاً</u> في Firebase › Authentication › Users.</p>
+    <textarea id="cfg" rows="5" dir="ltr" placeholder="const firebaseConfig = {&#10;  apiKey: &quot;AIza...&quot;,&#10;  projectId: &quot;meqat-demo&quot;,&#10;  appId: &quot;1:...:web:...&quot;&#10;};" style="font-size:12.5px"></textarea>
+    <div class="row" style="margin-top:10px">
+      <div class="field"><label>اسم المنشأة (يظهر في الديمو)</label><input id="org" value="نسخة عرض ميقات"></div>
+      <div class="field"><label>بريد المشرف التجريبي</label><input id="email" type="email" dir="ltr" placeholder="demo@meqat.app"></div>
+      <div class="field" style="min-width:130px"><label>كلمة السر</label><input id="pass" dir="ltr" placeholder="demo1234"></div>
+      <div class="field" style="min-width:110px"><label>عدد الأيام (من اليوم إلى الخلف)</label><input id="days" type="number" value="30" min="7" max="60"></div>
+    </div>
+    <div class="row" style="margin-top:14px">
+      <button class="btn" id="bInit">اتصال وتهيئة</button>
+      <button class="btn sec" id="bEmps" disabled>بذر الموظفين</button>
+      <button class="btn sec" id="bRecs" disabled>بذر السجلات (30 يوم)</button>
+      <button class="btn sec" id="bReqs" disabled>بذر الطلبات</button>
+      <button class="btn ok" id="bAll" disabled>البذر الكامل بضغطة واحدة</button>
+    </div>
+  </div>
+  <div class="card"><h3>سجل العمليات</h3><div class="log" id="log">— جاهز — أدخل البيانات واضغط «اتصال وتهيئة».</div></div>
+  <div class="card"><p class="hint">بعد البذر: افتح الديمو وسجّل دخولك ببريد المشرف — سترى 12 موظفاً وسجلات شهر كامل وتقارير ورواتب جاهزة. عند بيع العميل الحقيقي تستخدم نسخته الفارغة الخاصة.</p></div>
+</div>
+<script type="module">
+import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
+import { getFirestore, doc, getDoc, getDocs, setDoc, addDoc, collection, writeBatch, serverTimestamp, Timestamp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+import { getAuth, signInWithEmailAndPassword } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
+
+const $ = (s, r = document) => r.querySelector(s);
+const pad = n => String(n).padStart(2, '0');
+const todayKey = () => { const d = new Date(); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; };
+const addDays = (key, n) => { const d = new Date(key + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
+const dow = key => new Date(key + 'T00:00:00Z').getUTCDay();
+const uid10 = () => Math.random().toString(36).slice(2, 12);
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+function log(m, e) { const l = $('#log'); l.textContent += (l.textContent === '— جاهز — أدخل البيانات واضغط «اتصال وتهيئة».' ? '' : '\n') + (e ? '' : '• ') + m; if (e) l.textContent += '\n' + (e.message || e); l.scrollTop = l.scrollHeight; }
+const mark = (id, cls) => { const s = $(id); s.textContent = cls === 'done' ? s.textContent.replace('', '') : s.textContent; s.className = 'step ' + cls; };
+
+const geoK = lat => { const p = lat * Math.PI / 180; return { ky: 111132.92 - 559.82 * Math.cos(2 * p) + 1.175 * Math.cos(4 * p), kx: 111412.84 * Math.cos(p) - 93.5 * Math.cos(3 * p) + 0.118 * Math.cos(5 * p) }; };
+const OT_DEF = { mode: 'hours', baseH: 0, min: 15, step: 15, capH: 0, rateNormal: 1.5, rateRest: 2, rateHoliday: 2, offDayAll: true };
+const rnd = (a, b) => a + Math.floor(Math.random() * (b - a + 1));
+const chance = p => Math.random() < p;
+
+let db = null, auth = null, ADMIN = null, EP = [];
+let SCHED_FIXED = '', SCHED_ROT = '', LOC_HOME = '';
+
+const fixedSched = () => ({
+  name: 'دوام ثابت (الأحد–الخميس 8–4)', mode: 'fixed', breakMin: 45, graceLate: 10, graceEarly: 10, graceMode: 'forgive', ot: { ...OT_DEF },
+  days: (() => { const d = {}; for (let i = 0; i < 7; i++) d[i] = { on: i <= 4, p: [{ s: '08:00', e: '16:00' }], h: 8 }; return d; })(),
+  shifts: [], cycle: [], anchor: todayKey(), createdAt: serverTimestamp()
+});
+const rotSched = () => {
+  const anchor = addDays(todayKey(), -9); // دورة تبدأ قبيل نافذة السجلات
+  return { name: 'نوبات 12 ساعة (3 عمل + 1 راحة)', mode: 'rotation', cycle: ['sh1', 'sh1', 'sh1', '', 'sh2', 'sh2', 'sh2', ''],
+    shifts: [{ id: 'sh1', name: 'صباحي', s: '07:00', e: '19:00' }, { id: 'sh2', name: 'مسائي', s: '19:00', e: '07:00' }],
+    days: (() => { const d = {}; for (let i = 0; i < 7; i++) d[i] = { on: true, p: [{ s: '07:00', e: '19:00' }], h: 12 }; return d; })(),
+    anchor, breakMin: 45, graceLate: 10, graceEarly: 10, graceMode: 'forgive', ot: { ...OT_DEF }, createdAt: serverTimestamp() };
+};
+const locsSeed = () => {
+  const base = [[32.8872, 13.1913, 'الموقع الرئيسي (طرابلس)', 150], [32.8410, 13.1530, 'الفرع الغربي (الزاوية)', 120], [32.9020, 13.2450, 'المكتب الإداري', 100]];
+  return base.map(([lat, lng, name, radius]) => { const k = geoK(lat); return { ...k, name, lat, lng, radius, active: true, createdAt: serverTimestamp() }; });
+};
+const taskTypesSeed = () => [
+  { name: 'غسيل سيارة', price: 10, active: true }, { name: 'تنظيف وحدة سكنية', price: 25, active: true },
+  { name: 'تركيب قطعة', price: 15, active: true }, { name: 'توصيل طرد داخل المدينة', price: 8, active: true },
+  { name: 'أعمال نجارة صغيرة', price: 20, active: true }, { name: 'مهمة إشرافية', price: 30, active: true }
+].map(t => ({ ...t, createdAt: serverTimestamp() }));
+const holidaysSeed = () => [
+  { date: addDays(todayKey(), -20), name: 'عطلة رسمية (تجريبي)' },
+  { date: addDays(todayKey(), -12), name: 'يوم مؤسسي (تجريبي)' },
+  { date: addDays(todayKey(), 9), name: 'عطلة قادمة (تجريبي)' }
+];
+const names = ['أحمد الطاهر', 'محمد الشريف', 'خالد العماري', 'سمير بن يوسف', 'يوسف الجبالي', 'عمر المنصوري', 'ليلى الأصفر', 'نورا الطرابلسي', 'سارة الغزالي', 'ريم بن سالم', 'طارق الهادي (مهام)', 'فاطمة الوزني (مهام)'];
+
+async function connect() {
+  const raw = $('#cfg').value;
+  const m = raw.match(/\{[\s\S]*\}/);
+  if (!m) return log('الصق بلوك firebaseConfig أولاً', new Error('الصق بلوك firebaseConfig أولاً'));
+  let c;
+  try { c = eval('(' + m[0] + ')'); } catch { return log('بلوك الإعدادات غير صالح', new Error('JSON غير صالح')); }
+  if (!c.apiKey || !c.projectId) return log('ناقصة: apiKey / projectId', new Error('ناقصة: apiKey / projectId'));
+  $('#bInit').disabled = true;
+  try {
+    const app = initializeApp({ apiKey: c.apiKey, authDomain: c.projectId + '.firebaseapp.com', projectId: c.projectId, storageBucket: c.projectId + '.firebasestorage.app', messagingSenderId: (c.messagingSenderId || (m => m ? m[1] : '')(/1:([0-9]+):web:/.exec(c.appId || ''))), appId: c.appId });
+    db = getFirestore(app); auth = getAuth(app);
+    log('جارٍ الدخول بـ ' + ($('#email').value || '؟'));
+    ADMIN = await signInWithEmailAndPassword(auth, $('#email').value.trim(), $('#pass').value);
+    log('تم الدخول: ' + (ADMIN.user.email || ADMIN.user.uid));
+    await initBase();
+    ['#bEmps', '#bRecs', '#bReqs', '#bAll'].forEach(s => $(s).disabled = false);
+    mark('#st0', 'done');
+  } catch (e) { log('فشل الاتصال/الدخول', e); log('الحل: أنشئ مستخدم المشرف في Firebase › Authentication › Users بنفس البريد والسر، ثم أعد المحاولة.'); }
+  $('#bInit').disabled = false;
+}
+
+async function initBase() {
+  log('تهيئة الأساس (الإعدادات + الأنماط + الجداول + المواقع + العطل)…');
+  await setDoc(doc(db, 'settings', 'general'), { orgName: $('#org').value.trim() || 'نسخة عرض ميقات', tzOffset: 120, updatedAt: serverTimestamp() });
+  for (const t of taskTypesSeed()) await addDoc(collection(db, 'taskTypes'), t);
+  const fs = fixedSched(), rs = rotSched();
+  SCHED_FIXED = (await addDoc(collection(db, 'schedules'), fs)).id;
+  SCHED_ROT = (await addDoc(collection(db, 'schedules'), rs)).id;
+  const ls = locsSeed();
+  for (const l of ls) { const r = await addDoc(collection(db, 'locations'), l); if (!LOC_HOME) LOC_HOME = r.id; }
+  for (const h of holidaysSeed()) await addDoc(collection(db, 'holidays'), h);
+  log('الأساس جاهز: 6 أنماط مهام + جدولان + 3 مواقع + 3 عطل.');
+}
+
+async function seedEmps() {
+  log('بذر 12 موظفاً…');
+  EP = [];
+  const today = todayKey(), start = addDays(today, -40);
+  const defs = [];
+  names.forEach((nm, i) => {
+    if (i < 8) { // موظفو دوام
+      const sched = i < 3 ? SCHED_ROT : (i < 7 ? SCHED_FIXED : '');
+      const rot = sched === SCHED_ROT ? (i % 8) : 0;
+      const pm = i % 3 === 0 ? 'monthly' : (i % 3 === 1 ? 'hourly' : 'monthly');
+      defs.push({ name: nm, phone: '09120' + String(100000 + i * 137).slice(0, 5), active: true, deviceId: null, uid: null, scheduleId: sched, rotOffset: rot, startDate: start, dept: i % 2 ? 'الإنتاج' : 'الإدارة', empType: 'staff', payMode: pm, payAmount: pm === 'monthly' ? (i % 2 ? 1800 : 2500) : 15, leaveQuota: 21, locs: [], createdAt: serverTimestamp() });
+    } else if (i < 10) { // موظفو مهام
+      defs.push({ name: nm.slice(0, nm.indexOf(' (')), phone: '09130' + String(200000 + i * 91).slice(0, 5), active: true, deviceId: null, uid: null, scheduleId: '', rotOffset: 0, startDate: start, dept: 'الميدان', empType: 'task', payMode: 'task', payAmount: 0, leaveQuota: 0, locs: [], taskPrices: {}, createdAt: serverTimestamp() });
+    } else { // بلا جدول
+      defs.push({ name: nm.slice(0, nm.indexOf(' (')), phone: '09140' + String(300000 + i * 53).slice(0, 5), active: true, deviceId: null, uid: null, scheduleId: '', rotOffset: 0, startDate: start, dept: 'الإدارة', empType: 'staff', payMode: 'none', payAmount: 0, leaveQuota: 21, locs: [], createdAt: serverTimestamp() });
+    }
+  });
+  for (const d of defs) { const id = (await addDoc(collection(db, 'employees'), d)).id; EP.push({ id, name: d.name, empType: d.empType, scheduleId: d.scheduleId, rotOffset: d.rotOffset }); }
+  log(`أُنشئ ${EP.length} موظفاً (8 دوام · 2 مهام · 2 بلا جدول)`);
+  mark('#st1', 'done');
+}
+
+/* يوم عمل من الجدول — نسخة مبسطة من baseDay في النظام */
+function workDay(sched, key, off) {
+  if (!sched) return null;
+  if (sched.mode === 'fixed') { const d = sched.days[dow(key)]; if (!d || !d.on) return null; const p = d.p[0]; return { s: p.s, e: p.e }; }
+  if (sched.mode === 'rotation') {
+    const cyc = sched.cycle || [], n = cyc.length;
+    const idx = (((Math.round((Date.parse(key + 'T00:00:00Z') - Date.parse(sched.anchor + 'T00:00:00Z')) / 86400000) + (off || 0)) % n) + n) % n;
+    const sh = (sched.shifts || []).find(x => x.id === cyc[idx]); return sh ? { s: sh.s, e: sh.e } : null;
+  }
+  return null;
+}
+
+async function seedRecords() {
+  const N = Math.max(7, Math.min(60, +$('#days').value || 30));
+  log(`توليد سجلات آخر ${N} يوماً لكل موظفي الدوام…`);
+  const hols = holidaysSeed().map(h => h.date);
+  let made = 0, bat = writeBatch(db), cnt = 0, flush = () => { ; return bat.commit().then(() => { bat = writeBatch(db); cnt = 0; }); };
+  const mk = (emp, key, type, time, note) => {
+    const d = new Date(`${key}T${time}:00`);
+    if (isNaN(d)) return;
+    const lat = 32.8872 + (Math.random() - 0.5) * 0.0012, lng = 13.1913 + (Math.random() - 0.5) * 0.0012;
+    bat.set(doc(db, 'employees', emp.id, 'records', uid10()), { type, time: Timestamp.fromDate(d), lat, lng, accuracy: rnd(6, 30), distance: rnd(4, 45), locationId: LOC_HOME, locationName: 'الموقع الرئيسي (طرابلس)', empName: emp.name, deviceId: 'DEMO-SEED' });
+    cnt++; made++; if (cnt >= 380) { flush(); }
+  };
+  for (const emp of EP.filter(e => e.scheduleId)) {
+    const sdata = (await getDoc(doc(db, 'schedules', emp.scheduleId))).data();
+    for (let i = N; i >= 0; i--) {
+      const key = addDays(todayKey(), -i);
+      if (hols.includes(key)) continue;
+      const w = workDay(sdata, key, emp.rotOffset);
+      if (!w) continue;
+      if (!chance(0.88)) continue; // حضور ~88%
+      const lateS = chance(0.18) ? (() => { const [h, m] = w.s.split(':').map(Number); return `${pad(h)}:${pad(m + rnd(8, 28))}`; })() : w.s;
+      mk(emp, key, 'in', lateS);
+      if (chance(0.12)) { // انصراف مبكر
+        let [h, m] = w.e.split(':').map(Number); m -= rnd(25, 70); if (m < 0) { m += 60; h--; }
+        mk(emp, key, 'out', `${pad(h)}:${pad(m)}`);
+      } else mk(emp, key, 'out', w.e);
+    }
+  }
+  await flush();
+  log(`أُنشئ ${made} سجل حضور/انصراف حقيقي الشكل`);
+  mark('#st2', 'done');
+}
+
+async function seedRequests() {
+  log('بذر الطلبات (إجازات + تصحيح + مهام)…');
+  const today = todayKey();
+  const staff = EP.filter(e => e.empType === 'staff');
+  const tasks = EP.filter(e => e.empType === 'task');
+  const types = (await getDocs(collection(db, 'taskTypes'))).docs.map(x => ({ id: x.id, ...x.data() }));
+  const TT = name => types.find(t => t.name === name) || types[0];
+  const put = async (emp, kind, data) => {
+    await addDoc(collection(db, 'employees', emp.id, 'requests'), { kind, status: 'pending', empName: emp.name, createdAt: Timestamp.fromDate(new Date(`${data.from || today}T10:30:00`)), ...data });
+  };
+  // إجازات: مؤمّنة وسابقة معتمدة وبند تصحيح
+  await put(staff[0], 'leave', { type: 'annual', typeName: 'سنوية', from: addDays(today, 6), to: addDays(today, 10), note: 'ظروف عائلية' });
+  await put(staff[1], 'leave', { type: 'sick', typeName: 'مرضية', from: addDays(today, -3), to: addDays(today, -3), note: '' });
+  await put(staff[2], 'leave', { type: 'unpaid', typeName: 'بدون راتب', from: addDays(today, 12), to: addDays(today, 14), note: 'سفر' });
+  await put(staff[3], 'fix', { from: addDays(today, -2), to: addDays(today, -2), fixIn: '08:15', fixOut: '16:05', note: 'نُسيت النقطة الافتتاحية' });
+  // مهام معتمدة (تظهر في الرواتب) + بندين معلقين
+  const doneTask = async (emp, name, qty, dOff) => {
+    const t = TT(name);
+    const from = addDays(today, dOff);
+    await addDoc(collection(db, 'employees', emp.id, 'requests'), { kind: 'task', status: 'approved', empName: emp.name, type: 'task', typeName: name, taskId: t.id, taskName: t.name, qty, qtyApproved: t.price * qty, unitPrice: t.price, amount: t.price * qty, from, to: from, createdAt: Timestamp.fromDate(new Date(`${from}T14:00:00`)) });
+  };
+  await doneTask(tasks[0], 'غسيل سيارة', 14, -20); await doneTask(tasks[0], 'غسيل سيارة', 11, -12);
+  await doneTask(tasks[0], 'توصيل طرد داخل المدينة', 9, -6);
+  await doneTask(tasks[1], 'تنظيف وحدة سكنية', 4, -18); await doneTask(tasks[1], 'أعمال نجارة صغيرة', 2, -9);
+  await put(tasks[0], 'task', { type: 'task', typeName: 'تركيب قطعة', taskId: TT('تركيب قطعة').id, taskName: 'تركيب قطعة', qty: 3, from: addDays(today, 3), to: addDays(today, 3) });
+  await put(tasks[1], 'task', { type: 'task', typeName: 'مهمة إشرافية', taskId: TT('مهمة إشرافية').id, taskName: 'مهمة إشرافية', qty: 1, from: addDays(today, 4), to: addDays(today, 4) });
+  log(`أُنشئت: 3 إجازات (1 معتمدة و2 معلّقة)، وطلب تصحيح واحد، و5 مهام معتمدة، وطلبا مهام معلّقان`);
+  mark('#st3', 'done');
+}
+
+$('#bInit').onclick = connect;
+$('#bEmps').onclick = () => seedEmps().catch(e => log('خطأ في بذر الموظفين', e));
+$('#bRecs').onclick = () => (EP.length ? seedRecords() : seedEmps().then(seedRecords)).then(r => log('اكتمل بذر السجلات')).catch(e => log('خطأ في السجلات', e));
+$('#bReqs').onclick = () => seedRequests().catch(e => log('خطأ في الطلبات', e));
+$('#bAll').onclick = async () => {
+  try {
+    if (!EP.length) await seedEmps();
+    await seedRecords();
+    await seedRequests();
+    mark('#st4', 'done');
+    log('اكتمل البذر الكامل — افتح الديمو وسجّل الدخول بحساب المشرف من شاشة الدخول.');
+  } catch (e) { log('توقّف البذر الكامل', e); }
+};
+</script>
+</body>
+</html>
