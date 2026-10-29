@@ -7,8 +7,8 @@ import { dirname, join } from 'node:path';
 
 const html = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', 'index.html'), 'utf8');
 const cut = (a, b) => html.slice(html.indexOf(a), html.indexOf(b));
-const src = 'const FORGOT_MS = 14 * 3600e3;\n' + cut('function pairSessions', 'const localMin') ;
-const { pairSessions, mergeRecs } = new Function(src + '\nreturn { pairSessions, mergeRecs };')();
+const src = 'const FORGOT_MS = 14 * 3600e3;\n' + cut('function pairSessions', '/*RUNS-START*/') ;
+const { pairSessions, mergeRecs, packMonthRecs, unpackMonthRecs } = new Function(src + '\nreturn { pairSessions, mergeRecs, packMonthRecs, unpackMonthRecs };')();
 
 const day = (d, h, m = 0) => new Date(Date.UTC(2026, 9, d, h, m));
 const rec = (type, t) => ({ type, t });
@@ -54,4 +54,28 @@ test('القراءة التزايدية: كاش + سجل جديد = نفس نت�
   const full = workMonth(10);
   const inc = mergeRecs(full.slice(0, 18), full.slice(18));
   assert.deepEqual(inc.map(r => r.t.getTime()), full.map(r => r.t.getTime()));
+});
+
+test('الخطوة 2 — packMonthRecs & unpackMonthRecs: ضغط وفك ضغط بصمات الشهر في وثيقة واحدة بلا فقدان بيانات', () => {
+  const raw = [
+    { id: 'r1', empId: 'e1', empName: 'أحمد', type: 'in', t: day(5, 8, 2), locationId: 'l1', locationName: 'المقر', distance: 12.4, lat: 32.887211, lng: 13.191322 },
+    { id: 'r2', empId: 'e1', empName: 'أحمد', type: 'out', t: day(5, 16, 1), locationId: 'l1', locationName: 'المقر', distance: 9.8, lat: 32.887200, lng: 13.191300 },
+    { id: 'r1', empId: 'e1', empName: 'أحمد', type: 'in', t: day(5, 8, 2), locationId: 'l1', locationName: 'المقر', distance: 12.4, lat: 32.887211, lng: 13.191322 } // مكرر يُزال
+  ];
+  const packed = packMonthRecs(raw, '2026-10', 120);
+  assert.equal(packed.mk, '2026-10');
+  assert.equal(packed.tzOff, 120);
+  assert.equal(packed.count, 2);
+  const unpacked = unpackMonthRecs(packed);
+  assert.equal(unpacked.length, 2);
+  assert.equal(unpacked[0].id, 'r1');
+  assert.equal(unpacked[0].empId, 'e1');
+  assert.equal(unpacked[0].type, 'in');
+  assert.equal(unpacked[0].t.getTime(), day(5, 8, 2).getTime());
+  assert.equal(unpacked[0].distance, 12);
+  assert.equal(unpacked[1].type, 'out');
+  const ses = pairSessions(unpacked);
+  assert.equal(ses.length, 1);
+  assert.equal(ses[0].start.getTime(), day(5, 8, 2).getTime());
+  assert.equal(ses[0].end.getTime(), day(5, 16, 1).getTime());
 });

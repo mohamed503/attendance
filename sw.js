@@ -1,11 +1,13 @@
-/* خدمة «مِيقَاتْ» للعمل دون اتصال (PWA) — الإصدار المحدّث v4
+/* خدمة «مِيقَاتْ» للعمل دون اتصال (PWA) والتنبيهات الذكية — الإصدار المحدّث v6
    صفحة التطبيق (index.html) تُجلب من الشبكة أولاً مع دعم كامل لروابط الموظفين (?e=TOKEN)
    فتتحدّث تلقائياً عند أي تعديل ولا تحتاج رفع VER إلا عند تغيير مكتبات CDN أو منطق هذا الملف. */
-const VER = 'meqat-v5';
+const VER = 'meqat-v6';
 const NAV_TIMEOUT = 4000; // مهلة انتظار الشبكة قبل الرجوع للنسخة المخزّنة (شبكات ضعيفة)
 const CORE = ['./', './index.html'];
 const OFFLINE_MSG = 'تعذر الوصول للنظام — تحقق من الاتصال بالإنترنت ثم أعد المحاولة.';
 const offlineRes = () => new Response(OFFLINE_MSG, { status: 503, headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
+
+let _outReminderTimer = null;
 
 self.addEventListener('install', e => {
   e.waitUntil((async () => {
@@ -20,6 +22,58 @@ self.addEventListener('activate', e => {
     const keys = await caches.keys();
     await Promise.all(keys.filter(k => k !== VER).map(k => caches.delete(k)));
     await self.clients.claim();
+  })());
+});
+
+self.addEventListener('message', e => {
+  const d = e.data || {};
+  if (d.type === 'MEQAT_NOTIFY' && d.title) {
+    if (self.registration && self.registration.showNotification) {
+      e.waitUntil(self.registration.showNotification(d.title, {
+        body: d.body || '',
+        tag: d.tag || 'meqat-alert',
+        dir: 'rtl',
+        lang: 'ar',
+        icon: './icon.svg',
+        badge: './icon.svg',
+        renotify: true,
+        data: { url: d.url || './' }
+      }).catch(() => {}));
+    }
+  } else if (d.type === 'MEQAT_SCHEDULE_OUT') {
+    if (_outReminderTimer) { clearTimeout(_outReminderTimer); _outReminderTimer = null; }
+    const delay = Math.max(1000, +(d.delayMs || 0));
+    if (delay > 0 && delay <= 24 * 3600000) {
+      _outReminderTimer = setTimeout(() => {
+        _outReminderTimer = null;
+        if (self.registration && self.registration.showNotification) {
+          self.registration.showNotification(d.title || '⏰ تذكير بصمة الانصراف — مِيقَاتْ', {
+            body: d.body || 'انتهى وقت الدوام الرسمي، لا تنسَ تسجيل بصمة الانصراف لتفادي احتساب نسيان الانصراف.',
+            tag: 'meqat-checkout-reminder',
+            dir: 'rtl',
+            lang: 'ar',
+            icon: './icon.svg',
+            badge: './icon.svg',
+            renotify: true,
+            data: { url: d.url || './' }
+          }).catch(() => {});
+        }
+      }, delay);
+    }
+  } else if (d.type === 'MEQAT_CANCEL_OUT') {
+    if (_outReminderTimer) { clearTimeout(_outReminderTimer); _outReminderTimer = null; }
+  }
+});
+
+self.addEventListener('notificationclick', e => {
+  e.notification.close();
+  const targetUrl = (e.notification.data && e.notification.data.url) || './';
+  e.waitUntil((async () => {
+    const allClients = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+    for (const client of allClients) {
+      if ('focus' in client) return client.focus();
+    }
+    if (self.clients.openWindow) return self.clients.openWindow(targetUrl);
   })());
 });
 

@@ -10,7 +10,7 @@
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit",
     "test:rules": "firebase emulators:exec --only firestore --project meqat-rules-test \"node --test tests/*.test.mjs\"",
-    "test:unit": "node --test tests/admin-migrate.test.mjs tests/pin-unit.test.mjs tests/month-summary.test.mjs tests/offday-ot.test.mjs tests/forgot-limit.test.mjs tests/payroll.test.mjs tests/payroll-runs-unit.test.mjs tests/loan-ledger-unit.test.mjs tests/payroll-export-unit.test.mjs"
+    "test:unit": "node --experimental-global-webcrypto --test tests/admin-migrate.test.mjs tests/pin-unit.test.mjs tests/month-summary.test.mjs tests/offday-ot.test.mjs tests/forgot-limit.test.mjs tests/payroll.test.mjs tests/payroll-runs-unit.test.mjs tests/loan-ledger-unit.test.mjs tests/payroll-export-unit.test.mjs tests/spoof-offline-unit.test.mjs"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",

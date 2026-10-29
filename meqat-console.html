@@ -632,9 +632,16 @@ $('#licJsonBtn').onclick = () => {
       support: l.support
     };
   });
-  const payload = { app: 'meqat-cloud-licenses', updatedAt: todayKey(), clients: clientsMap };
+  const payload = {
+    app: 'meqat-cloud-licenses',
+    updatedAt: todayKey(),
+    latestVersion: store.get('mc_ota_ver', '2026.5.0'),
+    releaseNotes: store.get('mc_ota_notes', 'تحسينات الأداء الفائق والحماية الرقابية والتنبيهات الذكية'),
+    otaUrl: store.get('mc_tpl', ''),
+    clients: clientsMap
+  };
   download(JSON.stringify(payload, null, 2), 'licenses.json', 'application/json');
-  toast('نُزّل ملف licenses.json — ارفعه في جذر موقعك لتتحدث اشتراكات كل العملاء عن بُعد ✅', 'good');
+  toast('نُزّل ملف licenses.json متضمناً التراخيص وإشعار التحديث المركزي (OTA) لكل العملاء ✅', 'good');
 };
 $('#impBtn').onclick = () => $('#impFile').click();
 $('#impFile').onchange = e => {
@@ -752,9 +759,12 @@ function licFor(c) {
   const isDemo = c.kind === 'demo';
   const demo = store.get('mc_demo', {});
   const remoteUrl = store.get('mc_remote_lic_url', '');
+  const otaUrl = store.get('mc_tpl', '');
   const lic = {
     clientId: c.id || '',
     remoteUrl: isDemo ? '' : remoteUrl,
+    otaUrl: isDemo ? '' : otaUrl,
+    installedVersion: store.get('mc_ota_ver', '2026.5.0'),
     plan: isDemo ? 'demo' : p.id,
     planName: isDemo ? 'نسخة عرض' : p.name,
     status: isDemo ? 'demo' : (c.kind === 'trial' ? 'trial' : 'paid'),
@@ -912,6 +922,37 @@ service cloud.firestore {
       allow update: if isSuperAdmin() && uid != 'owner' && validAdminProfile();
       allow delete: if isSuperAdmin() && uid != 'owner';
     }
+    // ---- سجل التدقيق الرقابي: إضافة فقط (create-only)، لا يُعدَّل ولا يُحذف ----
+    function validAuditLog() {
+      let d = request.resource.data;
+      return d.keys().hasOnly(['action', 'target', 'detail', 'by', 'at'])
+        && d.keys().hasAll(['action', 'target', 'detail', 'by', 'at'])
+        && d.action is string && d.action.size() > 0 && d.action.size() <= 60
+        && d.target is string && d.target.size() <= 120
+        && d.detail is string && d.detail.size() <= 500
+        && d.by.uid == request.auth.uid && d.at == request.time;
+    }
+    match /auditLogs/{id} {
+      allow read: if isSuperAdmin() || isAuditor();
+      allow create: if (isSuperAdmin() || isHrAdmin() || isPayrollAdmin()) && validAuditLog();
+      allow update, delete: if false;
+    }
+    // ---- ملخصات الأشهر المجمّعة: وثيقة واحدة لكل شهر مغلق توفّر آلاف القراءات إلى قراءة واحدة ----
+    function validMonthSummary(mk) {
+      let d = request.resource.data;
+      return mk.matches('[0-9]{4}-[0-9]{2}')
+        && d.keys().hasOnly(['mk', 'tzOff', 'count', 'packed', 'sha256', 'updatedAt', 'by'])
+        && d.keys().hasAll(['mk', 'tzOff', 'count', 'packed', 'sha256', 'updatedAt', 'by'])
+        && d.mk == mk && d.tzOff is number && d.count is int && d.count >= 0
+        && d.packed is string && d.packed.size() <= 900000
+        && d.sha256 is string && d.sha256.size() == 64
+        && d.by.uid == request.auth.uid && d.updatedAt == request.time;
+    }
+    match /monthlySummaries/{mk} {
+      allow read: if globalReadRole();
+      allow create, update: if (isSuperAdmin() || isHrAdmin() || isPayrollAdmin()) && validMonthSummary(mk);
+      allow delete: if isSuperAdmin() || isHrAdmin() || isPayrollAdmin();
+    }
     match /pins/{id} {
       allow read, delete: if isSuperAdmin() || isHrAdmin();
       allow create, update: if (isSuperAdmin() || isHrAdmin()) && validPin();
@@ -944,9 +985,22 @@ service cloud.firestore {
     match /settings/{id} {
       allow read: if request.auth != null;
       allow create: if isSuperAdmin() || (isHrAdmin()
-        && request.resource.data.keys().hasOnly(['orgName', 'tzOffset', 'empNotice', 'leaveTypes', 'cfgVersion', 'updatedAt']));
+        && request.resource.data.keys().hasOnly(['orgName', 'tzOffset', 'empNotice', 'leaveTypes', 'schedOverrides', 'cfgVersion', 'updatedAt']));
       allow update: if isSuperAdmin() || (isHrAdmin()
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['orgName', 'tzOffset', 'empNotice', 'leaveTypes', 'cfgVersion', 'updatedAt']));
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['orgName', 'tzOffset', 'empNotice', 'leaveTypes', 'schedOverrides', 'cfgVersion', 'updatedAt']));
+      allow delete: if isSuperAdmin();
+    }
+    // ---- الخزينة المالية المعزولة لكل موظف: لا يقرؤها إلا المدير العام ومحاسب الرواتب وصاحب العلاقة ----
+    function validEmpFinance() {
+      let d = request.resource.data;
+      return d.keys().hasOnly([
+        'payMode','payAmount','allowance','bonus','penalty','adjMonth','loanTotal','loanInst','lyStatutory','familyStatus',
+        'nationalId','bankName','iban','taskPrices','updatedAt'
+      ]);
+    }
+    match /empFinance/{empId} {
+      allow read: if isSuperAdmin() || isPayrollAdmin() || ownerOnly(empId);
+      allow create, update: if (isSuperAdmin() || isPayrollAdmin()) && validEmpFinance();
       allow delete: if isSuperAdmin();
     }
     match /taskTypes/{id} {
@@ -969,8 +1023,8 @@ service cloud.firestore {
           'startDate','leaveQuota','empType','locs','active','deviceId','uid','devices','rebindProof','maxDevices'
         ]) && validMaxDev())
         || (isPayrollAdmin() && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-          'payMode','payAmount','allowance','bonus','penalty','loanTotal','loanInst','lyStatutory','familyStatus',
-          'nationalId','bankName','iban','taskPrices'
+          'payMode','payAmount','allowance','bonus','penalty','adjMonth','loanTotal','loanInst','lyStatutory','familyStatus',
+          'nationalId','bankName','iban','taskPrices','finIsolated'
         ]))
         || claimDevice() || migrateLegacy() || rebindLegacy() || rebindMap() || joinDevice() || punchState();
 
@@ -1050,14 +1104,18 @@ service cloud.firestore {
       }
       match /joins/{jid} {
         allow read: if isSuperAdmin() || isHrAdmin();
-        allow create, update: if request.auth != null && request.auth.uid == jid
-          && request.resource.data.keys().hasOnly(['pin', 'ua', 'at'])
-          && request.resource.data.pin is string
-          && request.resource.data.pin == get(/databases/$(database)/documents/pins/$(empId)).data.pin
-          && get(/databases/$(database)/documents/pins/$(empId)).data.get('exp', null) != null
-          && request.time < get(/databases/$(database)/documents/pins/$(empId)).data.get('exp', request.time)
-          && request.resource.data.at == request.time;
+        allow create, update: if validJoin(jid);
         allow delete: if isSuperAdmin() || isHrAdmin();
+        function validJoin(jid) {
+          let d = request.resource.data;
+          let p = get(/databases/$(database)/documents/pins/$(empId)).data;
+          return request.auth != null && request.auth.uid == jid
+            && d.keys().hasOnly(['pin', 'ua', 'at'])
+            && d.pin is string && d.at == request.time
+            && d.pin == p.pin
+            && p.get('exp', null) != null
+            && request.time < p.get('exp', request.time);
+        }
       }
       match /records/{recId} {
         allow read: if isSuperAdmin() || isHrAdmin() || isPayrollAdmin() || isAuditor()
@@ -1075,17 +1133,18 @@ service cloud.firestore {
           // فالقاعدة لا تمنع ما يسمح به التطبيق. يجب أن يبقى الرقمان متطابقين (يحرسه الاختبار tests/forgot-limit.test.mjs).
           let dx = (d.lng - l.lng) * l.kx;
           let dy = (d.lat - l.lat) * l.ky;
-          return request.auth != null && isOwnerData(e)
+          return request.auth != null
             && d.keys().hasOnly(['type','time','lat','lng','accuracy','distance','locationId','locationName','empName','deviceId'])
             && d.keys().hasAll(['type','time','lat','lng','accuracy','distance','locationId','locationName','empName','deviceId'])
-            && d.time == request.time && d.type in ['in', 'out'] && e.active == true
-            && d.empName == e.name && d.deviceId == e.get('deviceId', null)
+            && d.time == request.time && d.type in ['in', 'out']
             && d.lat is number && d.lng is number
             && d.lat >= -90 && d.lat <= 90 && d.lng >= -180 && d.lng <= 180
             && d.accuracy is number && d.accuracy >= 0 && d.accuracy <= 250
-            && d.distance is number && d.locationId is string && d.locationName == l.name
+            && d.distance is number && d.locationId is string
+            && isOwnerData(e) && e.active == true
+            && d.empName == e.name && d.deviceId == e.get('deviceId', null)
             && (!('locs' in e) || e.locs.size() == 0 || d.locationId in e.locs)
-            && l.get('active', true) != false && math.sqrt(dx * dx + dy * dy) <= l.radius + 10
+            && d.locationName == l.name && l.get('active', true) != false && math.sqrt(dx * dx + dy * dy) <= l.radius + 10
             && a.get('lastRecId', null) == recId && a.get('state', null) == d.type
             && (last == null || request.time.toMillis() - last.toMillis() >= 20000)
             && ((d.type == 'in' && (st == null || st == 'out' || (last != null && request.time.toMillis() - last.toMillis() >= 50400000)))
@@ -1106,14 +1165,24 @@ service cloud.firestore {
               'status','reviewedAt','reviewedBy','qtyApproved','unitPrice','amount'
             ]);
         }
+        function validTaskReq(d, e) {
+          let tid = d.get('taskId', '');
+          let tt = get(/databases/$(database)/documents/taskTypes/$(tid)).data;
+          return e.get('empType', 'staff') == 'task'
+            && tid is string && tid.size() > 0 && tid.size() <= 40
+            && d.get('taskName', '').size() <= 80
+            && d.get('qty', 0) is number && d.get('qty', 0) >= 1 && d.get('qty', 0) <= 500
+            && tt.name == d.get('taskName', '')
+            && tt.get('active', true) != false;
+        }
         function validRequest() {
           let d = request.resource.data;
           let e = get(/databases/$(database)/documents/employees/$(empId)).data;
-          return request.auth != null && isOwnerData(e)
+          return request.auth != null
             && d.keys().hasOnly(['kind','type','typeName','from','to','fixIn','fixOut','note','status','empName','createdAt','taskId','taskName','qty'])
             && d.keys().hasAll(['kind','from','to','status','empName','createdAt'])
-            && e.active == true && d.status == 'pending'
-            && d.kind in ['leave', 'fix', 'task', 'loan', 'cert'] && d.empName == e.name
+            && d.status == 'pending'
+            && d.kind in ['leave', 'fix', 'task', 'loan', 'cert']
             && d.createdAt == request.time
             && d.from is string && d.from.matches('[0-9]{4}-[0-9]{2}-[0-9]{2}')
             && d.to is string && d.to.matches('[0-9]{4}-[0-9]{2}-[0-9]{2}') && d.from <= d.to
@@ -1122,13 +1191,8 @@ service cloud.firestore {
             && d.get('typeName', '') is string && d.get('typeName', '').size() <= 60
             && d.get('fixIn', '') is string && d.get('fixIn', '').size() <= 5
             && d.get('fixOut', '') is string && d.get('fixOut', '').size() <= 5
-            && (d.kind != 'task' || (e.get('empType', 'staff') == 'task'
-              && d.get('taskId', '') is string && d.get('taskId', '').size() > 0 && d.get('taskId', '').size() <= 40
-              && exists(/databases/$(database)/documents/taskTypes/$(d.get('taskId', '')))
-              && get(/databases/$(database)/documents/taskTypes/$(d.get('taskId', ''))).data.name == d.get('taskName', '')
-              && get(/databases/$(database)/documents/taskTypes/$(d.get('taskId', ''))).data.get('active', true) != false
-              && d.get('taskName', '').size() <= 80
-              && d.get('qty', 0) is number && d.get('qty', 0) >= 1 && d.get('qty', 0) <= 500));
+            && isOwnerData(e) && e.active == true && d.empName == e.name
+            && (d.kind != 'task' || validTaskReq(d, e));
         }
       }
     }
@@ -1166,7 +1230,9 @@ function renderGen(el) {
       <div class="field" style="min-width:230px"><label>العميل</label>
         <select id="gClient"><option value="">— اختر عميلاً من الأرشيف —</option>${list.map(c => `<option value="${esc(c.id)}">${esc(c.company)}${cliStatus(c).expired ? ' (منتهي)' : ''}</option>`).join('')}</select></div>
       <div class="field" style="min-width:260px"><label>رابط قالب النظام المنشور (موقعك)</label><input id="tplUrl" dir="ltr" placeholder="https://meqat-app.netlify.app/" value="${esc(tplUrl)}"></div>
-      <div class="field" style="min-width:260px"><label>رابط ملف التراخيص السحابي (اختياري — للتمديد عن بُعد)</label><input id="remoteLicUrl" dir="ltr" placeholder="https://meqat-app.netlify.app/licenses.json" value="${esc(store.get('mc_remote_lic_url', ''))}"></div>
+      <div class="field" style="min-width:260px"><label>رابط ملف التراخيص والتحديث السحابي (licenses.json)</label><input id="remoteLicUrl" dir="ltr" placeholder="https://meqat-app.netlify.app/licenses.json" value="${esc(store.get('mc_remote_lic_url', ''))}"></div>
+      <div class="field" style="min-width:160px"><label>رقم الإصدار المركزي (OTA)</label><input id="otaVerIn" dir="ltr" placeholder="2026.5.0" value="${esc(store.get('mc_ota_ver', '2026.5.0'))}"></div>
+      <div class="field" style="min-width:260px"><label>ملخص التحديث (يظهر للعملاء)</label><input id="otaNotesIn" placeholder="ميزات جديدة وتحسينات سرعة…" value="${esc(store.get('mc_ota_notes', 'تحسينات الأداء الفائق والحماية الرقابية والتنبيهات الذكية'))}"></div>
       <button class="btn" id="gRun" type="button">توليد الحزمة وتنزيلها</button>
     </div>
     <p class="hint">استضافة مجانية سريعة للتسليم: <b>Netlify Drop</b> (اسحب المجلد وأفلته) أو Firebase Hosting.</p>
@@ -1210,6 +1276,8 @@ function renderGen(el) {
 
 async function genFile() {
   if ($('#remoteLicUrl')) store.set('mc_remote_lic_url', $('#remoteLicUrl').value.trim());
+  if ($('#otaVerIn') && $('#otaVerIn').value.trim()) store.set('mc_ota_ver', $('#otaVerIn').value.trim());
+  if ($('#otaNotesIn')) store.set('mc_ota_notes', $('#otaNotesIn').value.trim());
   const sel = $('#gClient'), out = $('#gOut'), btn = $('#gRun');
   let c;
   try { c = normalizeClient(getClients().find(x => x.id === sel.value)); }

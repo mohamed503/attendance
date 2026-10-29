@@ -241,3 +241,32 @@ test('خصائص: الصافي ≥ 0 ويطابق معادلة المكونات 
     assert.ok(Number.isFinite(r.net));
   }
 });
+
+test('الخطوة 1 — adjMonth: المكافأة والجزاء المقيدان بشهر لا يتكرران في الشهر التالي', () => {
+  const empOct = MON({ bonus: 250, penalty: 50, adjMonth: '2026-10' });
+  const rOct = row(setup({ emp: empOct }), 'e1');
+  near(rOct.allowBonus, 250); near(rOct.dedPen, 50); near(rOct.net, 3100 + 250 - 50);
+  // عند الانتقال لشهر نوفمبر دون تصفير يدوي، لا تُحتسب مكافأة/جزاء أكتوبر مرة ثانية
+  const envNov = setup({ emp: empOct, S: { from: '2026-11-01', to: '2026-11-30' } });
+  const rNov = row(envNov, 'e1');
+  near(rNov.allowBonus, 0); near(rNov.dedPen, 0);
+});
+
+test('الخطوة 4 — Schedule Overrides: استثناء جدول مؤقت لفترة محددة (مثل رمضان أو تبديل شفت) يغيّر أيام الفترة فقط دون المساس بالأيام السابقة', () => {
+  // الجدول الأساسي 8 ساعات (08:00-16:00)، والاستثناء ليومي 11 و 12 أكتوبر بجدول 5 ساعات (09:00-14:00)
+  const scRamadan = { ...fixedSched('09:00', '14:00'), id: 'sc_ram', name: 'دوام رمضان' };
+  const overrides = [{ id: 'ov1', empId: 'e1', dept: '', scheduleId: 'sc_ram', rotOffset: 0, from: '2026-10-11', to: '2026-10-12', note: 'رمضان' }];
+  const env = setup({
+    emp: HR({ payAmount: 20 }),
+    days: WD.filter(k => k !== '2026-10-11' && k !== '2026-10-12'),
+    extraRecs: [...punch('e1', '2026-10-11', 9, 14), ...punch('e1', '2026-10-12', 9, 14)],
+    S: { set: { schedOverrides: overrides } }
+  });
+  env.S.scheds.push(scRamadan);
+  const sum = env.computeSummary();
+  const d11 = sum.find(s => s.day === '2026-10-11');
+  const d04 = sum.find(s => s.day === '2026-10-04');
+  assert.equal(d11.met.planned, 300); // 5 ساعات في يوم الاستثناء وبلا تأخير رغم حضوره 09:00
+  assert.equal(d11.met.late, 0);
+  assert.equal(d04.met.planned, 480); // 8 ساعات في الأيام خارج الاستثناء لم تتغير!
+});

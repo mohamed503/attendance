@@ -542,12 +542,92 @@ const LICENSE = (typeof window !== 'undefined' && window.MEQAT_LICENSE) || null;
     const data = await r.json();
     const myLic = (data && data.clients) ? (LICENSE.clientId ? data.clients[LICENSE.clientId] : null) : data;
     if (myLic && typeof myLic === 'object') {
+      if (data.latestVersion && !myLic.latestVersion) myLic.latestVersion = data.latestVersion;
+      if (data.releaseNotes && !myLic.releaseNotes) myLic.releaseNotes = data.releaseNotes;
+      if (data.otaUrl && !myLic.otaUrl) myLic.otaUrl = data.otaUrl;
       Object.assign(LICENSE, myLic);
       localStorage.setItem('meqat_remote_lic', JSON.stringify(myLic));
       localStorage.setItem('meqat_remote_lic_ts', String(Date.now()));
     }
   } catch {}
 })();
+
+/* ======= نظام الإشعارات والتنبيهات الصوتية والبصرية (MeqatNotify) ======= */
+const MeqatNotify = {
+  supported: () => typeof window !== 'undefined' && 'Notification' in window,
+  perm: () => (typeof window !== 'undefined' && 'Notification' in window) ? Notification.permission : 'denied',
+  async requestPerm() {
+    if (!this.supported()) { toast('متصفحك لا يدعم إشعارات النظام', 'err'); return 'denied'; }
+    try {
+      const p = await Notification.requestPermission();
+      if (p === 'granted') toast('تم تفعيل الإشعارات والتنبيهات الذكية بنجاح 🔔', 'good');
+      else toast('لم يتم منح إذن الإشعارات من المتصفح', 'err');
+      return p;
+    } catch { return 'denied'; }
+  },
+  beep(kind = 'info') {
+    try {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if (!AC) return;
+      const ctx = new AC();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(kind === 'warn' ? 520 : 740, ctx.currentTime);
+      if (kind !== 'warn') osc.frequency.setValueAtTime(980, ctx.currentTime + 0.11);
+      gain.gain.setValueAtTime(0.08, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.32);
+      osc.connect(gain); gain.connect(ctx.destination);
+      osc.start(); osc.stop(ctx.currentTime + 0.33);
+    } catch {}
+  },
+  async send(title, body, tag = 'meqat-alert', kind = 'info') {
+    this.beep(kind);
+    if (!this.supported() || Notification.permission !== 'granted') return false;
+    try {
+      if ('serviceWorker' in navigator) {
+        const reg = await navigator.serviceWorker.ready;
+        if (reg && reg.active) {
+          reg.active.postMessage({ type: 'MEQAT_NOTIFY', title, body, tag, url: location.href });
+          return true;
+        }
+      }
+      new Notification(title, { body, tag, dir: 'rtl', lang: 'ar' });
+      return true;
+    } catch { return false; }
+  }
+};
+window.__meqatRequestNotif = async () => {
+  await MeqatNotify.requestPerm();
+  const btn = document.getElementById('empNotifBtn') || document.getElementById('admNotifBtn');
+  if (btn) btn.innerHTML = MeqatNotify.perm() === 'granted' ? '🔔 التنبيهات مفعّلة' : '🔕 تفعيل التنبيهات';
+};
+window.__checkAndApplyOta = async () => {
+  const otaUrl = (LICENSE && (LICENSE.otaUrl || LICENSE.templateUrl)) || localStorage.getItem('meqat_ota_url') || '';
+  const targetUrl = otaUrl || prompt('أدخل رابط القالب الرسمي المنشور لجلب أحدث إصدار (مثال: https://meqat-app.netlify.app/index.html):', 'https://');
+  if (!targetUrl || !/^https?:\/\//.test(targetUrl.trim())) return;
+  localStorage.setItem('meqat_ota_url', targetUrl.trim());
+  toast('جاري جلب أحدث إصدار ودمج إعدادات شركتك تلقائياً…');
+  try {
+    const r = await fetch(targetUrl.trim() + (targetUrl.includes('?') ? '&' : '?') + '_=' + Date.now(), { cache: 'no-store' });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const rawTpl = await r.text();
+    const patched = patchClientHtmlWithConfig(rawTpl, firebaseConfig, LICENSE);
+    const b = new Blob([patched], { type: 'text/html;charset=utf-8' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(b);
+    a.download = 'index.html';
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1500);
+    if (LICENSE && LICENSE.latestVersion) {
+      LICENSE.installedVersion = LICENSE.latestVersion;
+      try { localStorage.setItem('meqat_remote_lic', JSON.stringify(LICENSE)); } catch {}
+    }
+    toast('تم تجهيز وتحميل ملف index.html المحدّث ببيانات شركتك! ارفعه على استضافتك لإتمام التحديث ✅', 'good');
+  } catch (e) {
+    toast('تعذر جلب التحديث عن بُعد: ' + (e.message || 'تحقق من الرابط'), 'err');
+  }
+};
 const licLeft = () => { if (!LICENSE || !LICENSE.expires) return Infinity; return Math.floor((Date.parse(LICENSE.expires + 'T23:59:59') - Date.now()) / 86400000); };
 const licExpired = () => !!LICENSE && licLeft() < 0;
 const licFeatures = () => (LICENSE && LICENSE.features) || { payroll: true, tasks: true };
@@ -562,12 +642,19 @@ const licBadgeHtml = () => {
 };
 
 const licBannerHtml = () => {
-  if (!LICENSE) return '';
+  let otaHtml = '';
+  if (LICENSE && LICENSE.latestVersion && LICENSE.latestVersion !== MEQAT_CORE_VERSION && LICENSE.installedVersion !== LICENSE.latestVersion) {
+    otaHtml = `<div class="notice" style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;border-color:var(--ok);background:var(--ok-bg);color:var(--ok)">
+      <div><b>🚀 تحديث مركزي جديد متاح (${esc(LICENSE.latestVersion)})</b>${LICENSE.releaseNotes ? ` — ${esc(LICENSE.releaseNotes)}` : ' — يتضمن تحسينات سرعة وأمان وميزات جديدة.'}</div>
+      <button class="btn sm ok" type="button" onclick="window.__checkAndApplyOta()">تنزيل النسخة المحدّثة لشركتك</button>
+    </div>`;
+  }
+  if (!LICENSE) return otaHtml;
   const d = licLeft();
-  if (d < 0) return '';
-  if (LICENSE.status === 'trial') return `<div class="notice"><b>نسخة تجريبية</b> — متبقٍ ${d} يوم. الاشتراك يفتح كل الميزات ولا يفقدك أي بيانات.</div>`;
-   if (LICENSE.status === 'demo') return `<div class="notice"><b>نسخة عرض</b> — للتجربة والعرض فقط، وليست للعمل الفعلي.</div>`;
-  return '';
+  if (d < 0) return otaHtml;
+  if (LICENSE.status === 'trial') return otaHtml + `<div class="notice"><b>نسخة تجريبية</b> — متبقٍ ${d} يوم. الاشتراك يفتح كل الميزات ولا يفقدك أي بيانات.</div>`;
+  if (LICENSE.status === 'demo') return otaHtml + `<div class="notice"><b>نسخة عرض</b> — للتجربة والعرض فقط، وليست للعمل الفعلي.</div>`;
+  return otaHtml;
 };
 
 const licGateHtml = () => `<div class="auth-bg"><div style="position:fixed;top:18px;left:18px;z-index:10">${themeBtnHtml()}</div><div class="login"><div class="logo big">${ic('lock', 46)}</div><h1 class="center">${LICENSE && LICENSE.status === 'demo' ? 'انتهت مدة نسخة العرض' : 'انتهت مدة الاستخدام'}</h1><p class="muted center" style="margin:0 0 20px;font-weight:600">بياناتك محفوظة بالكامل ولن تضيع — للتجديد أو الترقية تواصل مع مزوّد الخدمة${LICENSE && LICENSE.support ? `<br><small style="font-weight:700">${esc(LICENSE.support)}</small>` : ''}</p><button class="btn sec" onclick="location.reload()" style="width:100%;margin-top:16px;padding:11px">إعادة المحاولة بعد التجديد</button></div></div>`;
@@ -580,13 +667,22 @@ const TZ_OFFSET_MIN = 120;       // توقيت طرابلس UTC+2 ثابت (بل
 import { initializeApp, deleteApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
 import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, onAuthStateChanged, signInAnonymously } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
 import { getFirestore, initializeFirestore, persistentLocalCache, persistentMultipleTabManager, terminate, clearIndexedDbPersistence, collection, collectionGroup, doc, getDoc as _getDoc, getDocs as _getDocs, onSnapshot as _onSnapshot, setDoc as _setDoc, addDoc as _addDoc, updateDoc as _updateDoc, deleteDoc as _deleteDoc, query, where, orderBy, limit, writeBatch, Timestamp, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
-/* رقم إصدار الإعدادات (cfgVersion): يُرفع تلقائياً عند أي تعديل إداري على المواقع/الجداول/العطل/الإعدادات،
-   فتعيد صفحات الموظفين جلبها مرة واحدة فقط، وإلا تقرؤها من ذاكرة الجهاز (توفير نحو نصف قراءات كل فتح). */
-const CFG_COLS = ['locations', 'schedules', 'holidays', 'settings'];
+/* رقم إصدار الإعدادات (cfgVersion): يُرفع تلقائياً عند أي تعديل إداري على المواقع/الجداول/العطل/الإعدادات/المهام،
+   فتعيد صفحات الموظفين والإدارة جلبها مرة واحدة فقط، وإلا تقرؤها من ذاكرة الجهاز (توفير معظم قراءات كل فتح).
+   إذا كانت الكتابة على settings/general مباشرة، يُدمج cfgVersion في نفس العملية لتوفير كتابة إضافية. */
+const CFG_COLS = ['locations', 'schedules', 'holidays', 'settings', 'taskTypes'];
 const isCfgRef = r => { try { return CFG_COLS.includes(String(r.path).split('/')[0]); } catch { return false; } };
+const isSetGen = r => { try { return String(r.path) === 'settings/general'; } catch { return false; } };
 const bumpCfg = r => { try { return _setDoc(doc(r.firestore, 'settings', 'general'), { cfgVersion: Date.now() }, { merge: true }).catch(() => {}); } catch { return Promise.resolve(); } };
-const cfgGuard = fn => async (r, ...a) => { const out = await fn(r, ...a); if (isCfgRef(r)) await bumpCfg(r); return out; };
-const setDoc = cfgGuard(_setDoc), addDoc = cfgGuard(_addDoc), updateDoc = cfgGuard(_updateDoc), deleteDoc = cfgGuard(_deleteDoc);
+const cfgGuard = (fn, canInline = false) => async (r, ...a) => {
+  if (canInline && isSetGen(r) && a[0] && typeof a[0] === 'object') {
+    return fn(r, { ...a[0], cfgVersion: Date.now() }, ...a.slice(1));
+  }
+  const out = await fn(r, ...a);
+  if (isCfgRef(r)) await bumpCfg(r);
+  return out;
+};
+const setDoc = cfgGuard(_setDoc, true), addDoc = cfgGuard(_addDoc), updateDoc = cfgGuard(_updateDoc, true), deleteDoc = cfgGuard(_deleteDoc);
 
 /* ---------- عدّاد قراءات Firestore (تقديري) ----------
    يعدّ كل مستند يُقرأ في هذه الجلسة وفي هذا اليوم على هذا الجهاز. اكتب __meqatReads() في الكونسول، أو انظر الشارة بجانب أزرار الأعلى.
@@ -610,7 +706,12 @@ const RecCache = (() => {
   let p = null;
   const open = () => p || (p = new Promise((res, rej) => { try { const r = indexedDB.open('meqat_cache', 1); r.onupgradeneeded = () => r.result.createObjectStore('recs'); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); } catch (e) { rej(e); } }));
   const tx = async (mode, fn) => { const d = await open(); return new Promise((res, rej) => { const t = d.transaction('recs', mode), rq = fn(t.objectStore('recs')); t.oncomplete = () => res(rq && rq.result); t.onerror = t.onabort = () => rej(t.error); }); };
-  return { get: k => tx('readonly', s => s.get(k)).catch(() => null), set: (k, v) => tx('readwrite', s => s.put(v, k)).catch(() => {}), clear: () => tx('readwrite', s => s.clear()).catch(() => {}) };
+  return {
+    get: k => tx('readonly', s => s.get(k)).catch(() => null),
+    set: (k, v) => tx('readwrite', s => s.put(v, k)).catch(() => {}),
+    del: k => tx('readwrite', s => s.delete(k)).catch(() => {}),
+    clear: () => tx('readwrite', s => s.clear()).catch(() => {})
+  };
 })();
 const tsSer = o => { const r = {}; for (const k in o) { const v = o[k]; r[k] = v && typeof v.toMillis === 'function' ? { __ts: v.toMillis() } : v; } return r; };
 const tsDe = o => { const r = {}; for (const k in o) { const v = o[k]; r[k] = v && typeof v === 'object' && v.__ts != null ? Timestamp.fromMillis(v.__ts) : v; } return r; };
@@ -894,6 +995,343 @@ function mergeRecs(a, b) {
   return [...m.values()].sort((x, y) => x.t - y.t);
 }
 
+/*MSUM-START*/
+/* ضغط وفك ضغط بصمات الشهر المغلق في وثيقة واحدة (monthlySummaries/{YYYY-MM}) لتوفير آلاف القراءات إلى قراءة واحدة فقط */
+function packMonthRecs(rows, mk, tzOff) {
+  const seen = new Set();
+  const items = [];
+  [...(rows || [])].forEach(r => {
+    if (!r || !r.empId) return;
+    const ms = r.t instanceof Date ? r.t.getTime() : (r.time && typeof r.time.toMillis === 'function' ? r.time.toMillis() : NaN);
+    if (isNaN(ms)) return;
+    const id = String(r.id || ('r_' + ms));
+    const dedupKey = r.empId + '|' + id + '|' + ms;
+    if (seen.has(dedupKey)) return;
+    seen.add(dedupKey);
+    items.push([
+      id,
+      String(r.empId),
+      r.type === 'out' ? 1 : 0,
+      ms,
+      String(r.locationId || ''),
+      String(r.locationName || ''),
+      Math.round(+r.distance || 0),
+      +(+r.lat || 0).toFixed(5),
+      +(+r.lng || 0).toFixed(5),
+      String(r.empName || '')
+    ]);
+  });
+  items.sort((a, b) => (a[3] - b[3]) || a[1].localeCompare(b[1]));
+  return { mk: String(mk || ''), tzOff: +tzOff || 0, count: items.length, packed: JSON.stringify(items) };
+}
+function unpackMonthRecs(docData, tsFromMillis) {
+  if (!docData || typeof docData.packed !== 'string') return [];
+  let items;
+  try { items = JSON.parse(docData.packed); } catch { return []; }
+  if (!Array.isArray(items)) return [];
+  return items.map(a => {
+    const ms = +a[3] || 0;
+    const t = new Date(ms);
+    return {
+      id: String(a[0] || ''),
+      empId: String(a[1] || ''),
+      type: a[2] === 1 ? 'out' : 'in',
+      time: tsFromMillis ? tsFromMillis(ms) : { toMillis: () => ms, toDate: () => t },
+      t,
+      locationId: a[4] || '',
+      locationName: a[5] || '',
+      distance: +a[6] || 0,
+      lat: +a[7] || 0,
+      lng: +a[8] || 0,
+      empName: a[9] || ''
+    };
+  });
+}
+/*MSUM-END*/
+
+/*SPOOF-START*/
+/* محرك كشف الموقع الوهمي (Anti-GPS Spoofing) وتوثيق بصمات الأوفلاين بالـ GPS */
+function haversineM(lat1, lng1, lat2, lng2) {
+  const R = 6371000, r = x => x * Math.PI / 180;
+  const dLat = r(lat2 - lat1), dLng = r(lng2 - lng1);
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(r(lat1)) * Math.cos(r(lat2)) * Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(h));
+}
+function analyzeGpsSpoof(coords, prevSample, nowMs = Date.now()) {
+  const reasons = [];
+  let blocked = false;
+  if (!coords || typeof coords.latitude !== 'number' || typeof coords.longitude !== 'number') {
+    return { suspicious: true, blocked: true, reasons: ['إحداثيات غير صالحة'] };
+  }
+  const lat = coords.latitude, lng = coords.longitude, acc = +coords.accuracy || 0;
+  // 1. دقة مثالية مصطنعة (< 1 متر في متصفح هاتف) أو سرعة سالبة أو ارتفاع صفري مصطنع
+  if (acc > 0 && acc < 1.0) {
+    reasons.push('دقة GPS مصطنعة (< 1م)');
+  }
+  if (coords.altitude === 0 && coords.altitudeAccuracy === 0) {
+    reasons.push('بصمة ارتفاع صفرية (Mock Location)');
+    blocked = true;
+  }
+  if (coords.speed != null && coords.speed < 0) {
+    reasons.push('قيمة سرعة سالبة غير طبيعية');
+    blocked = true;
+  }
+  // 2. مقارنة مع البصمة الجغرافية السابقة على نفس الجهاز
+  if (prevSample && typeof prevSample.lat === 'number' && typeof prevSample.lng === 'number' && prevSample.ms) {
+    const dtSec = (nowMs - prevSample.ms) / 1000;
+    const dM = haversineM(lat, lng, prevSample.lat, prevSample.lng);
+    // تطابق تام حتى 7 خانات عشرية مع نفس الدقة بعد مرور أكثر من دقيقة (مستحيل فيزيائياً في GPS الحقيقي بسبب التذبذب الحراري)
+    if (dtSec > 60 && Math.abs(lat - prevSample.lat) < 1e-7 && Math.abs(lng - prevSample.lng) < 1e-7 && Math.abs(acc - (+prevSample.acc || 0)) < 1e-4) {
+      reasons.push('ثبات إحداثيات مطلق بدون تذبذب طبيعي (تطبيق تثبيت موقع)');
+      blocked = true;
+    }
+    // انتقال بسرعة تتجاوز 162 كم/س (45 م/ث) لمسافة أكبر من 500 متر خلال أقل من ساعتين
+    if (dtSec > 5 && dtSec < 7200 && dM > 500 && (dM / dtSec) > 45) {
+      reasons.push(`سرعة انتقال غير منطقية (${Math.round((dM / dtSec) * 3.6)} كم/س)`);
+      blocked = true;
+    }
+  }
+  return { suspicious: reasons.length > 0, blocked, reasons };
+}
+function detectRecAnomalies(recs) {
+  const flags = new Map();
+  const byEmp = new Map();
+  [...(recs || [])].forEach(r => {
+    if (!r || !r.empId || !r.t || !r.lat || !r.lng || r.locationId === 'admin' || r.locationId === 'biometric' || r.locationId === 'archive') return;
+    const list = byEmp.get(r.empId) || [];
+    list.push(r);
+    byEmp.set(r.empId, list);
+  });
+  byEmp.forEach(list => {
+    list.sort((a, b) => a.t - b.t);
+    for (let i = 1; i < list.length; i++) {
+      const prev = list[i - 1], cur = list[i];
+      const dtSec = (cur.t - prev.t) / 1000;
+      const dM = haversineM(cur.lat, cur.lng, prev.lat, prev.lng);
+      const issues = [];
+      if (dtSec > 300 && Math.abs(cur.lat - prev.lat) < 1e-7 && Math.abs(cur.lng - prev.lng) < 1e-7 && cur.accuracy > 0 && cur.accuracy === prev.accuracy) {
+        issues.push('تطابق إحداثيات عشري مطلق مع البصمة السابقة');
+      }
+      if (dtSec > 5 && dtSec < 7200 && dM > 500 && (dM / dtSec) > 45) {
+        issues.push(`انتقال غير منطقي (${Math.round(dM)}م خلال ${Math.round(dtSec)}ث)`);
+      }
+      if (cur.accuracy > 0 && cur.accuracy < 1.0) {
+        issues.push(`دقة مصطنعة (${cur.accuracy}م)`);
+      }
+      if (issues.length && cur.id) flags.set(cur.empId + '/' + cur.id, issues);
+    }
+  });
+  return flags;
+}
+function packOfflineNote(meta, userNote = '') {
+  const payload = {
+    lat: +(+meta.lat || 0).toFixed(5),
+    lng: +(+meta.lng || 0).toFixed(5),
+    acc: Math.round(+meta.accuracy || 0),
+    dist: Math.round(+meta.distance || 0),
+    locId: String(meta.locationId || '').slice(0, 32),
+    sig: String(meta.sig || '').slice(0, 16)
+  };
+  const prefix = '[GPS-OFFLINE]' + JSON.stringify(payload);
+  return (userNote ? prefix + ' ' + String(userNote).trim() : prefix).slice(0, 300);
+}
+function parseOfflineNote(note) {
+  const s = String(note || '');
+  if (!s.startsWith('[GPS-OFFLINE]')) return null;
+  const rest = s.slice(13);
+  const endIdx = rest.indexOf('}');
+  if (endIdx < 0) return null;
+  try {
+    const data = JSON.parse(rest.slice(0, endIdx + 1));
+    const extraNote = rest.slice(endIdx + 1).trim();
+    return { ...data, extraNote };
+  } catch { return null; }
+}
+/*SPOOF-END*/
+
+/*FIN-START*/
+/* عزل البيانات المالية والمصرفية الحساسة (empFinance/{empId}) عن وثيقة الموظف العامة */
+const FIN_KEYS = ['payMode','payAmount','allowance','bonus','penalty','adjMonth','loanTotal','loanInst','lyStatutory','familyStatus','nationalId','bankName','iban','taskPrices'];
+function extractEmpFinance(obj) {
+  const out = {};
+  FIN_KEYS.forEach(k => { if (obj && obj[k] !== undefined) out[k] = obj[k]; });
+  return out;
+}
+function stripEmpFinance(empPatch) {
+  const out = { ...empPatch, finIsolated: true, payMode: empPatch && empPatch.empType === 'task' ? 'task' : 'none', payAmount: 0 };
+  ['allowance','bonus','penalty','adjMonth','loanTotal','loanInst','lyStatutory','familyStatus','nationalId','bankName','iban','taskPrices'].forEach(k => { out[k] = null; });
+  return out;
+}
+function mergeEmpFinance(emp, finDoc) {
+  if (!emp || !finDoc) return emp;
+  const merged = { ...emp };
+  FIN_KEYS.forEach(k => { if (finDoc[k] !== undefined && finDoc[k] !== null) merged[k] = finDoc[k]; });
+  return merged;
+}
+/*FIN-END*/
+
+/*NOTIF-START*/
+/* محرك التنبيهات الذكية للموظف والمدير + التحديث السحابي المركزي (OTA) — بدون أي قراءات إضافية من Firestore */
+const MEQAT_CORE_VERSION = '2026.5.0';
+
+function calcCheckoutReminderMs(punchInMs, sched, dayKeyStr, emp = null, overrides = null, nowMs = Date.now()) {
+  const inMs = +punchInMs || nowMs;
+  const fLim = (typeof forgotLimitMs === 'function') ? forgotLimitMs(sched) : (14 * 3600000);
+  const fallbackFireAt = inMs + Math.max(3600000, fLim - 30 * 60000);
+  let fireAtMs = fallbackFireAt;
+  let shiftEndHm = '';
+  let reason = 'forgot_guard';
+
+  try {
+    let sc = null;
+    if (typeof resolveDaySched === 'function' && sched && dayKeyStr) {
+      sc = resolveDaySched(sched, dayKeyStr, emp, overrides);
+    } else if (typeof daySched === 'function' && sched && dayKeyStr) {
+      sc = daySched(sched, dayKeyStr, emp && emp.rotStart);
+    } else if (sched && sched.end) {
+      sc = sched;
+    }
+    if (sc && !sc.off && !sc.flex && sc.end) {
+      const [eh, em] = String(sc.end).split(':').map(Number);
+      const [sh, sm] = String(sc.start || '08:00').split(':').map(Number);
+      if (!isNaN(eh) && !isNaN(em)) {
+        const endMin = eh * 60 + em;
+        const startMin = (!isNaN(sh) && !isNaN(sm)) ? (sh * 60 + sm) : 480;
+        const baseDayMs = (typeof dayStart === 'function' && dayKeyStr) ? dayStart(dayKeyStr).getTime() : (inMs - (inMs % 86400000));
+        let endMs = baseDayMs + endMin * 60000;
+        if (endMin <= startMin || endMs < inMs - 2 * 3600000) endMs += 86400000;
+        const candidate = endMs + 15 * 60000; // بعد انتهاء الوردية بـ 15 دقيقة
+        if (candidate > inMs + 5 * 60000) {
+          fireAtMs = Math.min(candidate, fallbackFireAt);
+          shiftEndHm = sc.end;
+          reason = 'shift_end_plus_15m';
+        }
+      }
+    }
+  } catch {}
+
+  const delayMs = Math.max(0, fireAtMs - nowMs);
+  return {
+    fireAtMs,
+    delayMs,
+    shiftEndHm,
+    reason,
+    expired: nowMs >= fireAtMs
+  };
+}
+
+function diffReqStatusChanges(prevMap, currentReqs) {
+  const prev = (prevMap && typeof prevMap === 'object') ? prevMap : {};
+  const hasPrev = Object.keys(prev).length > 0;
+  const nextMap = {};
+  const changed = [];
+  (Array.isArray(currentReqs) ? currentReqs : []).forEach(r => {
+    if (!r || !r.id) return;
+    const st = String(r.status || 'pending');
+    nextMap[r.id] = st;
+    const oldSt = prev[r.id];
+    if (st === 'approved' || st === 'rejected') {
+      if (oldSt === 'pending' || (!hasPrev && r._recentDecided)) {
+        changed.push({
+          id: r.id,
+          kind: r.kind || 'fix',
+          status: st,
+          type: r.type || '',
+          typeName: r.typeName || '',
+          from: r.from || '',
+          to: r.to || '',
+          reason: r.reason || ''
+        });
+      }
+    }
+  });
+  return { changed, nextMap };
+}
+
+function diffAdminLiveAlerts(prevState, currentReqs, currentTodayRecs, settings = {}) {
+  const prevReqIds = new Set((prevState && Array.isArray(prevState.reqIds)) ? prevState.reqIds : []);
+  const prevRecIds = new Set((prevState && Array.isArray(prevState.recIds)) ? prevState.recIds : []);
+  const initialized = !!(prevState && prevState.initialized);
+  const alerts = [];
+
+  const reqList = Array.isArray(currentReqs) ? currentReqs : [];
+  const recList = Array.isArray(currentTodayRecs) ? currentTodayRecs : [];
+
+  const nextReqIds = reqList.filter(r => r && r.status === 'pending').map(r => (r.empId || '') + '/' + r.id);
+  const nextRecIds = recList.map(r => (r.empId || '') + '/' + r.id);
+
+  if (initialized) {
+    reqList.filter(r => r && r.status === 'pending').forEach(r => {
+      const k = (r.empId || '') + '/' + r.id;
+      if (!prevReqIds.has(k)) {
+        const kindLabel = r.kind === 'loan' ? 'طلب سلفة مالية' : r.kind === 'cert' ? 'طلب شهادة/إفادة' : r.kind === 'leave' ? 'طلب إجازة' : (r.type === 'offline_gps' ? 'بصمة أوفلاين موثقة بالـ GPS' : 'طلب تصحيح بصمة');
+        alerts.push({
+          type: 'req',
+          id: k,
+          title: `🔔 طلب جديد من ${r.empName || 'موظف'}`,
+          body: `${kindLabel} بانتظار المراجعة والاعتماد`
+        });
+      }
+    });
+
+    const newRecs = recList.filter(r => !prevRecIds.has((r.empId || '') + '/' + r.id));
+    if (newRecs.length && typeof detectRecAnomalies === 'function') {
+      const anomMap = detectRecAnomalies(recList, settings);
+      newRecs.forEach(r => {
+        const k = (r.empId || '') + '/' + r.id;
+        const flags = anomMap.get(r.id) || anomMap.get(k);
+        if (flags && flags.length) {
+          alerts.push({
+            type: 'spoof',
+            id: k,
+            title: `⚠️ اشتباه بصمة GPS — ${r.empName || 'موظف'}`,
+            body: flags.join(' · ')
+          });
+        }
+      });
+    }
+  }
+
+  return {
+    alerts,
+    nextState: {
+      initialized: true,
+      reqIds: nextReqIds,
+      recIds: nextRecIds
+    }
+  };
+}
+
+function patchClientHtmlWithConfig(templateHtml, fbConfig, licenseObj) {
+  let html = String(templateHtml || '');
+  if (!html || html.length < 20) throw new Error('قالب النظام غير صالح');
+  if (fbConfig && typeof fbConfig === 'object' && fbConfig.apiKey && fbConfig.projectId) {
+    const i = html.indexOf('const firebaseConfig');
+    const j = i >= 0 ? html.indexOf('};', i) : -1;
+    if (i >= 0 && j > i) {
+      const cleanCfg = {
+        apiKey: fbConfig.apiKey,
+        authDomain: fbConfig.authDomain || (fbConfig.projectId + '.firebaseapp.com'),
+        projectId: fbConfig.projectId,
+        storageBucket: fbConfig.storageBucket || (fbConfig.projectId + '.firebasestorage.app'),
+        messagingSenderId: fbConfig.messagingSenderId || '',
+        appId: fbConfig.appId || ''
+      };
+      html = html.slice(0, i) + 'const firebaseConfig = ' + JSON.stringify(cleanCfg, null, 2) + ';\n' + html.slice(j + 2);
+    }
+  }
+  if (licenseObj && typeof licenseObj === 'object') {
+    html = html.replace(/<script>window\.MEQAT_LICENSE\s*=[\s\S]*?<\/script>\s*/g, '');
+    const si = html.indexOf('<script type="module"');
+    if (si >= 0) {
+      const safeJson = JSON.stringify(licenseObj).replace(/</g, '\\u003c').replace(/>/g, '\\u003e');
+      html = html.slice(0, si) + '<script>window.MEQAT_LICENSE = ' + safeJson + ';</scr' + 'ipt>\n' + html.slice(si);
+    }
+  }
+  return html;
+}
+/*NOTIF-END*/
+
 /*RUNS-START*/
 /* مسيّرات الرواتب المجمّدة: ترميز قانوني ثابت (مفاتيح مرتّبة) + بصمة SHA-256 للتحقق من سلامة الصفوف بعد الاعتماد */
 const canon = v => Array.isArray(v) ? '[' + v.map(canon).join(',') + ']'
@@ -922,7 +1360,7 @@ function buildRunRow(r, e, scheds) {
   return JSON.parse(JSON.stringify({
     ...r,
     inp: e ? {
-      payMode: e.payMode ?? null, payAmount: +e.payAmount || 0, allowance: +e.allowance || 0, bonus: +e.bonus || 0, penalty: +e.penalty || 0,
+      payMode: e.payMode ?? null, payAmount: +e.payAmount || 0, allowance: +e.allowance || 0, bonus: +e.bonus || 0, penalty: +e.penalty || 0, adjMonth: e.adjMonth || null,
       loanTotal: +e.loanTotal || 0, loanInst: +e.loanInst || 0, lyStatutory: !!e.lyStatutory, familyStatus: e.familyStatus || null,
       startDate: e.startDate || null, scheduleId: e.scheduleId || null,
       sched: sc ? { name: sc.name || '', mode: sc.mode || '', ot: sc.ot || {} } : null
@@ -1398,6 +1836,37 @@ service cloud.firestore {
       allow update: if isSuperAdmin() && uid != 'owner' && validAdminProfile();
       allow delete: if isSuperAdmin() && uid != 'owner';
     }
+    // ---- سجل التدقيق الرقابي: إضافة فقط (create-only)، لا يُعدَّل ولا يُحذف ----
+    function validAuditLog() {
+      let d = request.resource.data;
+      return d.keys().hasOnly(['action', 'target', 'detail', 'by', 'at'])
+        && d.keys().hasAll(['action', 'target', 'detail', 'by', 'at'])
+        && d.action is string && d.action.size() > 0 && d.action.size() <= 60
+        && d.target is string && d.target.size() <= 120
+        && d.detail is string && d.detail.size() <= 500
+        && d.by.uid == request.auth.uid && d.at == request.time;
+    }
+    match /auditLogs/{id} {
+      allow read: if isSuperAdmin() || isAuditor();
+      allow create: if (isSuperAdmin() || isHrAdmin() || isPayrollAdmin()) && validAuditLog();
+      allow update, delete: if false;
+    }
+    // ---- ملخصات الأشهر المجمّعة: وثيقة واحدة لكل شهر مغلق توفّر آلاف القراءات إلى قراءة واحدة ----
+    function validMonthSummary(mk) {
+      let d = request.resource.data;
+      return mk.matches('[0-9]{4}-[0-9]{2}')
+        && d.keys().hasOnly(['mk', 'tzOff', 'count', 'packed', 'sha256', 'updatedAt', 'by'])
+        && d.keys().hasAll(['mk', 'tzOff', 'count', 'packed', 'sha256', 'updatedAt', 'by'])
+        && d.mk == mk && d.tzOff is number && d.count is int && d.count >= 0
+        && d.packed is string && d.packed.size() <= 900000
+        && d.sha256 is string && d.sha256.size() == 64
+        && d.by.uid == request.auth.uid && d.updatedAt == request.time;
+    }
+    match /monthlySummaries/{mk} {
+      allow read: if globalReadRole();
+      allow create, update: if (isSuperAdmin() || isHrAdmin() || isPayrollAdmin()) && validMonthSummary(mk);
+      allow delete: if isSuperAdmin() || isHrAdmin() || isPayrollAdmin();
+    }
     match /pins/{id} {
       allow read, delete: if isSuperAdmin() || isHrAdmin();
       allow create, update: if (isSuperAdmin() || isHrAdmin()) && validPin();
@@ -1430,9 +1899,22 @@ service cloud.firestore {
     match /settings/{id} {
       allow read: if request.auth != null;
       allow create: if isSuperAdmin() || (isHrAdmin()
-        && request.resource.data.keys().hasOnly(['orgName', 'tzOffset', 'empNotice', 'leaveTypes', 'cfgVersion', 'updatedAt']));
+        && request.resource.data.keys().hasOnly(['orgName', 'tzOffset', 'empNotice', 'leaveTypes', 'schedOverrides', 'cfgVersion', 'updatedAt']));
       allow update: if isSuperAdmin() || (isHrAdmin()
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['orgName', 'tzOffset', 'empNotice', 'leaveTypes', 'cfgVersion', 'updatedAt']));
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['orgName', 'tzOffset', 'empNotice', 'leaveTypes', 'schedOverrides', 'cfgVersion', 'updatedAt']));
+      allow delete: if isSuperAdmin();
+    }
+    // ---- الخزينة المالية المعزولة لكل موظف: لا يقرؤها إلا المدير العام ومحاسب الرواتب وصاحب العلاقة ----
+    function validEmpFinance() {
+      let d = request.resource.data;
+      return d.keys().hasOnly([
+        'payMode','payAmount','allowance','bonus','penalty','adjMonth','loanTotal','loanInst','lyStatutory','familyStatus',
+        'nationalId','bankName','iban','taskPrices','updatedAt'
+      ]);
+    }
+    match /empFinance/{empId} {
+      allow read: if isSuperAdmin() || isPayrollAdmin() || ownerOnly(empId);
+      allow create, update: if (isSuperAdmin() || isPayrollAdmin()) && validEmpFinance();
       allow delete: if isSuperAdmin();
     }
     match /taskTypes/{id} {
@@ -1455,8 +1937,8 @@ service cloud.firestore {
           'startDate','leaveQuota','empType','locs','active','deviceId','uid','devices','rebindProof','maxDevices'
         ]) && validMaxDev())
         || (isPayrollAdmin() && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
-          'payMode','payAmount','allowance','bonus','penalty','loanTotal','loanInst','lyStatutory','familyStatus',
-          'nationalId','bankName','iban','taskPrices'
+          'payMode','payAmount','allowance','bonus','penalty','adjMonth','loanTotal','loanInst','lyStatutory','familyStatus',
+          'nationalId','bankName','iban','taskPrices','finIsolated'
         ]))
         || claimDevice() || migrateLegacy() || rebindLegacy() || rebindMap() || joinDevice() || punchState();
 
@@ -1536,14 +2018,18 @@ service cloud.firestore {
       }
       match /joins/{jid} {
         allow read: if isSuperAdmin() || isHrAdmin();
-        allow create, update: if request.auth != null && request.auth.uid == jid
-          && request.resource.data.keys().hasOnly(['pin', 'ua', 'at'])
-          && request.resource.data.pin is string
-          && request.resource.data.pin == get(/databases/$(database)/documents/pins/$(empId)).data.pin
-          && get(/databases/$(database)/documents/pins/$(empId)).data.get('exp', null) != null
-          && request.time < get(/databases/$(database)/documents/pins/$(empId)).data.get('exp', request.time)
-          && request.resource.data.at == request.time;
+        allow create, update: if validJoin(jid);
         allow delete: if isSuperAdmin() || isHrAdmin();
+        function validJoin(jid) {
+          let d = request.resource.data;
+          let p = get(/databases/$(database)/documents/pins/$(empId)).data;
+          return request.auth != null && request.auth.uid == jid
+            && d.keys().hasOnly(['pin', 'ua', 'at'])
+            && d.pin is string && d.at == request.time
+            && d.pin == p.pin
+            && p.get('exp', null) != null
+            && request.time < p.get('exp', request.time);
+        }
       }
       match /records/{recId} {
         allow read: if isSuperAdmin() || isHrAdmin() || isPayrollAdmin() || isAuditor()
@@ -1561,17 +2047,18 @@ service cloud.firestore {
           // فالقاعدة لا تمنع ما يسمح به التطبيق. يجب أن يبقى الرقمان متطابقين (يحرسه الاختبار tests/forgot-limit.test.mjs).
           let dx = (d.lng - l.lng) * l.kx;
           let dy = (d.lat - l.lat) * l.ky;
-          return request.auth != null && isOwnerData(e)
+          return request.auth != null
             && d.keys().hasOnly(['type','time','lat','lng','accuracy','distance','locationId','locationName','empName','deviceId'])
             && d.keys().hasAll(['type','time','lat','lng','accuracy','distance','locationId','locationName','empName','deviceId'])
-            && d.time == request.time && d.type in ['in', 'out'] && e.active == true
-            && d.empName == e.name && d.deviceId == e.get('deviceId', null)
+            && d.time == request.time && d.type in ['in', 'out']
             && d.lat is number && d.lng is number
             && d.lat >= -90 && d.lat <= 90 && d.lng >= -180 && d.lng <= 180
             && d.accuracy is number && d.accuracy >= 0 && d.accuracy <= 250
-            && d.distance is number && d.locationId is string && d.locationName == l.name
+            && d.distance is number && d.locationId is string
+            && isOwnerData(e) && e.active == true
+            && d.empName == e.name && d.deviceId == e.get('deviceId', null)
             && (!('locs' in e) || e.locs.size() == 0 || d.locationId in e.locs)
-            && l.get('active', true) != false && math.sqrt(dx * dx + dy * dy) <= l.radius + 10
+            && d.locationName == l.name && l.get('active', true) != false && math.sqrt(dx * dx + dy * dy) <= l.radius + 10
             && a.get('lastRecId', null) == recId && a.get('state', null) == d.type
             && (last == null || request.time.toMillis() - last.toMillis() >= 20000)
             && ((d.type == 'in' && (st == null || st == 'out' || (last != null && request.time.toMillis() - last.toMillis() >= 50400000)))
@@ -1592,14 +2079,24 @@ service cloud.firestore {
               'status','reviewedAt','reviewedBy','qtyApproved','unitPrice','amount'
             ]);
         }
+        function validTaskReq(d, e) {
+          let tid = d.get('taskId', '');
+          let tt = get(/databases/$(database)/documents/taskTypes/$(tid)).data;
+          return e.get('empType', 'staff') == 'task'
+            && tid is string && tid.size() > 0 && tid.size() <= 40
+            && d.get('taskName', '').size() <= 80
+            && d.get('qty', 0) is number && d.get('qty', 0) >= 1 && d.get('qty', 0) <= 500
+            && tt.name == d.get('taskName', '')
+            && tt.get('active', true) != false;
+        }
         function validRequest() {
           let d = request.resource.data;
           let e = get(/databases/$(database)/documents/employees/$(empId)).data;
-          return request.auth != null && isOwnerData(e)
+          return request.auth != null
             && d.keys().hasOnly(['kind','type','typeName','from','to','fixIn','fixOut','note','status','empName','createdAt','taskId','taskName','qty'])
             && d.keys().hasAll(['kind','from','to','status','empName','createdAt'])
-            && e.active == true && d.status == 'pending'
-            && d.kind in ['leave', 'fix', 'task', 'loan', 'cert'] && d.empName == e.name
+            && d.status == 'pending'
+            && d.kind in ['leave', 'fix', 'task', 'loan', 'cert']
             && d.createdAt == request.time
             && d.from is string && d.from.matches('[0-9]{4}-[0-9]{2}-[0-9]{2}')
             && d.to is string && d.to.matches('[0-9]{4}-[0-9]{2}-[0-9]{2}') && d.from <= d.to
@@ -1608,13 +2105,8 @@ service cloud.firestore {
             && d.get('typeName', '') is string && d.get('typeName', '').size() <= 60
             && d.get('fixIn', '') is string && d.get('fixIn', '').size() <= 5
             && d.get('fixOut', '') is string && d.get('fixOut', '').size() <= 5
-            && (d.kind != 'task' || (e.get('empType', 'staff') == 'task'
-              && d.get('taskId', '') is string && d.get('taskId', '').size() > 0 && d.get('taskId', '').size() <= 40
-              && exists(/databases/$(database)/documents/taskTypes/$(d.get('taskId', '')))
-              && get(/databases/$(database)/documents/taskTypes/$(d.get('taskId', ''))).data.name == d.get('taskName', '')
-              && get(/databases/$(database)/documents/taskTypes/$(d.get('taskId', ''))).data.get('active', true) != false
-              && d.get('taskName', '').size() <= 80
-              && d.get('qty', 0) is number && d.get('qty', 0) >= 1 && d.get('qty', 0) <= 500));
+            && isOwnerData(e) && e.active == true && d.empName == e.name
+            && (d.kind != 'task' || validTaskReq(d, e));
         }
       }
     }
@@ -1657,10 +2149,11 @@ if (!configured) { setupPage(); }
 else {
   const app = initializeApp(firebaseConfig);
   await initAppCheck(app);
-  /* كاش Firestore الدائم للوحة الإدارة فقط: يوفّر قراءات المستمع اللحظي عند إعادة فتح الصفحة، ويُمسح عند تسجيل الخروج */
+  /* كاش Firestore الدائم (IndexedDB) للإدارة والموظف: يوفّر القراءات المتكررة ويسرّع الإقلاع الفوري */
+  const initDb = a => { try { return initializeFirestore(a, { localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }) }); } catch (e) { console.warn(e); return getFirestore(a); } };
   let db;
   if (empToken) db = getFirestore(app);
-  else { try { db = initializeFirestore(app, { localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }) }); } catch (e) { console.warn(e); db = getFirestore(app); } }
+  else db = initDb(app);
   const auth = getAuth(app);
   if (empToken) {
     if (isInApp) showInAppGuide(empToken);
@@ -1669,7 +2162,7 @@ else {
       // تطبيق Firebase مستقل للموظف: جلسته لا تتصادم مع جلسة المدير في نفس المتصفح
       const eApp = initializeApp(firebaseConfig, 'emp');
       await initAppCheck(eApp);
-      employeeApp(getFirestore(eApp), getAuth(eApp), empToken);
+      employeeApp(initDb(eApp), getAuth(eApp), empToken);
     }
   }
   else if (needActivation) showActivation();
@@ -1718,10 +2211,13 @@ async function employeeApp(db, auth, token) {
   });
   let cfgSt = null, cfgHit = null, cfgLocRaw = [];
   try {
-    let snap = null;
-    try { snap = await getDoc(ref); }
-    catch (e) {
-      if (!e || e.code !== 'permission-denied') throw e;
+    // جلب ملف الموظف وإعدادات المنشأة بالتوازي لتسريع الإقلاع للنصف
+    let [snap, stRes] = await Promise.all([
+      getDoc(ref).catch(e => { if (e && e.code === 'permission-denied') return null; throw e; }),
+      getDoc(doc(db, 'settings', 'general')).catch(() => null)
+    ]);
+    cfgSt = stRes;
+    if (!snap) {
       // لم نعد مالكين للوثيقة: إما ضاعت جلسة الهوية على نفس الجهاز، أو هذا جهاز جديد
       let rec = false;
       try { await updateDoc(ref, { ['devices.' + myDev]: uid }); rec = true; } catch {}
@@ -1755,28 +2251,60 @@ async function employeeApp(db, auth, token) {
     }
     try { localStorage.setItem('att_emp_tok', token); } catch {}
     installHint();
-    try { cfgSt = await getDoc(doc(db, 'settings', 'general')); } catch {}
+    if (!cfgSt) { try { cfgSt = await getDoc(doc(db, 'settings', 'general')); } catch {} }
     const cv = cfgSt && cfgSt.exists() ? cfgSt.data().cfgVersion : null;
     let cc = null; try { cc = JSON.parse(localStorage.getItem('att_cfg_v1') || 'null'); } catch {}
     if (cv && cc && cc.v === cv && cc.sid === (emp.scheduleId || '') && Array.isArray(cc.locs) && Array.isArray(cc.hols)) cfgHit = cc;
-    cfgLocRaw = cfgHit ? cfgHit.locs : (await getDocs(collection(db, 'locations'))).docs.map(d => ({ id: d.id, ...d.data() }));
-    locs = cfgLocRaw.filter(l => l.active !== false);
-    if (emp.locs && emp.locs.length) locs = locs.filter(l => emp.locs.includes(l.id));
   } catch (e) {
     if (e && e.code === 'permission-denied') return showErr('هذا الرابط مرتبط بجهاز آخر، أو القواعد لم تُحدث بعد. اطلب من الإدارة إعادة ضبط الجهاز.');
     return showErr('تعذر الاتصال بالنظام. تحقق من الإنترنت وحاول مجدداً.');
   }
-  let orgName = BRAND, LT = DEF_LT;
-  try { const st = cfgSt; if (st && st.exists()) { const s = st.data(); if (s.tzOffset != null && !isNaN(+s.tzOffset)) TZOFF = +s.tzOffset; if (s.orgName) orgName = s.orgName; LT = leaveTypesOf(s); } } catch {}
+  let orgName = BRAND, LT = DEF_LT, empOverrides = [];
+  try {
+    const st = cfgSt;
+    if (st && st.exists()) {
+      const s = st.data();
+      if (s.tzOffset != null && !isNaN(+s.tzOffset)) TZOFF = +s.tzOffset;
+      if (s.orgName) orgName = s.orgName;
+      LT = leaveTypesOf(s);
+      if (Array.isArray(s.schedOverrides)) empOverrides = s.schedOverrides;
+    }
+  } catch {}
+  if (emp.finIsolated) {
+    try {
+      const fKey = 'att_emp_fin_' + token;
+      let fData = null;
+      try { const fc = JSON.parse(localStorage.getItem(fKey) || 'null'); if (fc && Date.now() - (fc.at || 0) < 6 * 3600000) fData = fc.d; } catch {}
+      if (!fData) {
+        const fs = await getDoc(doc(db, 'empFinance', token));
+        if (fs.exists()) { fData = fs.data(); try { localStorage.setItem(fKey, JSON.stringify({ at: Date.now(), d: fData })); } catch {} }
+      }
+      if (fData) emp = mergeEmpFinance(emp, fData);
+    } catch {}
+  }
   let empNotice = '';
   try { if (cfgSt && cfgSt.exists() && cfgSt.data().empNotice) empNotice = cfgSt.data().empNotice; } catch {}
-  if (emp.empType === 'task') return taskWorkerApp(db, token, emp, orgName);
-  let sched = null, schedRaw = null, schedOK = true, holsOK = true;
-  try { if (emp.scheduleId) { if (cfgHit) schedRaw = cfgHit.sched; else { const ss = await getDoc(doc(db, 'schedules', emp.scheduleId)); if (ss.exists()) schedRaw = { id: ss.id, ...ss.data() }; } } } catch { schedOK = false; }
-  let hols = [];
-  try { if (cfgHit) hols = cfgHit.hols; else { const hs = await getDocs(collection(db, 'holidays')); hols = hs.docs.map(d => d.data().date || d.id); } } catch { holsOK = false; }
-  const cvNow = cfgSt && cfgSt.exists() ? cfgSt.data().cfgVersion : null;
-  if (!cfgHit && cvNow && schedOK && holsOK) { try { localStorage.setItem('att_cfg_v1', JSON.stringify({ v: cvNow, sid: emp.scheduleId || '', locs: cfgLocRaw, sched: schedRaw, hols })); } catch {} }
+  if (emp.empType === 'task') return taskWorkerApp(db, token, emp, orgName, cfgSt);
+  let sched = null, schedRaw = null, schedOK = true, holsOK = true, hols = [];
+  if (cfgHit) {
+    cfgLocRaw = cfgHit.locs;
+    schedRaw = emp.scheduleId ? cfgHit.sched : null;
+    hols = cfgHit.hols;
+  } else {
+    // جلب المواقع والجدول والعطل بالتوازي في رحلة شبكة واحدة عند تغيّر cfgVersion
+    const [locSnap, schedSnap, holSnap] = await Promise.all([
+      getDocs(collection(db, 'locations')),
+      emp.scheduleId ? getDoc(doc(db, 'schedules', emp.scheduleId)).catch(() => { schedOK = false; return null; }) : Promise.resolve(null),
+      getDocs(collection(db, 'holidays')).catch(() => { holsOK = false; return null; })
+    ]);
+    cfgLocRaw = locSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+    if (schedSnap && schedSnap.exists()) schedRaw = { id: schedSnap.id, ...schedSnap.data() };
+    if (holSnap) hols = holSnap.docs.map(d => d.data().date || d.id);
+    const cvNow = cfgSt && cfgSt.exists() ? cfgSt.data().cfgVersion : null;
+    if (cvNow && schedOK && holsOK) { try { localStorage.setItem('att_cfg_v1', JSON.stringify({ v: cvNow, sid: emp.scheduleId || '', locs: cfgLocRaw, sched: schedRaw, hols })); } catch {} }
+  }
+  locs = cfgLocRaw.filter(l => l.active !== false);
+  if (emp.locs && emp.locs.length) locs = locs.filter(l => emp.locs.includes(l.id));
   if (schedRaw) sched = normSched(schedRaw);
 
   let offset = 0, skewWarn = false;
@@ -1787,17 +2315,23 @@ async function employeeApp(db, auth, token) {
       const t1 = Date.now(); const dh = r.headers.get('Date');
       if (dh && (t1 - t0) < 5000) {
         const srv = new Date(dh).getTime();
-        if (!isNaN(srv)) { offset = srv - (t0 + t1) / 2; skewWarn = Math.abs(offset) > 120000; }
+        if (!isNaN(srv)) {
+          offset = srv - (t0 + t1) / 2;
+          skewWarn = Math.abs(offset) > 120000;
+          const sk = $('#skew'); if (sk) sk.style.display = skewWarn ? 'inline-block' : 'none';
+        }
       }
     } catch {}
   }
-  await syncTime();
+  // مزامنة الوقت في الخلفية دون تعطيل رسم الشاشة الفوري
+  syncTime();
   const now = () => new Date(Date.now() + offset);
 
   root.innerHTML = `<div class="emp-bg"><div class="emp-wrap">
     <div class="emp-brand">
       <div class="emp-brand-l">${logoMark(30)}<span>${esc(orgName)}</span></div>
       <div style="display:flex;gap:8px;align-items:center">
+        <button class="pwa-btn" id="empNotifBtn" type="button" onclick="window.__meqatRequestNotif()">${MeqatNotify.perm() === 'granted' ? '🔔 التنبيهات مفعّلة' : '🔕 تفعيل التنبيهات'}</button>
         <button class="pwa-btn" onclick="window.__installPWA()">${ic('download', 18)} تثبيت</button>
         ${themeBtnHtml()}
       </div>
@@ -1810,6 +2344,7 @@ async function employeeApp(db, auth, token) {
       </div>
     </div>
     ${empNotice ? `<div class="notice">${ic('alert', 18)} تعميم الإدارة: ${esc(empNotice)}</div>` : ''}
+    <div id="empSmartAlert" style="display:none;margin-bottom:12px"></div>
     <div class="card clockcard">
       <div class="live">التوقيت الرسمي المعتمد</div>
       <div class="clock" id="clock">--:--:--</div>
@@ -1823,6 +2358,7 @@ async function employeeApp(db, auth, token) {
       <button class="pbtn out" id="bOut"><span class="pc">${ic('logout', 36)}</span>تسجيل انصراف</button>
     </div>
     <div class="status" id="msg">اضغط على الزر المناسب، وسيُطلب منك السماح بتحديد الموقع.</div>
+    <div id="offQueueBox" style="display:none;margin-bottom:14px"></div>
 <div class="card" id="empPortalSum">
       <div class="ch"><div class="ch-l"><span class="chi">${ic('payroll', 24)}</span><h3>ملخص التزامي ومستحقاتي (هذا الشهر)</h3></div></div>
       <div id="myMonthBox" class="muted">جاري الحساب…</div>
@@ -1846,13 +2382,27 @@ async function employeeApp(db, auth, token) {
   </div></div>`;
   refreshPwaButtons();
   $('#skew').style.display = skewWarn ? 'inline-block' : 'none';
+  const empDaySched = key => {
+    if (empOverrides.length) {
+      let hit = null, best = 0;
+      for (const ov of empOverrides) {
+        if (!ov || !ov.from || !ov.to || key < ov.from || key > ov.to) continue;
+        const r = ov.empId === token ? 3 : (!ov.empId && ov.dept && ov.dept === emp.dept) ? 2 : (ov.empId === '*' && !ov.dept) ? 1 : 0;
+        if (r > best) { best = r; hit = ov; }
+      }
+      if (hit && hit.schedSnap) return { sc: normSched(hit.schedSnap), rot: hit.rotOffset != null ? (+hit.rotOffset || 0) : (emp.rotOffset || 0), note: hit.note || hit.schedSnap.name || '' };
+    }
+    return { sc: sched, rot: emp.rotOffset || 0, note: '' };
+  };
   let planKey = '';
   const planHtml = key => {
-    if (!sched) return '';
-    const b = baseDay(sched, key, emp.rotOffset);
-    if (!b.work) return `<span class="plan">${ic('sun', 18)} اليوم يوم راحة</span>`;
-    if (sched.mode === 'flex') return `<span class="plan">${ic('clock', 18)} المطلوب اليوم: ${fmtMinsH(b.flexMin)}</span>`;
-    return `<span class="plan">${ic(b.periods[0].e > 1440 ? 'moon' : 'clock', 18)} ${b.shiftName ? esc(b.shiftName) + ': ' : 'دوامك: '}${b.periods.map(p => `${fmtHM(minHM(p.s))} – ${fmtHM(minHM(p.e))}`).join(' و ')}</span>`;
+    const { sc: dSc, rot: dRot, note: ovNote } = empDaySched(key);
+    if (!dSc) return '';
+    const b = baseDay(dSc, key, dRot);
+    const tag = ovNote ? ` <small class="badge b-pri" style="font-size:11px">${esc(ovNote)}</small>` : '';
+    if (!b.work) return `<span class="plan">${ic('sun', 18)} اليوم يوم راحة${tag}</span>`;
+    if (dSc.mode === 'flex') return `<span class="plan">${ic('clock', 18)} المطلوب اليوم: ${fmtMinsH(b.flexMin)}${tag}</span>`;
+    return `<span class="plan">${ic(b.periods[0].e > 1440 ? 'moon' : 'clock', 18)} ${b.shiftName ? esc(b.shiftName) + ': ' : 'دوامك: '}${b.periods.map(p => `${fmtHM(minHM(p.s))} – ${fmtHM(minHM(p.e))}`).join(' و ')}${tag}</span>`;
   };
   clearInterval(window.__empClockTick);
   window.__empClockTick = setInterval(() => {
@@ -1876,17 +2426,20 @@ async function employeeApp(db, auth, token) {
      قراءة كاملة جديدة عند تغيّر الشهر أو مرور أكثر من 3 أيام على آخر قراءة كاملة (لالتقاط تصحيحات الإدارة بأثر رجعي). */
   const MK = 'att_month_' + token, MONTH_FULL_MS = 3 * 86400e3, MONTH_CAP = 1500;
   const readMonth = () => { try { const c = JSON.parse(localStorage.getItem(MK) || 'null'); return c && Array.isArray(c.rows) ? c : null; } catch { return null; } };
-  const toRec = d => { const x = d.data(); return { type: x.type, t: x.time && x.time.toDate ? x.time.toDate() : null }; };
-  async function loadMonth(force) {
+  const toRec = d => { const x = d.data(); return { type: x.type, t: x.time && x.time.toDate ? x.time.toDate() : null, locationName: x.locationName || '' }; };
+  async function loadMonth(force, addedRec = null) {
     const mk = dayKey(now()).slice(0, 7);
     const from = new Date(dayStart(mk + '-01').getTime() - 86400000);   // يوم قبل الشهر لإكمال الجلسة الليلية العابرة
     const col = collection(db, 'employees', token, 'records');
     const c = force ? null : readMonth();
     let rows = null, fullAt = Date.now();
     if (c && c.mk === mk && c.fullAt && Date.now() - c.fullAt < MONTH_FULL_MS && c.rows.length) {
-      const cached = c.rows.map(r => ({ type: r.type, t: new Date(r.ms) }));
-      if (c.rid === histRid) rows = cached;
-      else {
+      const cached = c.rows.map(r => ({ type: r.type, t: new Date(r.ms), locationName: r.loc || '' }));
+      if (addedRec) {
+        rows = mergeRecs(cached, [addedRec]); fullAt = c.fullAt;
+      } else if (c.rid === histRid) {
+        rows = cached; fullAt = c.fullAt;
+      } else {
         const lastMs = cached[cached.length - 1].t.getTime();
         const s = await getDocs(query(col, where('time', '>', Timestamp.fromMillis(lastMs)), orderBy('time', 'asc'), limit(500)));
         rows = mergeRecs(cached, s.docs.map(toRec)); fullAt = c.fullAt;
@@ -1896,16 +2449,23 @@ async function employeeApp(db, auth, token) {
       const s = await getDocs(query(col, where('time', '>=', Timestamp.fromDate(from)), orderBy('time', 'asc'), limit(MONTH_CAP)));
       rows = mergeRecs([], s.docs.map(toRec));
     }
-    try { localStorage.setItem(MK, JSON.stringify({ mk, rid: histRid, fullAt, rows: rows.map(r => ({ type: r.type, ms: r.t.getTime() })) })); } catch {}
+    try { localStorage.setItem(MK, JSON.stringify({ mk, rid: histRid, fullAt, rows: rows.map(r => ({ type: r.type, ms: r.t.getTime(), loc: r.locationName || '' })) })); } catch {}
     return { rows, mk, capped: rows.length >= MONTH_CAP };
   }
   async function loadHist(opt = {}) {
+    let monthRes = null;
     try {
       let rows = null;
       if (opt.add && histRows) { rows = [opt.add, ...histRows].slice(0, 15); saveHist(rows); }
       if (!rows && !opt.force) {
         const c = readHist();
         if (c && histRid && c.rid === histRid && c.day === dayKey(now())) rows = c.rows.map(r => ({ type: r.type, t: new Date(r.ms), locationName: r.loc }));
+      }
+      // جلب سجلات الشهر أولاً واستخلاص آخر 15 عملية منها مباشرة لتوفير استعلام records منفصل
+      monthRes = await loadMonth(!!opt.force, opt.add || null).catch(err => { console.warn(err); return null; });
+      if (!rows && monthRes && monthRes.rows.length >= 15) {
+        rows = monthRes.rows.slice(-15).reverse();
+        saveHist(rows);
       }
       if (!rows) {
         const q = query(collection(db, 'employees', token, 'records'), orderBy('time', 'desc'), limit(15));
@@ -1927,12 +2487,13 @@ async function employeeApp(db, auth, token) {
     const box = $('#myMonthBox');
     if (box) {
       try {
-        const { rows: allRows, mk, capped } = await loadMonth(!!opt.force);
+        const { rows: allRows, mk, capped } = monthRes || await loadMonth(!!opt.force);
         const ses = pairSessions(allRows, forgotLim);
         const daysSet = new Set(ses.map(x => dayKey(x.start)).filter(k => k.startsWith(mk)));
         let totalMin = 0, lateDays = 0;
         daysSet.forEach(k => {
-          const met = calcDay(sched, k, ses, hols, emp.rotOffset || 0, { nowMs: now().getTime(), cap: forgotLim });
+          const { sc: kSc, rot: kRot } = empDaySched(k);
+          const met = calcDay(kSc, k, ses, hols, kRot, { nowMs: now().getTime(), cap: forgotLim });
           totalMin += met.net;
           if (met.late > 0) lateDays++;
         });
@@ -1953,9 +2514,79 @@ async function employeeApp(db, auth, token) {
 
   const setMsg = (t, c = '') => { const m = $('#msg'); if (m) { m.className = 'status ' + c; m.textContent = t; } };
   const getPos = () => new Promise((res, rej) => navigator.geolocation.getCurrentPosition(res, rej, { enableHighAccuracy: true, timeout: 25000, maximumAge: 0 }));
+  const OFFQ_KEY = 'att_offq_' + token, GPS_PREV_KEY = 'att_gps_prev_' + token;
+  const readOffQ = () => { try { const q = JSON.parse(localStorage.getItem(OFFQ_KEY) || '[]'); return Array.isArray(q) ? q : []; } catch { return []; } };
+  const saveOffQ = q => { try { localStorage.setItem(OFFQ_KEY, JSON.stringify(q.slice(0, 10))); } catch {} renderOffQ(); };
+  function renderOffQ() {
+    const box = $('#offQueueBox'); if (!box) return;
+    const q = readOffQ();
+    if (!q.length) { box.style.display = 'none'; box.innerHTML = ''; return; }
+    box.style.display = 'block';
+    box.innerHTML = `<div class="notice" style="margin-bottom:0">
+      <b>📍 بصمات موثّقة بالـ GPS محفوظة دون اتصال (${q.length}):</b><br>
+      ${q.map(x => `• ${x.type === 'in' ? 'حضور' : 'انصراف'} الساعة <b>${esc(x.hm)}</b> (${esc(x.day)}) — داخل «${esc(x.locationName)}» (${x.distance}م)`).join('<br>')}
+      <div style="margin-top:8px;display:flex;gap:8px;align-items:center">
+        <button class="btn sm" id="btnFlushOffQ" type="button">${ic('send', 15)} إرسال للإدارة الآن</button>
+        <small class="muted">تُرسل تلقائياً فور عودة الإنترنت</small>
+      </div>
+    </div>`;
+    const b = $('#btnFlushOffQ');
+    if (b) b.onclick = () => flushOfflineQueue(true);
+  }
+  async function queueOfflinePunch(type, posCoords, best) {
+    const tNow = now();
+    const day = dayKey(tNow), hmStr = minHM(localMin(tNow));
+    const sig = await sha256Hex(`${token}|${type}|${day}|${hmStr}|${posCoords.latitude.toFixed(5)}|${posCoords.longitude.toFixed(5)}|${Math.round(best.d)}|${best.l.id}`);
+    const q = readOffQ();
+    q.push({
+      type, day, hm: hmStr, ms: tNow.getTime(),
+      lat: posCoords.latitude, lng: posCoords.longitude,
+      accuracy: Math.round(posCoords.accuracy), distance: Math.round(best.d),
+      locationId: best.l.id, locationName: best.l.name, sig: sig.slice(0, 16)
+    });
+    saveOffQ(q);
+    setMsg(`لا يوجد اتصال بالإنترنت — تم توثيق ${type === 'in' ? 'حضورك' : 'انصرافك'} جغرافياً بالـ GPS داخل «${best.l.name}» (${Math.round(best.d)}م) وحفظه في طابور الجهاز؛ سيُرسل تلقائياً للإدارة فور عودة الإنترنت ✅`, 'good');
+    loadHist();
+  }
+  let _flushingOffQ = false;
+  async function flushOfflineQueue(manual = false) {
+    if (_flushingOffQ || !navigator.onLine) { if (manual && !navigator.onLine) toast('لا يزال الجهاز دون اتصال بالإنترنت', 'err'); return; }
+    const q = readOffQ();
+    if (!q.length) return;
+    _flushingOffQ = true;
+    const rem = [];
+    let sent = 0;
+    for (const item of q) {
+      try {
+        await addDoc(collection(db, 'employees', token, 'requests'), {
+          kind: 'fix',
+          type: 'offline_gps',
+          typeName: String(item.locationName || '').slice(0, 60),
+          from: item.day,
+          to: item.day,
+          fixIn: item.type === 'in' ? item.hm : '',
+          fixOut: item.type === 'out' ? item.hm : '',
+          note: packOfflineNote(item),
+          status: 'pending',
+          empName: emp.name,
+          createdAt: serverTimestamp()
+        });
+        sent++;
+      } catch (e) {
+        console.warn('offline flush failed:', e);
+        rem.push(item);
+      }
+    }
+    _flushingOffQ = false;
+    saveOffQ(rem);
+    if (sent > 0) {
+      toast(`تم إرسال ${sent} بصمة أوفلاين موثّقة بالـ GPS إلى الإدارة للاعتماد ✅`, 'good');
+      loadReqs();
+    }
+  }
+  window.addEventListener('online', () => { flushOfflineQueue(false); });
 
   async function punch(type) {
-    if (!navigator.onLine) return setMsg('لا يوجد اتصال بالإنترنت. لا تُسجَّل البصمة دون اتصال — أعد المحاولة عند عودة الشبكة.', 'err');
     if (!navigator.geolocation) return setMsg('متصفحك لا يدعم تحديد الموقع.', 'err');
     if (!locs.length) return setMsg('لم تحدد الإدارة أي موقع عمل بعد.', 'err');
     try {
@@ -1973,9 +2604,23 @@ async function employeeApp(db, auth, token) {
     }
     const { latitude: lat, longitude: lng, accuracy } = pos.coords;
     if (accuracy > MAX_ACCURACY) { setMsg(`دقة الموقع ضعيفة (±${Math.round(accuracy)}م). فعّل GPS أو انتقل لمكان مفتوح وأعد المحاولة.`, 'err'); return loadHist(); }
+    // فحص كشف الموقع الوهمي (Anti-GPS Spoofing) قبل السماح بالتسجيل
+    let prevGps = null;
+    try { prevGps = JSON.parse(localStorage.getItem(GPS_PREV_KEY) || 'null'); } catch {}
+    const spoof = analyzeGpsSpoof(pos.coords, prevGps, Date.now());
+    if (spoof.blocked) {
+      setMsg(`رفض النظام البصمة: تم رصد مؤشرات موقع وهمي (${spoof.reasons.join('، ')}). أوقف أي تطبيق لتغيير الموقع وتحرك خطوات في مكان مفتوح ثم أعد المحاولة.`, 'err');
+      return loadHist();
+    }
     let best = null;
     for (const l of locs) { const d = dist(lat, lng, l.lat, l.lng); if (!best || d < best.d) best = { l, d }; }
     if (best.d > best.l.radius) { setMsg(`أنت خارج نطاق العمل. تبعد حوالي ${Math.round(best.d)} متر عن «${best.l.name}» (المسموح ${best.l.radius}م). لم يتم التسجيل.`, 'err'); return loadHist(); }
+    try { localStorage.setItem(GPS_PREV_KEY, JSON.stringify({ lat, lng, acc: accuracy, ms: Date.now() })); } catch {}
+    // إذا كان الهاتف غير متصل بالإنترنت لحظة البصمة، نحفظ البصمة الموثّقة بالـ GPS في طابور الأوفلاين الموقّع
+    if (!navigator.onLine) {
+      await queueOfflinePunch(type, pos.coords, best);
+      return;
+    }
     let recRef = null, punched = null;
     try {
       try { sessionStorage.setItem(inflightKey, String(Date.now())); } catch {}
@@ -1988,14 +2633,20 @@ async function employeeApp(db, auth, token) {
       const first = await Promise.race([done.then(() => 'ok'), new Promise(r => setTimeout(() => r('slow'), 15000))]);
       if (first === 'slow') {
         setMsg('الشبكة بطيئة: التسجيل قيد الإرسال. لا تُعد الضغط — سيظهر في «آخر تسجيلاتك» فور وصوله.');
-        done.then(() => { try { sessionStorage.removeItem(inflightKey); } catch {} setMsg('وصل التسجيل إلى الخادم', 'good'); histRid = recRef.id; emp.lastRecId = recRef.id; loadHist({ force: true }); }).catch(() => { try { sessionStorage.removeItem(inflightKey); } catch {} setMsg('تعذر حفظ التسجيل. تحقق من الاتصال وأعد المحاولة.', 'err'); loadHist(); });
+        done.then(() => { try { sessionStorage.removeItem(inflightKey); } catch {} setMsg('وصل التسجيل إلى الخادم', 'good'); histRid = recRef.id; emp.lastRecId = recRef.id; loadHist({ force: true }); }).catch(() => { try { sessionStorage.removeItem(inflightKey); } catch {} queueOfflinePunch(type, pos.coords, best); });
         return;
       }
       try { sessionStorage.removeItem(inflightKey); } catch {}
       setMsg(type === 'in' ? `تم تسجيل حضورك في «${best.l.name}»` : `تم تسجيل انصرافك من «${best.l.name}»`, 'good');
       histRid = recRef.id; emp.lastRecId = recRef.id; punched = { type, t: now(), locationName: best.l.name };
+      if (type === 'in') scheduleEmpCheckoutReminder(now());
+      else clearEmpCheckoutReminder();
     } catch (e) {
       try { sessionStorage.removeItem(inflightKey); } catch {}
+      if (!navigator.onLine || (e && e.code === 'unavailable')) {
+        await queueOfflinePunch(type, pos.coords, best);
+        return;
+      }
       setMsg(e.code === 'permission-denied' ? 'رفض الخادم التسجيل: تأكد أنك داخل نطاق العمل وأن آخر عملية لم تُسجَّل للتو، ثم أعد المحاولة.' : 'تعذر حفظ التسجيل. تحقق من الاتصال وحاول مجدداً.', 'err');
     }
     loadHist(punched ? { add: punched } : {});
@@ -2003,9 +2654,10 @@ async function employeeApp(db, auth, token) {
 
   /* ---------- طلبات الموظف: إجازة وتصحيح ---------- */
   const rqFormEl = $('#rqForm');
-  const myLeaves = { list: [] };
-  async function refreshMyLeaves() {
-    try { const s = await getDocs(query(collection(db, 'employees', token, 'requests'), where('kind', '==', 'leave'))); myLeaves.list = s.docs.map(d => d.data()); } catch {}
+  const myLeaves = { list: [], ts: 0 };
+  async function refreshMyLeaves(force = false) {
+    if (!force && myLeaves.ts && Date.now() - myLeaves.ts < 300000) return myLeaves.list;
+    try { const s = await getDocs(query(collection(db, 'employees', token, 'requests'), where('kind', '==', 'leave'))); myLeaves.list = s.docs.map(d => d.data()); myLeaves.ts = Date.now(); } catch {}
     return myLeaves.list;
   }
   const annualLeft = () => { const yr = dayKey(now()).slice(0, 4), q = emp.leaveQuota ?? 21; const used = myLeaves.list.filter(r => r.status === 'approved' && leaveDeducts(r)).reduce((a, r) => a + countLeaveDays(r.from, r.to, sched, emp.rotOffset || 0, hols, yr), 0); return { q, used, rem: q - used, yr }; };
@@ -2069,7 +2721,9 @@ async function employeeApp(db, auth, token) {
           if (!nWork) { if (btn) btn.disabled = false; return toast('هذه الفترة لا تتضمن أي يوم دوام (راحة أو عطل رسمية)', 'err'); }
           const lt = LT.find(v => v.id === $('#rqType').value) || LT[0];
           if (lt.deduct) { const x = annualLeft(); if (nWork > x.rem && !confirm(`أيام العمل المطلوبة (${nWork}) تتجاوز رصيدك المتبقي (${x.rem} يوم). هل تريد الإرسال رغم ذلك؟`)) { if (btn) btn.disabled = false; return; } }
-          await addDoc(collection(db, 'employees', token, 'requests'), { kind: 'leave', type: String(lt.id).slice(0, 40), typeName: String(lt.name).slice(0, 60), from, to, note, status: 'pending', empName: emp.name, createdAt: serverTimestamp() });
+          const lvDoc = { kind: 'leave', type: String(lt.id).slice(0, 40), typeName: String(lt.name).slice(0, 60), from, to, note, status: 'pending', empName: emp.name, createdAt: serverTimestamp() };
+          await addDoc(collection(db, 'employees', token, 'requests'), lvDoc);
+          myLeaves.list.push(lvDoc);
           rqFormEl.innerHTML = '';
           toast('أُرسل طلب الإجازة — بانتظار موافقة الإدارة', 'good');
         } else if (kind === 'loan') {
@@ -2100,17 +2754,90 @@ async function employeeApp(db, auth, token) {
   $('#rqFix').onclick = () => showRqForm('fix');
   $('#rqList').onclick = async ev => {
     const bx = ev.target.closest('[data-cx]'); if (!bx || !confirm('إلغاء هذا الطلب؟')) return;
-    try { await deleteDoc(doc(db, 'employees', token, 'requests', bx.dataset.cx)); toast('أُلغي الطلب', 'good'); loadReqs(); }
+    try { await deleteDoc(doc(db, 'employees', token, 'requests', bx.dataset.cx)); myLeaves.ts = 0; toast('أُلغي الطلب', 'good'); loadReqs(); }
     catch { toast('تعذر الإلغاء (ربما روجع الطلب)', 'err'); }
   };
+  const OUT_REM_KEY = 'att_out_rem_' + token;
+  const REQ_ST_KEY = 'att_req_st_' + token;
+  let _empOutTimer = null;
+
+  function renderEmpSmartAlert(html, cls = 'notice') {
+    const box = $('#empSmartAlert');
+    if (!box) return;
+    if (!html) { box.style.display = 'none'; box.innerHTML = ''; return; }
+    box.style.display = 'block';
+    box.innerHTML = `<div class="${cls}" style="display:flex;align-items:center;justify-content:space-between;gap:8px"><div>${html}</div><button class="btn sm sec" type="button" onclick="this.parentElement.parentElement.style.display='none'">إغلاق</button></div>`;
+  }
+
+  function clearEmpCheckoutReminder() {
+    if (_empOutTimer) { clearTimeout(_empOutTimer); _empOutTimer = null; }
+    try { localStorage.removeItem(OUT_REM_KEY); } catch {}
+    try { if ('serviceWorker' in navigator && navigator.serviceWorker.controller) navigator.serviceWorker.controller.postMessage({ type: 'MEQAT_CANCEL_OUT' }); } catch {}
+  }
+
+  function scheduleEmpCheckoutReminder(punchInMs) {
+    clearEmpCheckoutReminder();
+    const dKey = dayKey(new Date(punchInMs));
+    const rem = calcCheckoutReminderMs(punchInMs, sched, dKey, emp, empOverrides, now());
+    try { localStorage.setItem(OUT_REM_KEY, JSON.stringify({ inMs: punchInMs, fireAtMs: rem.fireAtMs, shiftEndHm: rem.shiftEndHm })); } catch {}
+    const title = '⏰ تذكير بصمة الانصراف — ' + orgName;
+    const body = rem.shiftEndHm
+      ? `انتهى وقت ورديتك (${rem.shiftEndHm})، لا تنسَ تسجيل بصمة الانصراف لتفادي احتساب نسيان الانصراف.`
+      : 'تذكير ودي: لا تنسَ تسجيل بصمة الانصراف قبل مغادرة موقع العمل.';
+    if (rem.delayMs > 0 && rem.delayMs <= 24 * 3600000) {
+      _empOutTimer = setTimeout(() => {
+        MeqatNotify.send(title, body, 'meqat-checkout-reminder', 'warn');
+        renderEmpSmartAlert(`<b>⏰ تذكير بصمة الانصراف:</b> ${esc(body)}`);
+      }, rem.delayMs);
+      try {
+        if ('serviceWorker' in navigator) {
+          navigator.serviceWorker.ready.then(reg => {
+            if (reg && reg.active) reg.active.postMessage({ type: 'MEQAT_SCHEDULE_OUT', delayMs: rem.delayMs, title, body, url: location.href });
+          }).catch(() => {});
+        }
+      } catch {}
+    }
+  }
+
+  // استئناف تذكير الانصراف المحفوظ إن كان الموظف لا يزال مسجلاً للدخول
+  try {
+    const savedRem = JSON.parse(localStorage.getItem(OUT_REM_KEY) || 'null');
+    if (savedRem && emp.state === 'in' && savedRem.fireAtMs) {
+      const remLeft = savedRem.fireAtMs - now();
+      if (remLeft <= 0 && now() - savedRem.fireAtMs < 8 * 3600000) {
+        renderEmpSmartAlert(`<b>⚠️ تنبيه نسيان الانصراف:</b> انتهى وقت الوردية${savedRem.shiftEndHm ? ' (' + esc(savedRem.shiftEndHm) + ')' : ''} وما زالت حالتك «حاضر». بادر بتسجيل الانصراف الآن.`);
+      } else if (remLeft > 0) {
+        scheduleEmpCheckoutReminder(savedRem.inMs || now());
+      }
+    } else if (emp.state === 'out') {
+      clearEmpCheckoutReminder();
+    }
+  } catch {}
+
   async function loadReqs() {
     try {
       const q = query(collection(db, 'employees', token, 'requests'), orderBy('createdAt', 'desc'), limit(10));
       const s = await getDocs(q);
+      // رصد تغيّر حالة الطلبات (موافقة / رفض) وإشعار الموظف فوراً بدون أي قراءة إضافية
+      try {
+        const prevMap = JSON.parse(localStorage.getItem(REQ_ST_KEY) || '{}');
+        const reqItems = s.docs.map(d => ({ id: d.id, ...d.data() }));
+        const { changed, nextMap } = diffReqStatusChanges(prevMap, reqItems);
+        localStorage.setItem(REQ_ST_KEY, JSON.stringify(nextMap));
+        if (changed.length) {
+          const c0 = changed[0];
+          const isOk = c0.status === 'approved';
+          const kindAr = c0.kind === 'loan' ? 'طلب السلفة' : c0.kind === 'cert' ? 'طلب الإفادة' : c0.kind === 'leave' ? 'طلب الإجازة' : 'طلب التصحيح';
+          const nTitle = isOk ? `✅ تمت الموافقة على ${kindAr}` : `⚠️ تم رفض ${kindAr}`;
+          const nBody = c0.reason ? `ملاحظة الإدارة: ${c0.reason}` : (isOk ? 'تم اعتماد طلبك في السجل الرسمي بنجاح.' : 'راجع قسم الطلبات للاطلاع على التفاصيل.');
+          MeqatNotify.send(nTitle, nBody, 'meqat-req-' + c0.id, isOk ? 'info' : 'warn');
+          renderEmpSmartAlert(`<b>${esc(nTitle)}:</b> ${esc(nBody)}`);
+        }
+      } catch {}
       $('#rqList').innerHTML = s.docs.length ? s.docs.map(d => {
         const r = d.data();
         const st = r.status === 'pending' ? '<span class="badge b-warn">بانتظار المراجعة</span>' : r.status === 'approved' ? '<span class="badge b-ok">مقبول</span>' : '<span class="badge b-bad">مرفوض</span>';
-        const det = r.kind === 'loan' ? `<b>طلب سلفة: ${esc(r.type)} د.ل</b> (قسط شهري: ${esc(r.typeName)} د.ل)` : r.kind === 'cert' ? `<b>طلب ${esc(r.typeName || 'إفادة عمل')}</b>` : r.kind === 'leave' ? `${esc(r.typeName || 'إجازة')} · من ${fmtDate(dayStart(r.from))} إلى ${fmtDate(dayStart(r.to))}` : `تصحيح ${fmtDate(dayStart(r.from))}${r.fixIn ? ' · حضور ' + esc(r.fixIn) : ''}${r.fixOut ? ' · انصراف ' + esc(r.fixOut) : ''}`;
+        const det = r.kind === 'loan' ? `<b>طلب سلفة: ${esc(r.type)} د.ل</b> (قسط شهري: ${esc(r.typeName)} د.ل)` : r.kind === 'cert' ? `<b>طلب ${esc(r.typeName || 'إفادة عمل')}</b>` : r.kind === 'leave' ? `${esc(r.typeName || 'إجازة')} · من ${fmtDate(dayStart(r.from))} إلى ${fmtDate(dayStart(r.to))}` : `${r.type === 'offline_gps' ? '<span class="badge b-ok">📍 بصمة أوفلاين</span> ' : 'تصحيح '}${fmtDate(dayStart(r.from))}${r.fixIn ? ' · حضور ' + esc(r.fixIn) : ''}${r.fixOut ? ' · انصراف ' + esc(r.fixOut) : ''}${r.type === 'offline_gps' && r.typeName ? ' · ' + esc(r.typeName) : ''}`;
         return `<tr><td>${det}</td><td>${st}${r.status === 'pending' ? ` <button class="btn sm sec" data-cx="${d.id}">${ic('x', 15)} إلغاء</button>` : ''}</td></tr>`;
       }).join('') : '<tr><td class="muted">لا توجد طلبات بعد</td></tr>';
     } catch { $('#rqList').innerHTML = '<tr><td class="muted">تعذر تحميل طلباتك</td></tr>'; }
@@ -2119,15 +2846,27 @@ async function employeeApp(db, auth, token) {
 
   $('#bIn').onclick = () => punch('in');
   $('#bOut').onclick = () => punch('out');
+  renderOffQ();
+  flushOfflineQueue(false);
   loadHist();
 }
 
 /* =====================================================================
    واجهة موظف المهام (عمل حر): بلا بصمة، يُسجّل مهامه والإدارة تعتمد
    ===================================================================== */
-async function taskWorkerApp(db, token, emp, orgName) {
+async function taskWorkerApp(db, token, emp, orgName, cfgSt = null) {
   let types = [];
-  try { const s = await getDocs(collection(db, 'taskTypes')); types = s.docs.map(d => ({ id: d.id, ...d.data() })).filter(x => x.active !== false).sort((a, b) => (a.name || '').localeCompare(b.name || '', 'ar')); } catch {}
+  const cv = cfgSt && cfgSt.exists() ? cfgSt.data().cfgVersion : null;
+  let tkHit = null;
+  try { const c = JSON.parse(localStorage.getItem('att_tk_cfg_v1') || 'null'); if (cv && c && c.v === cv && Array.isArray(c.types)) tkHit = c.types; } catch {}
+  if (tkHit) types = tkHit;
+  else {
+    try {
+      const s = await getDocs(collection(db, 'taskTypes'));
+      types = s.docs.map(d => ({ id: d.id, ...d.data() })).filter(x => x.active !== false).sort((a, b) => (a.name || '').localeCompare(b.name || '', 'ar'));
+      if (cv) { try { localStorage.setItem('att_tk_cfg_v1', JSON.stringify({ v: cv, types: types.map(tsSer) })); } catch {} }
+    } catch {}
+  }
   const price = id => { const o = emp.taskPrices && emp.taskPrices[id]; if (o != null) return +o || 0; const x = types.find(v => v.id === id); return x ? +x.price || 0 : 0; };
   const today = dayKey(new Date());
   root.innerHTML = `<div class="emp-bg"><div class="emp-wrap">
@@ -2216,6 +2955,10 @@ window.__openDownloadBox = () => {
     <div class="mb">
       <p class="hint" style="margin-top:0">جميع الملفات أدناه تتضمن كافة الإصلاحات البرمجية والتصميم الجديد جاهزة للرفع مباشرة على استضافتك:</p>
       <div style="display:flex;flex-direction:column;gap:10px;margin-top:12px">
+        <div class="sch" style="margin:0;flex-direction:row;align-items:center;border-color:var(--ok);background:var(--ok-bg)">
+          <div><b>🚀 التحديث السحابي المركزي (OTA) · الإصدار ${esc(MEQAT_CORE_VERSION)}</b><div class="muted" style="font-size:12.5px">جلب أحدث إصدار رسمي ودمج إعدادات وترخيص شركتك فيه بضغطة واحدة</div></div>
+          <button class="btn sm ok" onclick="window.__checkAndApplyOta()">${ic('refresh', 16)} فحص وتحديث</button>
+        </div>
         <div class="sch" style="margin:0;flex-direction:row;align-items:center">
           <div><b>index.html</b><div class="muted" style="font-size:12.5px">الملف الرئيسي الكامل للنظام (الإدارة + الموظف + المحرك)</div></div>
           <button class="btn sm" onclick="window.__downloadFile('index.html','index.html')">${ic('download', 16)} تحميل</button>
@@ -2294,27 +3037,36 @@ function adminApp(db, auth) {
     idxUrl: '', from: '', to: '', emp: '', hols: [], holKeys: [], set: {}, runs: undefined, runsErr: false,
     reqs: [], leaves: [], reqsErr: false, admins: [], adminsErr: false, taskTypes: [],
     reqsFrom: '', idxUrlReq: '', recsFail: [], todayFail: [],
+    auditLogs: undefined, auditErr: false, qAudit: '',
     role: 'unknown', deptScope: ''
   };
   S.from = dayKey(new Date(Date.now() - 6 * 86400000)); S.to = dayKey(new Date());
-  async function resolveAdminRole() {
+  const ROLE_CACHE_KEY = 'meqat_adm_role_v1';
+  async function resolveAdminRole(force = false) {
     const u = auth.currentUser;
     if (!u) throw new Error('admin-auth-required');
-    const paths = [u.uid];
-    if (u.emailVerified && u.email) paths.push(u.email.toLowerCase());
-    for (const key of [...new Set(paths)]) {
+    if (!force) {
       try {
-        const snap = await getDoc(doc(db, 'admins', key));
-        if (snap.exists()) {
-          const d = snap.data();
-          const valid = ['super_admin', 'hr_admin', 'payroll_admin', 'manager', 'auditor'];
-          S.role = valid.includes(d.role) ? d.role : 'auditor';
-          S.deptScope = S.role === 'manager' && typeof d.deptScope === 'string' ? d.deptScope.trim() : '';
+        const rc = JSON.parse(sessionStorage.getItem(ROLE_CACHE_KEY) || 'null');
+        if (rc && rc.uid === u.uid && rc.role && rc.role !== 'unknown' && Date.now() - (rc.at || 0) < 1800000) {
+          S.role = rc.role; S.deptScope = rc.deptScope || '';
           if (S.role === 'manager' && !S.deptScope) throw new Error('manager-scope-required');
           return;
         }
-      } catch (err) {
-        if (err.code !== 'permission-denied') throw err;
+      } catch {}
+    }
+    const saveRole = () => { try { sessionStorage.setItem(ROLE_CACHE_KEY, JSON.stringify({ uid: u.uid, role: S.role, deptScope: S.deptScope, at: Date.now() })); } catch {} };
+    const paths = [...new Set([u.uid, ...(u.emailVerified && u.email ? [u.email.toLowerCase()] : [])])];
+    const snaps = await Promise.all(paths.map(key => getDoc(doc(db, 'admins', key)).catch(err => { if (err.code !== 'permission-denied') throw err; return null; })));
+    for (const snap of snaps) {
+      if (snap && snap.exists()) {
+        const d = snap.data();
+        const valid = ['super_admin', 'hr_admin', 'payroll_admin', 'manager', 'auditor'];
+        S.role = valid.includes(d.role) ? d.role : 'auditor';
+        S.deptScope = S.role === 'manager' && typeof d.deptScope === 'string' ? d.deptScope.trim() : '';
+        if (S.role === 'manager' && !S.deptScope) throw new Error('manager-scope-required');
+        saveRole();
+        return;
       }
     }
     let canReadOwnerProfile = false;
@@ -2322,19 +3074,64 @@ function adminApp(db, auth) {
       const owner = await getDoc(doc(db, 'admins', 'owner'));
       canReadOwnerProfile = true;
       if (owner.exists() && String(owner.data().email || '').toLowerCase() === String(u.email || '').toLowerCase()) {
-        S.role = 'super_admin'; S.deptScope = ''; return;
+        S.role = 'super_admin'; S.deptScope = ''; saveRole(); return;
       }
     } catch (err) { if (err.code !== 'permission-denied') throw err; }
     // يظل المالك الأول قادرًا على الإعداد لأن قواعده تسمح له بقراءة /admins/owner حتى قبل إنشاء الوثيقة.
-    if (canReadOwnerProfile) { S.role = 'super_admin'; S.deptScope = ''; return; }
+    if (canReadOwnerProfile) { S.role = 'super_admin'; S.deptScope = ''; saveRole(); return; }
     S.role = 'unknown'; S.deptScope = '';
   }
   const isSuper = () => S.role === 'super_admin';
   const isHr = () => S.role === 'hr_admin';
   const isPay = () => S.role === 'payroll_admin';
+  const isAud = () => S.role === 'auditor';
   // يطابق قيود قواعد Firestore: الموارد البشرية لا تكتب الحقول المالية، والرواتب لا تكتب حقول الموظف/الدوام.
   const HR_EMP_KEYS = new Set(['name','phone','dept','jobTitle','contractEnd','docExpiry','bioId','assets','scheduleId','rotOffset','startDate','leaveQuota','empType','locs','active']);
-  const PAY_EMP_KEYS = new Set(['payMode','payAmount','allowance','bonus','penalty','loanTotal','loanInst','lyStatutory','familyStatus','nationalId','bankName','iban','taskPrices']);
+  const PAY_EMP_KEYS = new Set(['payMode','payAmount','allowance','bonus','penalty','adjMonth','loanTotal','loanInst','lyStatutory','familyStatus','nationalId','bankName','iban','taskPrices','finIsolated']);
+  const AUDIT_LABELS = {
+    emp_create: ['b-ok', 'إضافة موظف'],
+    emp_update: ['b-pri', 'تعديل ملف/راتب موظف'],
+    emp_toggle: ['b-warn', 'إيقاف/تفعيل موظف'],
+    emp_delete: ['b-bad', 'حذف نهائي لموظف'],
+    dev_reset: ['b-warn', 'إعادة ضبط أجهزة'],
+    dev_pin: ['b-pri', 'إدارة رمز/جهاز'],
+    run_save: ['b-pri', 'حفظ مسودة مسيّر'],
+    run_approve: ['b-ok', 'اعتماد وتجميد مسيّر'],
+    run_pay: ['b-ok', 'تسجيل صرف مسيّر'],
+    run_delete: ['b-bad', 'حذف مسودة مسيّر'],
+    req_approve: ['b-ok', 'اعتماد طلب'],
+    req_reject: ['b-bad', 'رفض طلب'],
+    sched_save: ['b-pri', 'حفظ جدول دوام'],
+    settings_update: ['b-warn', 'تعديل إعدادات المنشأة'],
+    month_seal: ['b-ok', 'تجميد ملخص شهر (قراءة واحدة)'],
+    month_archive: ['b-warn', 'أرشفة وتفريغ بصمات شهر'],
+    month_restore: ['b-pri', 'استعادة أرشيف بصمات شهر'],
+    fin_isolate: ['b-ok', 'عزل البيانات المالية في الخزينة'],
+    sched_override: ['b-pri', 'إدارة استثناء دوام / تبديل وردية']
+  };
+  function logAudit(action, target, detail) {
+    if (!['super_admin', 'hr_admin', 'payroll_admin'].includes(S.role)) return;
+    const u = auth.currentUser; if (!u) return;
+    const entry = {
+      action: String(action || '').slice(0, 60),
+      target: String(target || '').slice(0, 120),
+      detail: String(detail || '').slice(0, 500),
+      by: { uid: u.uid, name: u.email || '' },
+      at: serverTimestamp()
+    };
+    _addDoc(collection(db, 'auditLogs'), entry).then(ref => {
+      if (Array.isArray(S.auditLogs)) S.auditLogs.unshift({ id: ref.id, ...entry, at: Timestamp.now() });
+    }).catch(e => console.warn('auditLog', e));
+  }
+  async function loadAuditLogs(force = false) {
+    if (!(isSuper() || isAud())) { S.auditLogs = []; S.auditErr = false; return; }
+    if (!force && Array.isArray(S.auditLogs)) return;
+    try {
+      const s = await getDocs(query(collection(db, 'auditLogs'), orderBy('at', 'desc'), limit(80)));
+      S.auditLogs = s.docs.map(d => ({ id: d.id, ...d.data() }));
+      S.auditErr = false;
+    } catch (e) { console.warn(e); S.auditLogs = []; S.auditErr = true; }
+  }
   const scopeEmpPatch = p => {
     if (isSuper()) return p;
     const allow = isHr() ? HR_EMP_KEYS : isPay() ? PAY_EMP_KEYS : new Set();
@@ -2348,7 +3145,13 @@ function adminApp(db, auth) {
   const ST_TXT = { work: 'حضور', open: 'لم ينصرف', forgot: 'نسي الانصراف', absent: 'غياب', leave: 'إجازة', holiday: 'عطلة رسمية', rest: 'راحة' };
   const stText = (s, M) => s.status === 'leave' && s.lv ? `إجازة${s.lv.typeName ? ' · ' + s.lv.typeName : ''}${leavePct(s.lv) < 100 ? ` (${leavePct(s.lv)}%)` : ''}` : M[s.status];
   const findLT = r => { const L = leaveTypesOf(S.set); return L.find(x => x.id === r.type) || L.find(x => x.name === r.typeName) || null; };
-  const empCtx = empId => { const e = S.emps.find(x => x.id === empId) || {}; const x = S.scheds.find(s => s.id === e.scheduleId); return { sc: x ? normSched(x) : null, rot: e.rotOffset || 0 }; };
+  const empCtx = (empId, dayKeyStr = '') => {
+    const e = S.emps.find(x => x.id === empId) || {};
+    const x = S.scheds.find(s => s.id === e.scheduleId);
+    const baseSc = x ? normSched(x) : null, baseRot = e.rotOffset || 0;
+    if (dayKeyStr) return resolveDaySched(e, dayKeyStr, S.scheds, S.set && S.set.schedOverrides, baseSc, baseRot);
+    return { sc: baseSc, rot: baseRot, override: null };
+  };
 
   /* جلب خام من Firestore. fail: مصفوفة تُملأ بأسماء الموظفين الذين تعذّرت قراءة سجلاتهم، بدل ابتلاع الخطأ بصمت
      (كان الموظف يظهر «غائباً» في التقارير والرواتب دون أي تنبيه). */
@@ -2386,19 +3189,68 @@ function adminApp(db, auth) {
   async function fetchRecsCached(a, b, fail) {
     if (isManager() && S.emp) return fetchRecs(a, b, fail);
     const out = [], now = Date.now(), DAY = 86400000;
+    const todayK = dayKey(new Date(now)), yKey = dayKey(new Date(now - DAY));
+    const yStart = dayStart(yKey), tEnd = dayEnd(todayK);
+    const canReuseToday = S.todayKey === todayK && (window.__meqatUnsub || window.__meqatPoll) && !S.todayFail.length;
     let cur = a;
     while (cur < b) {
       const mk = dayKey(cur).slice(0, 7), ms = dayStart(mk + '-01'), me = dayStart(nextMonthKey(mk) + '-01'), end = me < b ? me : b;
-      if (now - me.getTime() <= 2 * DAY) { out.push(...await fetchRecs(cur, end, fail)); cur = end; continue; }
+      if (now - me.getTime() <= 2 * DAY) {
+        // تقسيم الفترة القريبة: الأيام السابقة لأمس تُكيش لـ 15 دقيقة، وأمس+اليوم يُستفاد فيهما من S.today دون إعادة القراءة!
+        let p = cur;
+        if (p < yStart) {
+          const preEnd = end < yStart ? end : yStart;
+          const cKey = 'curm|' + recScope() + '|' + TZOFF + '|' + dayKey(p) + '|' + dayKey(preEnd);
+          let hit = await RecCache.get(cKey);
+          if (hit && now - hit.at <= 15 * 60000) {
+            out.push(...hit.rows.map(recDe).filter(r => r.t && r.t >= p && r.t < preEnd));
+          } else {
+            const fPre = [], rowsPre = await fetchRecs(p, preEnd, fPre);
+            if (!fPre.length) await RecCache.set(cKey, { at: now, rows: rowsPre.map(recSer) });
+            else fail.push(...fPre);
+            out.push(...rowsPre.filter(r => r.t && r.t >= p && r.t < preEnd));
+          }
+          p = preEnd;
+        }
+        if (p < end) {
+          if (canReuseToday && end <= tEnd) {
+            out.push(...(S.today || []).filter(r => r.t && r.t >= p && r.t < end));
+          } else {
+            out.push(...await fetchRecs(p, end, fail));
+          }
+        }
+        cur = end;
+        continue;
+      }
       const key = recScope() + '|' + TZOFF + '|' + mk, ttl = now - me.getTime() < 10 * DAY ? 6 * 3600000 : 7 * DAY;
       let hit = await RecCache.get(key);
       if (hit && now - hit.at > ttl) hit = null;
       let rows;
       if (hit) rows = hit.rows.map(recDe);
-      else if (end - cur >= (me - ms) / 2) {   // الجزء المطلوب نصف الشهر أو أكثر: اقرأ الشهر كاملاً وخزّنه ليخدم الطلبات القادمة
-        const f2 = [], all = await fetchRecs(ms, me, f2);
-        if (!f2.length) await RecCache.set(key, { at: now, rows: all.map(recSer) }); else fail.push(...f2);
-        rows = all;
+      else if (end - cur >= (me - ms) / 2) {   // الجزء المطلوب نصف الشهر أو أكثر: افحص وثيقة ملخص الشهر المجمّعة أولاً (قراءة واحدة فقط!)
+        let fromSummary = null;
+        if (!isManager()) {
+          try {
+            const sumDoc = await getDoc(doc(db, 'monthlySummaries', mk));
+            if (sumDoc.exists() && sumDoc.data().tzOff === TZOFF && typeof sumDoc.data().packed === 'string') {
+              fromSummary = unpackMonthRecs(sumDoc.data(), msVal => Timestamp.fromMillis(msVal));
+            }
+          } catch {}
+        }
+        if (fromSummary) {
+          rows = fromSummary;
+          await RecCache.set(key, { at: now, rows: rows.map(recSer) });
+        } else {
+          const f2 = [], all = await fetchRecs(ms, me, f2);
+          if (!f2.length) {
+            await RecCache.set(key, { at: now, rows: all.map(recSer) });
+            // إذا مضى على إغلاق الشهر أكثر من 10 أيام وكان المشرف مخوّلاً، احفظ الملخص المجمّع تلقائياً في الخلفية ليخدم كل الأجهزة بقراءة واحدة
+            if (!isManager() && (isSuper() || isHr() || isPay()) && now - me.getTime() > 10 * DAY && all.length > 0) {
+              saveMonthSummaryDoc(mk, all).catch(() => {});
+            }
+          } else fail.push(...f2);
+          rows = all;
+        }
       } else rows = await fetchRecs(cur, end, fail);
       out.push(...rows.filter(r => r.t && r.t >= cur && r.t < end));
       cur = end;
@@ -2406,29 +3258,79 @@ function adminApp(db, auth) {
     return out;
   }
   async function loadRecs() { S.recsFail = []; S.recs = await fetchRecsCached(new Date(dayStart(S.from).getTime() - 86400000), dayEnd(S.to), S.recsFail); }
+  async function saveMonthSummaryDoc(mk, rows) {
+    const p = packMonthRecs(rows, mk, TZOFF);
+    if (p.packed.length > 880000) return false;
+    const sha256 = await sha256Hex(p.packed);
+    await _setDoc(doc(db, 'monthlySummaries', mk), { mk, tzOff: TZOFF, count: p.count, packed: p.packed, sha256, updatedAt: serverTimestamp(), by: runBy() });
+    return { count: p.count, sha256, packed: p.packed };
+  }
+  async function invalidateMonthSummary(mk) {
+    if (!mk || mk.length < 7) return;
+    const m = mk.slice(0, 7);
+    try { await _deleteDoc(doc(db, 'monthlySummaries', m)); } catch {}
+    try { await RecCache.del(recScope() + '|' + TZOFF + '|' + m); } catch {}
+  }
   async function migrateLocs() {
     if (!isSuper() && !isHr()) return;
-    for (const l of S.locs) if (!(l.kx > 0) || !(l.ky > 0)) { const k = geoK(l.lat); await updateDoc(doc(db, 'locations', l.id), k); Object.assign(l, k); }
+    const missing = S.locs.filter(l => !(l.kx > 0) || !(l.ky > 0));
+    if (!missing.length) return;
+    const b = writeBatch(db);
+    missing.forEach(l => { const k = geoK(l.lat); Object.assign(l, k); b.update(doc(db, 'locations', l.id), k); });
+    await b.commit().catch(() => {});
   }
-  /* ---- تبويب «اليوم»: أمس يُجلب مرة واحدة + مستمع لحظي لسجلات اليوم ----
-     بدل إعادة جلب كل السجلات كل 60 ثانية: القراءة الكاملة مرة عند الفتح، ثم قراءة واحدة لكل سجل جديد فقط. */
+  /* ---- تبويب «اليوم»: أمس يُحفظ في RecCache + مستمع لحظي يحدّث التغييرات فقط (docChanges) ----
+     مع إسبات تلقائي للمستمع إذا تُرك التبويب في الخلفية لأكثر من 15 دقيقة لتوفير القراءات. */
   const mapRec = d => ({ id: d.id, empId: d.ref.parent.parent.id, ...d.data(), t: d.data().time?.toDate() });
-  let _todayRT = 0;
-  const mergeToday = () => { S.today = (S.todayPrev || []).concat(S.todayLive || []); };
+  let _todayRT = 0, _idleTimer = 0;
+  let _admAlertState = { initialized: false, reqIds: [], recIds: [] };
+  const checkAdminAlerts = () => {
+    try {
+      const res = diffAdminLiveAlerts(_admAlertState, S.reqs || [], S.todayLive || [], S.set || {});
+      _admAlertState = res.nextState;
+      res.alerts.forEach(a => {
+        MeqatNotify.send(a.title, a.body, 'meqat-adm-' + a.id, a.type === 'spoof' ? 'warn' : 'info');
+        toast(a.title + ' — ' + a.body, a.type === 'spoof' ? 'err' : 'good');
+      });
+    } catch {}
+  };
+  const mergeToday = () => {
+    const byKey = new Map();
+    (S.todayPrev || []).forEach(r => byKey.set(r.empId + '/' + r.id, r));
+    (S.todayLive || []).forEach(r => byKey.set(r.empId + '/' + r.id, r));
+    S.today = [...byKey.values()].sort((a, b) => a.t - b.t);
+    if ((S.todayLive || []).length) checkAdminAlerts();
+    // تحديث فوري لسجلات اليوم داخل S.recs دون قراءة إضافية
+    if (Array.isArray(S.recs) && S.recs.length && S.todayKey) {
+      const yKey = dayKey(new Date(Date.now() - 86400000)), yStart = dayStart(yKey);
+      const older = S.recs.filter(r => r.t && r.t < yStart);
+      S.recs = older.concat(S.today.filter(r => !S.emp || r.empId === S.emp));
+      _sumC = null;
+    }
+  };
   function stopTodayFeed() {
     if (window.__meqatUnsub) { try { window.__meqatUnsub(); } catch {} window.__meqatUnsub = null; }
     clearInterval(window.__meqatPoll); window.__meqatPoll = 0;
+    clearTimeout(_idleTimer); _idleTimer = 0;
   }
   function refreshTodayView() {
     clearTimeout(_todayRT);
     _todayRT = setTimeout(() => { if (S.tab === 'today' && !document.querySelector('.ov') && $('#content')) viewToday($('#content')); }, 400);
   }
-  async function startTodayFeed() {
+  async function startTodayFeed(force = false) {
     stopTodayFeed();
     const nowD = new Date(), key = dayKey(nowD), yKey = dayKey(new Date(nowD.getTime() - 86400000));
     S.todayKey = key; S.todayLive = []; S.todayPrev = [];
     S.todayFail = [];
-    S.todayPrev = await fetchRecs(dayStart(yKey), dayEnd(yKey), S.todayFail);   // أمس: لإكمال جلسات الدوام الليلي — مرة واحدة فقط
+    // كاش يوم أمس في IndexedDB لمدة ساعتين لمنع إعادة قراءته عند كل تحديث للصفحة
+    const yCacheKey = 'yday|' + recScope() + '|' + TZOFF + '|' + yKey;
+    let yHit = force ? null : await RecCache.get(yCacheKey);
+    if (yHit && Date.now() - yHit.at <= 2 * 3600000) {
+      S.todayPrev = yHit.rows.map(recDe).filter(x => x.t);
+    } else {
+      S.todayPrev = await fetchRecs(dayStart(yKey), dayEnd(yKey), S.todayFail);
+      if (!S.todayFail.length) await RecCache.set(yCacheKey, { at: Date.now(), rows: S.todayPrev.map(recSer) });
+    }
     mergeToday();
     await new Promise(resolve => {
       let first = true;
@@ -2441,9 +3343,15 @@ function adminApp(db, auth) {
       };
       if (isManager()) { slowPoll(); return; }
       const q = query(collectionGroup(db, 'records'), where('time', '>=', Timestamp.fromDate(dayStart(key))), where('time', '<', Timestamp.fromDate(dayEnd(key))), orderBy('time'));
+      const liveMap = new Map();
       try {
         window.__meqatUnsub = onSnapshot(q, snap => {
-          S.todayLive = snap.docs.map(mapRec).filter(x => x.t);
+          snap.docChanges().forEach(ch => {
+            const k = ch.doc.ref.parent.parent.id + '/' + ch.doc.id;
+            if (ch.type === 'removed') liveMap.delete(k);
+            else { const r = mapRec(ch.doc); if (r.t) liveMap.set(k, r); }
+          });
+          S.todayLive = [...liveMap.values()].sort((a, b) => a.t - b.t);
           mergeToday();
           done();
         }, err => {
@@ -2456,6 +3364,19 @@ function adminApp(db, auth) {
       setTimeout(() => { if (first) { first = false; resolve(); } }, 15000);   // لا نعطّل تحميل اللوحة إذا تأخر الاتصال
     });
   }
+  if (!window.__meqatVisBound) {
+    window.__meqatVisBound = true;
+    document.addEventListener('visibilitychange', () => {
+      if (!auth.currentUser) return;
+      if (document.hidden) {
+        clearTimeout(_idleTimer);
+        _idleTimer = setTimeout(() => { if (document.hidden) stopTodayFeed(); }, 15 * 60000);
+      } else {
+        clearTimeout(_idleTimer); _idleTimer = 0;
+        if (!feedAlive()) startTodayFeed().then(() => refreshTodayView()).catch(() => {});
+      }
+    });
+  }
   /* ================= جلب مجزّأ =================
      كل جزء له دالة مستقلة. loadAll (كاملة) تعمل عند الفتح وزر «تحديث» فقط؛ وبعد أي حفظ نعيد جلب الجزء المتأثر وحده عبر refresh(). */
   const byName = (x, y) => (x.name || '').localeCompare(y.name || '', 'ar');
@@ -2464,6 +3385,39 @@ function adminApp(db, auth) {
   async function loadEmps() {
     const q = isManager() ? query(collection(db, 'employees'), where('dept', '==', S.deptScope)) : collection(db, 'employees');
     S.emps = (await getDocs(q)).docs.map(d => ({ id: d.id, ...d.data() })).sort(byName);
+    if (S.finMap && S.finMap.size) S.emps = S.emps.map(e => mergeEmpFinance(e, S.finMap.get(e.id)));
+  }
+  /* التحميل الكسول للخزينة المالية المعزولة (empFinance): لا يُقرأ إلا للمدير العام ومحاسب الرواتب وعند وجود موظفين معزولين ماليًا، ويُكيش في RecCache لمدة ساعتين */
+  async function ensureFinanceLoaded(force = false) {
+    if (!(isSuper() || isPay())) return;
+    if (!force && S.finLoaded) {
+      if (S.finMap && S.finMap.size) S.emps = S.emps.map(e => mergeEmpFinance(e, S.finMap.get(e.id)));
+      return;
+    }
+    if (!force && !S.emps.some(e => e.finIsolated)) { S.finLoaded = true; return; }
+    const cKey = 'emp_fin_v1|' + ((auth.currentUser && auth.currentUser.uid) || '');
+    let rows = null;
+    if (!force) {
+      const hit = await RecCache.get(cKey);
+      if (hit && Date.now() - hit.at < 2 * 3600000 && Array.isArray(hit.rows)) rows = hit.rows;
+    }
+    if (!rows) {
+      try {
+        const s = await getDocs(collection(db, 'empFinance'));
+        rows = s.docs.map(d => ({ id: d.id, ...tsSer(d.data()) }));
+        await RecCache.set(cKey, { at: Date.now(), rows });
+      } catch (e) { console.warn('empFinance load:', e); rows = []; }
+    }
+    S.finMap = new Map(rows.map(r => [r.id, tsDe(r)]));
+    S.emps = S.emps.map(e => mergeEmpFinance(e, S.finMap.get(e.id)));
+    S.finLoaded = true;
+  }
+  async function saveEmpFinanceCache(empId, finData) {
+    if (!S.finMap) S.finMap = new Map();
+    S.finMap.set(empId, finData);
+    const cKey = 'emp_fin_v1|' + ((auth.currentUser && auth.currentUser.uid) || '');
+    const rows = [...S.finMap.entries()].map(([id, d]) => ({ id, ...tsSer(d) }));
+    await RecCache.set(cKey, { at: Date.now(), rows });
   }
   async function loadLocs() { S.locs = (await getDocs(collection(db, 'locations'))).docs.map(d => ({ id: d.id, ...d.data() })); }
   async function loadScheds() {
@@ -2493,36 +3447,64 @@ function adminApp(db, auth) {
       S.adminsErr = false;
     } catch (e2) { S.admins = []; if (e2.code === 'permission-denied') S.adminsErr = true; else console.warn(e2); }
   }
-  /* المواقع والجداول والعطل: تُقرأ من ذاكرة الجهاز ما دام cfgVersion في settings/general لم يتغيّر (قراءة واحدة بدل عشرات) */
+  /* المواقع والجداول والعطل وأنواع المهام: تُقرأ من ذاكرة الجهاز ما دام cfgVersion في settings/general لم يتغيّر (قراءة واحدة بدل عشرات) */
   const CFG_KEY = 'meqat_admin_cfg_v1';
   async function loadConfig(force) {
     await loadSet();
     const cv = S.set && S.set.cfgVersion, u = auth.currentUser && auth.currentUser.uid;
     let c = null;
     if (!force) { try { c = JSON.parse(localStorage.getItem(CFG_KEY) || 'null'); } catch {} }
-    if (c && cv && c.v === cv && c.u === u && c.role === S.role && c.dept === S.deptScope) {
-      S.locs = c.locs.map(tsDe); S.scheds = c.scheds.map(tsDe); S.hols = c.hols; S.holKeys = S.hols.map(h => h.date || h.id); S.rulesOld = false;
+    if (c && cv && c.v === cv && c.u === u && c.role === S.role && c.dept === S.deptScope && Array.isArray(c.taskTypes)) {
+      S.locs = c.locs.map(tsDe); S.scheds = c.scheds.map(tsDe); S.hols = c.hols; S.holKeys = S.hols.map(h => h.date || h.id);
+      S.taskTypes = c.taskTypes.map(tsDe); S.rulesOld = false;
       return;
     }
-    await Promise.all([loadLocs(), loadScheds(), loadHols()]);
-    if (cv && !S.rulesOld) { try { localStorage.setItem(CFG_KEY, JSON.stringify({ v: cv, u, role: S.role, dept: S.deptScope, locs: S.locs.map(tsSer), scheds: S.scheds.map(tsSer), hols: S.hols })); } catch {} }
+    await Promise.all([loadLocs(), loadScheds(), loadHols(), loadTaskTypes()]);
+    if (cv && !S.rulesOld) {
+      try {
+        localStorage.setItem(CFG_KEY, JSON.stringify({
+          v: cv, u, role: S.role, dept: S.deptScope,
+          locs: S.locs.map(tsSer), scheds: S.scheds.map(tsSer), hols: S.hols, taskTypes: S.taskTypes.map(tsSer)
+        }));
+      } catch {}
+    }
   }
-  /* الطلبات: المعلّقة (أياً كان تاريخها) + طلبات «من أول ديسمبر من السنة الماضية» أو من بداية فترة التقرير إن كانت أقدم. الأقدم يُحمَّل عند الطلب. */
+  /* الطلبات: المعلّقة تُجلب حية دائماً، أما الطلبات المحسومة من أول ديسمبر فتُكيش في RecCache لمدة 15 دقيقة لتوفير مئات القراءات */
   const reqWin = () => { let w = (+dayKey(new Date()).slice(0, 4) - 1) + '-12-01'; if (S.from && S.from < w) w = S.from; return w; };
-  async function fetchReqs(w, before) {
+  async function fetchReqs(w, before, force = false) {
     const byId = new Map();
     const add = (d, empId) => { const r = reqMap(d, empId); byId.set(r.empId + '/' + r.id, r); };
     const fromQ = col => before ? query(col, where('from', '>=', w), where('from', '<', before)) : query(col, where('from', '>=', w));
     const pendQ = col => query(col, where('status', '==', 'pending'));
+    const rCacheKey = !before ? ('reqs|' + recScope() + '|' + w) : '';
+    let cachedDecided = null;
+    if (rCacheKey && !force) {
+      const hit = await RecCache.get(rCacheKey);
+      if (hit && Date.now() - hit.at <= 15 * 60000 && Array.isArray(hit.rows)) {
+        cachedDecided = hit.rows.map(tsDe);
+      }
+    }
+    if (cachedDecided) {
+      cachedDecided.forEach(r => byId.set(r.empId + '/' + r.id, r));
+      const runPend = async (col, empId) => { const s = await getDocs(pendQ(col)); s.docs.forEach(d => add(d, empId)); };
+      if (isManager()) await Promise.all(S.emps.map(emp => runPend(collection(db, 'employees', emp.id, 'requests'), emp.id)));
+      else await runPend(collectionGroup(db, 'requests'));
+      return [...byId.values()];
+    }
     const run = async (col, empId) => { const qs = [getDocs(fromQ(col))]; if (!before) qs.push(getDocs(pendQ(col))); (await Promise.all(qs)).forEach(s => s.docs.forEach(d => add(d, empId))); };
     if (isManager()) await Promise.all(S.emps.map(emp => run(collection(db, 'employees', emp.id, 'requests'), emp.id)));
     else await run(collectionGroup(db, 'requests'));
-    return [...byId.values()];
+    const all = [...byId.values()];
+    if (rCacheKey) {
+      const decided = all.filter(r => r.status !== 'pending').map(tsSer);
+      await RecCache.set(rCacheKey, { at: Date.now(), rows: decided });
+    }
+    return all;
   }
-  async function loadReqs() {
+  async function loadReqs(force = false) {
     try {
       const w = reqWin();
-      try { S.reqs = await fetchReqs(w); S.reqsFrom = w; }
+      try { S.reqs = await fetchReqs(w, null, force); S.reqsFrom = w; }
       catch (err) {
         if (err.code !== 'failed-precondition' || isManager()) throw err;
         S.idxUrlReq = idxLink(err); console.warn(err.message);
@@ -2531,6 +3513,7 @@ function adminApp(db, auth) {
       S.reqsErr = false;
     } catch (e2) { S.reqs = []; S.reqsFrom = ''; if (e2.code === 'permission-denied') S.reqsErr = true; else console.warn(e2); }
     S.leaves = S.reqs.filter(r => r.kind === 'leave' && r.status === 'approved');
+    checkAdminAlerts();
   }
   async function loadReqsBefore(key) {
     if (!S.reqsFrom || key >= S.reqsFrom) return;
@@ -2543,14 +3526,23 @@ function adminApp(db, auth) {
   async function loadAll(opts = {}) {
     _sumC = null;
     S.idxUrl = ''; S.idxUrlReq = '';
+    if (S.runRowsCache) S.runRowsCache.clear();
     try {
-      await resolveAdminRole();
-      if (opts.force) { await RecCache.clear(); try { localStorage.removeItem(CFG_KEY); } catch {} }
-      await Promise.all([loadEmps(), loadConfig(!!opts.force)]);
-      await Promise.all([loadTaskTypes(), loadReqs(), loadAdmins()]);
-      await migrateLocs();
+      if (opts.force) {
+        await RecCache.clear();
+        try { localStorage.removeItem(CFG_KEY); sessionStorage.removeItem(ROLE_CACHE_KEY); } catch {}
+      }
+      await resolveAdminRole(!!opts.force);
+      if (opts.force) S.finLoaded = false;
+      await Promise.all([loadEmps().then(() => ensureFinanceLoaded(!!opts.force)), loadConfig(!!opts.force)]);
+      // تشغيل مستمع اليوم بالتوازي مع الطلبات والمشرفين ثم استخدام بيانات اليوم داخل loadRecs لمنع ازدواجية قراءة أمس واليوم
+      await Promise.all([
+        (opts.force || !feedAlive()) ? startTodayFeed(!!opts.force) : Promise.resolve(),
+        loadReqs(!!opts.force),
+        loadAdmins(),
+        migrateLocs()
+      ]);
       await loadRecs();
-      if (opts.force || !feedAlive()) await startTodayFeed();   // المستمع اللحظي يبقى حياً؛ لا نعيد قراءة سجلات اليوم وأمس بلا داعٍ
     } catch (err) { console.error(err); toast('تعذر تحميل البيانات — تأكد أن بريدك مطابق للمكتوب في قواعد Firestore', 'err'); }
     render();
   }
@@ -2567,7 +3559,7 @@ function adminApp(db, auth) {
       if (P.has('tasks')) jobs.push(loadTaskTypes());
       if (P.has('admins')) jobs.push(loadAdmins());
       await Promise.all(jobs);
-      if (P.has('reqs')) await loadReqs();
+      if (P.has('reqs')) await loadReqs(true);
       if (P.has('recs')) await loadRecs();
     } catch (err) { console.error(err); toast('تعذر تحديث البيانات', 'err'); }
     _sumC = null;
@@ -2588,6 +3580,7 @@ function adminApp(db, auth) {
  <header class="phead"><div><small>${esc(brandName())} · لوحة الإدارة ${licBadgeHtml()}</small><h1>${TT[S.tab] || ''}</h1></div>
  <div class="ptools">
  <span class="badge b-mute" id="readsChip" title="عدد مستندات Firestore المقروءة في هذه الجلسة (تقديري) — الرقم الرسمي في Firebase › Usage">قراءات الجلسة: ${READS.session}</span>
+ <button class="pwa-btn" id="admNotifBtn" type="button" onclick="window.__meqatRequestNotif()" title="تفعيل الإشعارات الفورية للطلبات واشتباهات الموقع">${MeqatNotify.perm() === 'granted' ? '🔔 التنبيهات مفعّلة' : '🔕 تفعيل التنبيهات'}</button>
  <button class="pwa-btn" onclick="window.__installPWA()">${ic('download', 18)} تثبيت</button>
  ${themeBtnHtml()}
  <button class="ib" onclick="window.__openDownloadBox()" title="تحميل ملفات النظام المحدّثة" aria-label="تحميل ملفات النظام المحدّثة">${ic('download', 22)}</button>
@@ -2616,7 +3609,7 @@ function adminApp(db, auth) {
     const scOf = e => { const x = S.scheds.find(s => s.id === e.scheduleId); return x ? normSched(x) : null; };
     const B = { present: ['b-ok', 'حاضر'], late: ['b-warn', 'حاضر متأخر'], left: ['b-pri', 'انصرف'], forgot: ['b-warn', 'نسي الانصراف'], absent: ['b-bad', 'لم يحضر'], rest: ['b-mute', 'في راحة'], notyet: ['b-mute', 'لم يحن دوامه'], leave: ['b-pri', 'في إجازة'], holiday: ['b-mute', 'عطلة رسمية'] };
     const rows = act.map(e => {
-      const sc = scOf(e);
+      const { sc, rot: dayRot, override: dayOv } = resolveDaySched(e, key, S.scheds, S.set && S.set.schedOverrides, scOf(e), e.rotOffset || 0);
       const lim = forgotLimitMs(sc);
       const sesAll = pairSessions(S.today.filter(r => r.empId === e.id), lim);
       const lastSes = sesAll.length ? sesAll[sesAll.length - 1] : null;
@@ -2624,20 +3617,21 @@ function adminApp(db, auth) {
       if (lastSes && !lastSes.end) st = nowMs - lastSes.start < lim ? 'present' : 'forgot';
       else if (lastSes && lastSes.end && dayKey(lastSes.end) === key) st = 'left';
       const ses = sesAll.filter(s => dayKey(s.start) === key);
-      const met = calcDay(sc, key, ses, S.holKeys, e.rotOffset || 0, { nowMs, cap: lim });
+      const met = calcDay(sc, key, ses, S.holKeys, dayRot, { nowMs, cap: lim });
       if (st === 'absent') {
         if (onLeave(S.leaves, e.id, key)) st = 'leave';
         else if (S.holKeys.includes(key) && met.dayType !== 'rest') st = 'holiday';
         else if (met.dayType === 'rest') st = 'rest';
         else if (S.holKeys.includes(key)) st = 'holiday';
         else if (e.startDate && key < e.startDate) st = 'rest';
-        else if (met.dayType === 'work' && notStarted(sc, key, e.rotOffset || 0)) st = 'notyet';
+        else if (met.dayType === 'work' && notStarted(sc, key, dayRot)) st = 'notyet';
       }
       if (st === 'present' && met.late > 0) st = 'late';
-      const planTxt = !sc ? 'بدون جدول'
+      const ovLabel = dayOv ? ` (${dayOv.note || 'استثناء'})` : '';
+      const planTxt = (!sc ? 'بدون جدول'
         : S.holKeys.includes(key) ? 'عطلة رسمية'
         : met.dayType === 'work' ? (sc.mode === 'flex' ? `${fmtMinsH(met.planned)} (مرن)` : (met.shiftName || 'دوام مجدول'))
-        : 'يوم راحة';
+        : 'يوم راحة') + ovLabel;
       const firstShown = ses.length ? ses[0].start : (lastSes ? lastSes.start : null);
       const lastRec = S.today.filter(r => r.empId === e.id).sort((a, b) => b.t - a.t)[0];
       return { e, st, met, planTxt, firstShown, lastRec };
@@ -2852,6 +3846,7 @@ function adminApp(db, auth) {
         delete c.ot.offDayAll;   // استُبدل بسياسة يوم الراحة/العطلة الصريحة
         c.updatedAt = serverTimestamp();
         if (ex) await setDoc(doc(db, 'schedules', ex.id), c); else await addDoc(collection(db, 'schedules'), { ...c, createdAt: serverTimestamp() });
+        logAudit('sched_save', c.name, `${ex ? 'تعديل' : 'إنشاء'} جدول (${MODES[c.mode] || c.mode})`);
         await refresh('scheds'); toast('تم حفظ الجدول', 'good');
       }
     });
@@ -2863,12 +3858,14 @@ function adminApp(db, auth) {
     if (!e) return;
     const empRef = doc(db, 'employees', e.id);
     const W = { max: e.maxDevices || 2, joins: {}, pin: null, pinState: 'none', pinExp: 0, busy: false };
-    try { const js = await getDocs(collection(db, 'employees', e.id, 'joins')); js.docs.forEach(d => { W.joins[d.id] = d.data(); }); } catch {}
-    try {
-      const p = await getDoc(doc(db, 'pins', e.id)); const d = p.exists() ? p.data() : null;
-      W.pinExp = d && d.exp && d.exp.toMillis ? d.exp.toMillis() : 0;
-      W.pinState = W.pinExp > Date.now() ? 'active' : (d ? 'expired' : 'none');
-    } catch {}
+    await Promise.all([
+      getDocs(collection(db, 'employees', e.id, 'joins')).then(js => js.docs.forEach(d => { W.joins[d.id] = d.data(); })).catch(() => {}),
+      getDoc(doc(db, 'pins', e.id)).then(p => {
+        const d = p.exists() ? p.data() : null;
+        W.pinExp = d && d.exp && d.exp.toMillis ? d.exp.toMillis() : 0;
+        W.pinState = W.pinExp > Date.now() ? 'active' : (d ? 'expired' : 'none');
+      }).catch(() => {})
+    ]);
     const stamp = t => t && t.toDate ? `${fmtDate(t.toDate())} ${fmtTime(t.toDate())}` : '';
     const devRows = () => {
       const map = e.devices || {}, ks = Object.keys(map);
@@ -2886,9 +3883,10 @@ function adminApp(db, auth) {
         if (a === 'newpin') {
           const pin = genPin(); const exp = Date.now() + PIN_TTL_H * 3600e3;
           await setDoc(doc(db, 'pins', e.id), { pin, exp: Timestamp.fromMillis(exp), createdAt: serverTimestamp() });
+          logAudit('dev_pin', e.name, 'إصدار رمز إضافة جهاز مؤقت (48 ساعة)');
           W.pin = pin; W.pinState = 'active'; W.pinExp = exp; toast('أُصدر رمز جديد وتوقف الرمز السابق', 'good');
         } else if (a === 'killpin') {
-          await deleteDoc(doc(db, 'pins', e.id)); W.pin = null; W.pinState = 'none'; toast('أُلغي الرمز', 'good');
+          await deleteDoc(doc(db, 'pins', e.id)); logAudit('dev_pin', e.name, 'إلغاء رمز إضافة الجهاز'); W.pin = null; W.pinState = 'none'; toast('أُلغي الرمز', 'good');
         } else if (a === 'copypin' && W.pin) {
           await navigator.clipboard.writeText(fmtPin(W.pin)); toast('تم النسخ', 'good');
         } else if (a === 'wapin' && W.pin) {
@@ -2901,6 +3899,7 @@ function adminApp(db, auth) {
           if (Object.keys(rest).length) { await updateDoc(empRef, { devices: rest }); e.devices = rest; }
           else { await updateDoc(empRef, { deviceId: null, uid: null, devices: null, rebindProof: null }); e.devices = null; e.uid = null; e.deviceId = null; }
           try { await deleteDoc(doc(db, 'employees', e.id, 'joins', uidv)); } catch {}
+          logAudit('dev_pin', e.name, 'إلغاء جهاز مرتبط: ' + key.slice(0, 8));
           delete W.joins[uidv]; toast('أُلغي الجهاز', 'good'); render();
         }
       } catch (err) { console.error(err); toast(err && err.code === 'permission-denied' ? 'غير مسموح: انشر قواعد Firestore المحدثة أولًا' : 'تعذرت العملية', 'err'); }
@@ -2919,7 +3918,9 @@ function adminApp(db, auth) {
       }
     });
   }
-  function employeeEditor(e) {
+  async function employeeEditor(e0) {
+    if (isSuper() || isPay()) await ensureFinanceLoaded();
+    const e = S.emps.find(x => x.id === e0.id) || e0;
     const created = e.createdAt && e.createdAt.toDate ? dayKey(e.createdAt.toDate()) : dayKey(new Date());
     const W = {
       name: e.name || '', phone: e.phone || '', scheduleId: e.scheduleId || '', rotPos: (e.rotOffset || 0) + 1,
@@ -2927,9 +3928,10 @@ function adminApp(db, auth) {
       jobTitle: e.jobTitle || '', nationalId: e.nationalId || '', contractEnd: e.contractEnd || '', docExpiry: e.docExpiry || '',
       bankName: e.bankName || '', iban: e.iban || '', bioId: e.bioId || '', assets: e.assets || '',
       payMode: e.payMode === 'monthly' || e.payMode === 'hourly' ? e.payMode : 'none', payAmount: e.payAmount ?? '',
-      allowance: e.allowance ?? '', bonus: e.bonus ?? '', penalty: e.penalty ?? '',
+      allowance: e.allowance ?? '', bonus: e.bonus ?? '', penalty: e.penalty ?? '', adjMonth: e.adjMonth || (S.to ? S.to.slice(0, 7) : dayKey(new Date()).slice(0, 7)),
       loanTotal: e.loanTotal ?? '', loanInst: e.loanInst ?? '',
       lyStatutory: !!e.lyStatutory, familyStatus: e.familyStatus || 'single',
+      finIsolated: e.finIsolated !== undefined ? !!e.finIsolated : false,
       leaveQuota: e.leaveQuota ?? 21, empType: e.empType === 'task' ? 'task' : 'staff'
     };
     W.locs = {}; (e.locs || []).forEach(id => W.locs[id] = true);
@@ -2961,6 +3963,7 @@ function adminApp(db, auth) {
         h += `<div class="field"><label>علاوات/بدلات ثابتة للفترة</label><input class="num" type="number" min="0" step="0.01" data-k="allowance" value="${W.allowance}" placeholder="سكن / مواصلات"></div>`;
         h += `<div class="field"><label>مكافأة إضافية للفترة</label><input class="num" type="number" min="0" step="0.01" data-k="bonus" value="${W.bonus}"></div>`;
         h += `<div class="field"><label>خصم/جزاء إداري للفترة</label><input class="num" type="number" min="0" step="0.01" data-k="penalty" value="${W.penalty}"></div>`;
+        h += `<div class="field" style="grid-column:1/-1"><label>شهر استحقاق المكافأة / الجزاء (لمنع تكرارها تلقائياً في الأشهر القادمة)</label><input type="month" dir="ltr" data-k="adjMonth" value="${esc(W.adjMonth || '')}" style="max-width:240px"><small class="muted" style="display:block;margin-top:4px">تُحتسب المكافأة أو الجزاء في هذا الشهر فقط، وتُصفَّر تلقائياً عند اعتماد مسيّر الرواتب.</small></div>`;
         h += `<div class="field"><label>رصيد السلفة المتبقي عليه</label><input class="num" type="number" min="0" step="0.01" data-k="loanTotal" value="${W.loanTotal}"></div>`;
         h += `<div class="field"><label>قسط السلفة المستقطع لكل مسير</label><input class="num" type="number" min="0" step="0.01" data-k="loanInst" value="${W.loanInst}"></div>`;
         h += `<div class="field" style="grid-column:1/-1"><label class="chk"><input type="checkbox" data-k="lyStatutory" data-redraw ${W.lyStatutory ? 'checked' : ''}> تطبيق الاستقطاعات القانونية الليبية (ضمان 5.125% + تضامن 1% + ضريبة دخل ودمغة 0.5%)</label></div>`;
@@ -2969,7 +3972,7 @@ function adminApp(db, auth) {
         }
       }
       h += `</div>`;
-      h += `<div class="sec-t">${ic('payroll', 20)} البيانات المصرفية (لكشف الصرف البنكي)</div><div class="g2"><div class="field"><label>اسم المصرف والفرع</label><input data-k="bankName" value="${esc(W.bankName)}" placeholder="مصرف الجمهورية — الفرع الرئيسي"></div><div class="field"><label>رقم الحساب المصرفي / IBAN</label><input data-k="iban" dir="ltr" value="${esc(W.iban)}" placeholder="LY00 0000 0000 0000 0000 0000"></div></div>`;
+      h += `<div class="sec-t">${ic('payroll', 20)} البيانات المصرفية والعزل الأمني للرواتب</div><div class="g2"><div class="field"><label>اسم المصرف والفرع</label><input data-k="bankName" value="${esc(W.bankName)}" placeholder="مصرف الجمهورية — الفرع الرئيسي"></div><div class="field"><label>رقم الحساب المصرفي / IBAN</label><input data-k="iban" dir="ltr" value="${esc(W.iban)}" placeholder="LY00 0000 0000 0000 0000 0000"></div>${(isSuper() || isPay()) ? `<div class="field" style="grid-column:1/-1"><label class="chk"><input type="checkbox" data-k="finIsolated" ${W.finIsolated ? 'checked' : ''}> 🔒 عزل البيانات المالية والمصرفية في الخزينة المحمية (<code>empFinance</code>) لمنع الموارد البشرية ومديري الأقسام من قراءة الراتب والـ IBAN</label></div>` : ''}</div>`;
       h += `<div class="sec-t">${ic('device', 20)} العُهد والأصول المسلمة + رقم جهاز البصمة</div><div class="g2">
         <div class="field"><label>رقم الموظف في جهاز البصمة (ZKTeco ID)</label><input data-k="bioId" dir="ltr" value="${esc(W.bioId)}" placeholder="مثال: 101"></div>
         <div class="field" style="grid-column:1/-1"><label>العُهد والأصول المسلمة للموظف (سيارة، لابتوب، هاتف، مفاتيح…)</label><input data-k="assets" value="${esc(W.assets)}" placeholder="مثال: لابتوب Dell S/N:4452 — سيارة كيا لوحة 12345 — شريحة مدار 091..."></div>
@@ -3009,7 +4012,18 @@ function adminApp(db, auth) {
         };
         if (W.empType === 'task') {
           const tp = {}; Object.entries(W.tp).forEach(([k, v]) => { if (v !== '' && v != null && +v >= 0) tp[k] = +v; });
-          await updateDoc(doc(db, 'employees', e.id), scopeEmpPatch({ ...common, empType: 'task', payMode: 'task', payAmount: 0, scheduleId: '', rotOffset: 0, locs: [], taskPrices: tp }));
+          const fullTaskPatch = scopeEmpPatch({ ...common, empType: 'task', payMode: 'task', payAmount: 0, scheduleId: '', rotOffset: 0, locs: [], taskPrices: tp });
+          if ((isSuper() || isPay()) && (W.finIsolated || e.finIsolated)) {
+            const finPayload = { ...extractEmpFinance(fullTaskPatch), updatedAt: serverTimestamp() };
+            const b = writeBatch(db);
+            b.set(doc(db, 'empFinance', e.id), finPayload, { merge: true });
+            b.update(doc(db, 'employees', e.id), scopeEmpPatch(stripEmpFinance(fullTaskPatch)));
+            await b.commit();
+            await saveEmpFinanceCache(e.id, extractEmpFinance(fullTaskPatch));
+          } else {
+            await updateDoc(doc(db, 'employees', e.id), fullTaskPatch);
+          }
+          logAudit('emp_update', name, 'تحديث ملف موظف مهام');
           await refresh('emps'); toast('تم حفظ ملف الموظف', 'good'); return;
         }
         const sc = S.scheds.find(x => x.id === W.scheduleId);
@@ -3018,23 +4032,50 @@ function adminApp(db, auth) {
         const ids = Object.keys(W.locs).filter(id => W.locs[id]);
         const amt = +W.payAmount || 0;
         if (W.payMode !== 'none' && !(amt > 0)) { toast('اكتب قيمة الراتب', 'err'); return false; }
+        const bVal = Math.max(0, +W.bonus || 0), pVal = Math.max(0, +W.penalty || 0);
+        const adjM = (bVal > 0 || pVal > 0) ? (String(W.adjMonth || '').trim() || (S.to ? S.to.slice(0, 7) : dayKey(new Date()).slice(0, 7))) : '';
         const patch = scopeEmpPatch({
           ...common, scheduleId: sc ? sc.id : '', rotOffset: rot, startDate: W.startDate || created,
           payMode: W.payMode, payAmount: W.payMode === 'none' ? 0 : amt,
-          allowance: Math.max(0, +W.allowance || 0), bonus: Math.max(0, +W.bonus || 0), penalty: Math.max(0, +W.penalty || 0),
+          allowance: Math.max(0, +W.allowance || 0), bonus: bVal, penalty: pVal, adjMonth: adjM,
           loanTotal: Math.max(0, +W.loanTotal || 0), loanInst: Math.max(0, +W.loanInst || 0),
           lyStatutory: !!W.lyStatutory, familyStatus: W.familyStatus || 'single',
           locs: ids, leaveQuota: Math.max(0, +W.leaveQuota || 21), empType: 'staff'
         });
         const oldLoan = +e.loanTotal || 0;
+        const changes = [];
+        if ('payAmount' in patch && (+e.payAmount || 0) !== patch.payAmount) changes.push(`الراتب: ${+e.payAmount || 0} ← ${patch.payAmount}`);
+        if ('allowance' in patch && (+e.allowance || 0) !== patch.allowance) changes.push(`العلاوة: ${+e.allowance || 0} ← ${patch.allowance}`);
+        if ('bonus' in patch && (+e.bonus || 0) !== patch.bonus) changes.push(`مكافأة (${adjM || 'عام'}): ${patch.bonus}`);
+        if ('penalty' in patch && (+e.penalty || 0) !== patch.penalty) changes.push(`جزاء (${adjM || 'عام'}): ${patch.penalty}`);
+        if ('loanTotal' in patch && Math.abs(patch.loanTotal - oldLoan) > 0.0049) changes.push(`السلفة: ${oldLoan} ← ${patch.loanTotal}`);
+        if ('iban' in patch && (e.iban || '') !== patch.iban) changes.push('تحديث IBAN');
+        if ('scheduleId' in patch && (e.scheduleId || '') !== patch.scheduleId) changes.push('تغيير جدول الدوام');
+        let whyLoan = '';
         if ('loanTotal' in patch && Math.abs(patch.loanTotal - oldLoan) > 0.0049) {   // تعديل رصيد السلفة = قيد تسوية مسبَّب في الدفتر
-          const why = (prompt('سبب تعديل رصيد السلفة (مطلوب، 3 أحرف على الأقل). يُسجَّل في دفتر السلف:') || '').trim();
-          if (why.length < 3) { toast('لم يُحفظ: سبب تعديل رصيد السلفة مطلوب', 'err'); return false; }
+          whyLoan = (prompt('سبب تعديل رصيد السلفة (مطلوب، 3 أحرف على الأقل). يُسجَّل في دفتر السلف:') || '').trim();
+          if (whyLoan.length < 3) { toast('لم يُحفظ: سبب تعديل رصيد السلفة مطلوب', 'err'); return false; }
+        }
+        if ((isSuper() || isPay()) && W.finIsolated) {
+          const finPayload = { ...extractEmpFinance(patch), updatedAt: serverTimestamp() };
+          const empPublicPatch = scopeEmpPatch(stripEmpFinance(patch));
+          const b = writeBatch(db);
+          b.set(doc(db, 'empFinance', e.id), finPayload, { merge: true });
+          b.update(doc(db, 'employees', e.id), empPublicPatch);
+          if (whyLoan) {
+            b.set(doc(ledgerCol(e.id)), { type: 'adjust', delta: r2(patch.loanTotal - oldLoan), balanceAfter: r2(patch.loanTotal), note: whyLoan.slice(0, 300), by: runBy(), at: serverTimestamp() });
+          }
+          await b.commit();
+          await saveEmpFinanceCache(e.id, extractEmpFinance(patch));
+        } else if (whyLoan) {
           const b = writeBatch(db);
           b.update(doc(db, 'employees', e.id), patch);
-          b.set(doc(ledgerCol(e.id)), { type: 'adjust', delta: r2(patch.loanTotal - oldLoan), balanceAfter: r2(patch.loanTotal), note: why.slice(0, 300), by: runBy(), at: serverTimestamp() });
+          b.set(doc(ledgerCol(e.id)), { type: 'adjust', delta: r2(patch.loanTotal - oldLoan), balanceAfter: r2(patch.loanTotal), note: whyLoan.slice(0, 300), by: runBy(), at: serverTimestamp() });
           await b.commit();
-        } else await updateDoc(doc(db, 'employees', e.id), patch);
+        } else {
+          await updateDoc(doc(db, 'employees', e.id), patch);
+        }
+        logAudit('emp_update', name, changes.length ? changes.join(' · ') : 'تحديث البيانات الأساسية للموظف');
         await refresh('emps'); toast('تم حفظ ملف الموظف الشامل', 'good');
       }
     });
@@ -3047,10 +4088,16 @@ function adminApp(db, auth) {
     const list = q ? S.emps.filter(e => (e.name || '').toLowerCase().includes(q) || (e.dept || '').toLowerCase().includes(q)) : S.emps;
 
     if (!isSuper() && S.empSub === 'admins') S.empSub = 'list';
+    if (!(isSuper() || isAud()) && S.empSub === 'audit') S.empSub = 'list';
+    if (S.empSub === 'audit' && S.auditLogs === undefined) {
+      S.auditLogs = null;
+      loadAuditLogs().then(() => { if ($('#content') && S.tab === 'emps' && S.empSub === 'audit') viewEmps($('#content')); });
+    }
     el.innerHTML = `
       <div class="subtabs">
         <button class="stab ${S.empSub === 'list' ? 'on' : ''}" data-esub="list">${ic('users', 20)} قائمة الموظفين (${S.emps.length})</button>
         ${isSuper() ? `<button class="stab ${S.empSub === 'admins' ? 'on' : ''}" data-esub="admins">${ic('lock', 20)} المشرفون والصلاحيات (${S.admins.length})</button>` : ''}
+        ${(isSuper() || isAud()) ? `<button class="stab ${S.empSub === 'audit' ? 'on' : ''}" data-esub="audit">${ic('report', 20)} سجل التدقيق الرقابي${Array.isArray(S.auditLogs) ? ' (' + S.auditLogs.length + ')' : ''}</button>` : ''}
       </div>
       ${S.empSub === 'list' ? `
         <details class="fold">
@@ -3087,10 +4134,14 @@ function adminApp(db, auth) {
  </div>
           <p class="muted" style="font-size:13px;margin:14px 0 0">يرتبط الرابط تلقائياً بأول جهاز يفتحه، ويمكن للموظف إضافة حتى 3 أجهزة أو متصفحات بإدخال «رمز الأجهزة» (من قائمة «المزيد»). وإن غيّر هاتفه أو بلغ الحد فاختر «إعادة ضبط الأجهزة».</p>
         </div>`
-      : `
+      : S.empSub === 'admins' ? `
 <div class="card">
           ${ch('lock', `المشرفون والأدوار والصلاحيات (${S.admins.length})`)}
-          <p class="hint" style="margin-top:0">الأدوار مفروضة في قواعد Firestore: المدير العام يدير الصلاحيات؛ الموارد البشرية تدير بيانات الدوام؛ محاسب الرواتب مخوّل للقراءة المالية واعتماد السلف والمهام؛ مدير القسم للقراءة ضمن قسم مطابق تمامًا؛ والمدقق للقراءة فقط. يجب أن يطابق نطاق مدير القسم قيمة «القسم / الفرع» المسجلة للموظفين. ملاحظة: الحقول المصرفية والمالية ما زالت ضمن وثيقة الموظف نفسها؛ يلزم فصلها لاحقًا لتطبيق أقل صلاحية على مستوى الحقول.</p>
+          <p class="hint" style="margin-top:0">الأدوار مفروضة في قواعد Firestore: المدير العام يدير الصلاحيات؛ الموارد البشرية تدير بيانات الدوام؛ محاسب الرواتب مخوّل للقراءة المالية واعتماد السلف والمهام؛ مدير القسم للقراءة ضمن قسم مطابق تمامًا؛ والمدقق للقراءة فقط. يمكنك بضغطة واحدة نقل وعزل الرواتب والبيانات المصرفية لجميع الموظفين إلى الخزينة المالية المحمية (<code>empFinance</code>) بحيث لا يطّلع عليها سوى المدير العام ومحاسب الرواتب.</p>
+          <div style="margin-bottom:14px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+            <button class="btn sm sec" data-act="isolateFinAll">${ic('lock', 16)} عزل وترحيل البيانات المالية لجميع الموظفين إلى الخزينة المحمية (empFinance)</button>
+            <span class="badge b-ok">المعزولون مالياً: ${S.emps.filter(e => e.finIsolated).length} / ${S.emps.length}</span>
+          </div>
           <div class="row" style="margin-bottom:16px">
             <div class="field"><label>اسم المشرف</label><input id="aName" placeholder="مسؤول الموارد البشرية"></div>
             <div class="field"><label>البريد الإلكتروني</label><input id="aUid" type="email" dir="ltr" placeholder="hr@example.com"></div>
@@ -3112,9 +4163,29 @@ function adminApp(db, auth) {
  }).join('') || `<div class="empty">${S.adminsErr ? 'تعذّرت قراءة قائمة المشرفين، فانشر القواعد الجديدة' : 'لا يوجد مشرفون إضافيون، وأنت المالك الوحيد'}</div>`}
  </div>
         </div>`
+      : S.empSub === 'audit' ? (() => {
+        const logs = Array.isArray(S.auditLogs) ? S.auditLogs : [];
+        const qa = (S.qAudit || '').trim().toLowerCase();
+        const flt = qa ? logs.filter(x => (x.target || '').toLowerCase().includes(qa) || (x.detail || '').toLowerCase().includes(qa) || ((x.by && x.by.name) || '').toLowerCase().includes(qa)) : logs;
+        return `<div class="card">
+          ${ch('report', 'سجل التدقيق الرقابي غير القابل للتعديل أو الحذف', `<div class="acts"><div class="search-box"><span class="s-ic">${ic('search', 18)}</span><input id="qAudInp" placeholder="بحث بالموظف أو المشرف أو العملية…" value="${esc(S.qAudit || '')}"></div><button class="btn sm sec" data-act="auditCsv">${ic('download', 16)} تصدير CSV</button><button class="btn sm sec" data-act="reloadAudit">${ic('refresh', 16)} تحديث</button></div>`)}
+          <p class="hint" style="margin-top:0">تُفرض حماية هذا السجل في قواعد Firestore (إضافة فقط <code>create-only</code>، ولا يقبل التعديل أو الحذف حتى للمدير العام). يُحمَّل عند فتح هذا التبويب فقط لتوفير القراءات.</p>
+          ${S.auditLogs === null ? '<p class="muted center" style="padding:18px 0">جاري تحميل سجل التدقيق…</p>'
+            : S.auditErr ? '<p class="muted center" style="padding:18px 0">تعذّر تحميل سجل التدقيق — تأكد من نشر قواعد Firestore المحدّثة.</p>'
+            : `<div class="tw"><table class="rt"><thead><tr><th>التاريخ والوقت</th><th>العملية</th><th>الهدف / المعني</th><th>التفاصيل</th><th>المشرف المنفّذ</th></tr></thead><tbody>
+              ${flt.map(x => {
+                const d = x.at && x.at.toDate ? x.at.toDate() : null;
+                const lb = AUDIT_LABELS[x.action] || ['b-mute', x.action || 'إجراء'];
+                return `<tr><td>${d ? `${fmtDate(d)} ${fmtTime(d, true)}` : '—'}</td><td><span class="badge ${lb[0]}">${esc(lb[1])}</span></td><td><b>${esc(x.target || '—')}</b></td><td>${esc(x.detail || '—')}</td><td><small class="muted" dir="ltr">${esc((x.by && x.by.name) || '—')}</small></td></tr>`;
+              }).join('') || '<tr><td colspan="5" class="muted center">لا توجد قيود مطابقة في سجل التدقيق بعد</td></tr>'}
+            </tbody></table></div>`}
+        </div>`;
+      })() : ''
       }`;
     const inp = $('#qEmpInp');
     if (inp) inp.oninput = e => { S.qEmp = e.target.value; viewEmps(el); $('#qEmpInp').focus(); $('#qEmpInp').setSelectionRange(S.qEmp.length, S.qEmp.length); };
+    const ainp = $('#qAudInp');
+    if (ainp) ainp.oninput = e => { S.qAudit = e.target.value; viewEmps(el); $('#qAudInp').focus(); $('#qAudInp').setSelectionRange(S.qAudit.length, S.qAudit.length); };
   }
 
   /* --- 3. تبويب الدوام + الإجازات والعطلات + إعدادات المنشأة (منظم بـ 3 تبويبات فرعية) --- */
@@ -3142,6 +4213,32 @@ function adminApp(db, auth) {
               <button class="btn sm bad" data-act="delSched" data-id="${x.id}">${ic('trash', 16)} حذف</button>
             </div>
           </div>`).join('')}</div>` : `<div class="center muted" style="padding:24px 0">لا توجد جداول بعد. اضغط «إنشاء جدول جديد» للبدء.</div>`}
+        </div>
+        <div class="card">
+          ${ch('refresh', 'الاستثناءات المؤقتة وتبديل الورديات والمواسم (رمضان / تغطية شفتات)')}
+          <p class="hint" style="margin-top:0">طبّق جدول دوام بديلاً لفترة محددة (لموظف بعينه، أو لقسم كامل، أو للمنشأة كلها في شهر رمضان) <b>دون تعديل جدول الموظف الأساسي ودون المساس بحسابات الأيام السابقة</b>. تُحفظ ضمن كاش الإعدادات وتستهلك <b>صفر قراءات إضافية</b>.</p>
+          <div class="row" style="margin-bottom:14px">
+            <div class="field"><label>نطاق التطبيق</label><select id="ovTarget">
+              <option value="*">كافة موظفي الدوام (جدول موسمي / رمضان)</option>
+              ${[...new Set(S.emps.map(e => e.dept).filter(Boolean))].map(d => `<option value="dept:${esc(d)}">قسم: ${esc(d)}</option>`).join('')}
+              ${S.emps.filter(e => e.active && e.empType !== 'task').map(e => `<option value="emp:${esc(e.id)}">موظف: ${esc(e.name)}</option>`).join('')}
+            </select></div>
+            <div class="field"><label>الجدول البديل خلال الفترة</label><select id="ovSched">${S.scheds.map(x => `<option value="${esc(x.id)}">${esc(x.name)}</option>`).join('')}</select></div>
+            <div class="field" style="max-width:165px"><label>من تاريخ</label><input type="date" id="ovFrom" value="${dayKey(new Date())}"></div>
+            <div class="field" style="max-width:165px"><label>إلى تاريخ</label><input type="date" id="ovTo" value="${addDays(dayKey(new Date()), 6)}"></div>
+            <div class="field" style="max-width:130px"><label>موضع الدورة</label><input type="number" id="ovRot" min="1" value="1"></div>
+            <div class="field"><label>السبب / المناسبة</label><input id="ovNote" placeholder="مثال: دوام شهر رمضان / تغطية مسائية"></div>
+            <button class="btn" data-act="addSchedOv">${ic('plus', 18)} إضافة استثناء</button>
+          </div>
+          ${(() => {
+            const ovs = (S.set && Array.isArray(S.set.schedOverrides)) ? S.set.schedOverrides : [];
+            if (!ovs.length) return '<p class="muted center" style="margin:0;padding:10px 0">لا توجد استثناءات دوام مؤقتة حالياً.</p>';
+            const sname = id => (S.scheds.find(s => s.id === id) || {}).name || 'جدول محذوف';
+            const tname = o => o.empId === '*' ? '<span class="badge b-pri">كل المنشأة</span>' : o.dept ? `<span class="badge b-warn">قسم: ${esc(o.dept)}</span>` : `<b>${esc((S.emps.find(e => e.id === o.empId) || {}).name || o.empId)}</b>`;
+            return `<div class="tw"><table class="rt"><thead><tr><th>النطاق</th><th>الجدول البديل</th><th>الفترة</th><th>المناسبة</th><th></th></tr></thead><tbody>
+              ${ovs.map(o => `<tr><td data-l="النطاق">${tname(o)}</td><td data-l="الجدول البديل"><span class="badge b-ok">${esc(sname(o.scheduleId))}</span></td><td data-l="الفترة">${fmtDate(dayStart(o.from))} ← ${fmtDate(dayStart(o.to))}</td><td data-l="المناسبة">${esc(o.note || '—')}</td><td data-l=""><button class="btn sm bad" data-act="delSchedOv" data-id="${esc(o.id)}">${ic('trash', 15)} حذف</button></td></tr>`).join('')}
+            </tbody></table></div>`;
+          })()}
         </div>`
       : S.schedSub === 'leaves' ? `
         <div class="card">
@@ -3181,7 +4278,20 @@ function adminApp(db, auth) {
             <button class="btn sec" data-act="restoreDB">${ic('refresh', 18)} استعادة من ملف نسخة احتياطية</button>
             <input type="file" id="restoreInp" accept=".json" style="display:none">
           </div>
-        </div>`
+        </div>
+        ${isSuper() ? `<div class="card">
+          ${ch('report', 'تجميد ملخصات الأشهر المغلقة وأرشفة البصمات القديمة (حماية الخطة المجانية)')}
+          <p class="hint" style="margin-top:0"><b>تجميد ملخص الشهر:</b> يدمج آلاف بصمات الشهر المنتهي في وثيقة واحدة مضغوطة وموقّعة ببصمة <code>SHA-256</code> داخل Firestore، فتُقرأ تقارير ورواتب ذلك الشهر من أي جهاز بـ <b>قراءة واحدة فقط (1 Read)</b> بدل آلاف القراءات.<br><b>أرشفة وتفريغ المساحة:</b> يحفظ الملخص المجمّع (لتبقى التقارير والرواتب تعمل داخل النظام)، وينزّل ملف أرشيف كامل للبصمات الخام على جهازك، ثم يحذف وثائق البصمات الفردية القديمة لتفريغ مساحة التخزين المجانية (1 GiB).</p>
+          <div class="row" style="align-items:flex-end">
+            <div class="field" style="max-width:220px"><label>اختر الشهر المنتهي</label><input type="month" id="archMonth" dir="ltr" max="${(() => { const d = new Date(); d.setUTCDate(1); d.setUTCHours(-12); return dayKey(d).slice(0, 7); })()}" value="${(() => { const d = new Date(); d.setUTCDate(1); d.setUTCHours(-12); return dayKey(d).slice(0, 7); })()}"></div>
+            <div class="acts">
+              <button class="btn sm" data-act="sealMonth">${ic('check', 16)} تجميد ملخص الشهر (قراءة واحدة)</button>
+              <button class="btn sm sec" data-act="archivePurgeMonth">${ic('download', 16)} تصدير أرشيف الشهر وتفريغ البصمات الخام</button>
+              <button class="btn sm sec" data-act="restoreArchiveMonth">${ic('refresh', 16)} استعادة بصمات شهر من أرشيف</button>
+              <input type="file" id="archRestoreInp" accept=".json" style="display:none">
+            </div>
+          </div>
+        </div>` : ''}`
       }`;
   }
 
@@ -3559,10 +4669,21 @@ function adminApp(db, auth) {
       if (r.kind === 'loan') return `<b>طلب سلفة: ${esc(r.type)} د.ل</b> (قسط شهري: ${esc(r.typeName)} د.ل)`;
       if (r.kind === 'cert') return `<b>طلب ${esc(r.typeName || 'إفادة عمل')}</b>`;
       if (r.kind === 'task') return `<b>مهمة</b> ${esc(r.taskName || '')} × <b>${+(r.qtyApproved ?? r.qty) || 0}</b> · ${fmtDate(dayStart(r.from))}${r.status === 'approved' ? ` <span class="badge b-ok">${+r.amount || 0}</span>` : ''}`;
+      if (r.type === 'offline_gps') {
+        const meta = parseOfflineNote(r.note);
+        return `<span class="badge b-ok">📍 بصمة أوفلاين موثّقة بالـ GPS</span> يوم ${fmtDate(dayStart(r.from))}${r.fixIn ? ` · حضور <b>${fmtHM(esc(r.fixIn))}</b>` : ''}${r.fixOut ? ` · انصراف <b>${fmtHM(esc(r.fixOut))}</b>` : ''}${r.typeName ? ` · <b>${esc(r.typeName)}</b>` : ''}${meta ? ` <span class="badge b-pri">${meta.dist}م (±${meta.acc}م)</span> <a class="btn sm sec" style="text-decoration:none;padding:2px 8px;font-size:11.5px" href="${mapLink(meta.lat, meta.lng)}" target="_blank">${ic('map', 13)} خريطة</a>` : ''}`;
+      }
       return `<b>تصحيح</b> يوم ${fmtDate(dayStart(r.from))}${r.fixIn ? ` · حضور <b>${fmtHM(esc(r.fixIn))}</b>` : ''}${r.fixOut ? ` · انصراف <b>${fmtHM(esc(r.fixOut))}</b>` : ''}`;
     };
+    const fmtReqNote = r => {
+      if (r.type === 'offline_gps') {
+        const meta = parseOfflineNote(r.note);
+        return meta ? (meta.extraNote ? esc(meta.extraNote) : `<small class="muted" dir="ltr">بصمة موقّعة: ${esc(meta.sig || '')}</small>`) : esc(r.note || '—');
+      }
+      return esc(r.note || '—');
+    };
     el.innerHTML = `<div class="card">${ch('send', `طلبات بانتظار المراجعة (${pend.length})`)}<div class="tw"><table><thead><tr><th>الموظف</th><th>تفاصيل الطلب</th><th>ملاحظة</th><th>الحالة</th><th>إجراءات</th></tr></thead><tbody>
-    ${pend.map(r => `<tr><td><div class="who"><span class="av">${ini(cname(r.empId))}</span>${esc(cname(r.empId))}</div></td><td>${det(r)}</td><td class="muted">${esc(r.note || '—')}</td><td><span class="badge b-warn">بانتظار المراجعة</span></td><td><div class="acts"><button class="btn sm ok" data-act="appr" data-id="${r.id}" data-e="${r.empId}">${ic('check', 16)} اعتماد</button> <button class="btn sm bad" data-act="rej" data-id="${r.id}" data-e="${r.empId}">${ic('x', 16)} رفض</button></div></td></tr>`).join('') || '<tr><td colspan="5" class="muted center">لا توجد طلبات معلّقة حالياً</td></tr>'}
+    ${pend.map(r => `<tr><td><div class="who"><span class="av">${ini(cname(r.empId))}</span>${esc(cname(r.empId))}</div></td><td>${det(r)}</td><td class="muted">${fmtReqNote(r)}</td><td><span class="badge b-warn">بانتظار المراجعة</span></td><td><div class="acts"><button class="btn sm ok" data-act="appr" data-id="${r.id}" data-e="${r.empId}">${ic('check', 16)} اعتماد</button> <button class="btn sm bad" data-act="rej" data-id="${r.id}" data-e="${r.empId}">${ic('x', 16)} رفض</button></div></td></tr>`).join('') || '<tr><td colspan="5" class="muted center">لا توجد طلبات معلّقة حالياً</td></tr>'}
     </tbody></table></div></div>
     <div class="g2" style="align-items:start">
       <div class="card">${ch('check', 'آخر القرارات المعتمدة/المرفوضة')}<div class="tw"><table><thead><tr><th>الموظف</th><th>الطلب</th><th>القرار</th></tr></thead><tbody>
@@ -3588,12 +4709,34 @@ function adminApp(db, auth) {
   const stopOf = e => e.active ? null : (e.archivedAt && e.archivedAt.toDate ? dayKey(e.archivedAt.toDate()) : '0000-00-00');
   let _sumC = null, _sumT = 0;
   const summary = () => { if (!_sumC || Date.now() - _sumT > 30000) { _sumC = computeSummary(); _sumT = Date.now(); } return _sumC; };
+  /* فحص استثناءات الدوام المؤقتة وتبديل الورديات (رمضان / تغطية شفتات) ليوم محدد دون المساس بالأيام السابقة */
+  function resolveDaySched(emp, dayKeyStr, scheds, overrides, fallbackSc, fallbackRot) {
+    const list = Array.isArray(overrides) ? overrides : [];
+    if (!list.length || !emp || !dayKeyStr) return { sc: fallbackSc, rot: fallbackRot, override: null };
+    let hit = null, bestRank = 0;
+    for (const ov of list) {
+      if (!ov || !ov.from || !ov.to || dayKeyStr < ov.from || dayKeyStr > ov.to) continue;
+      let rank = 0;
+      if (ov.empId && ov.empId === emp.id) rank = 3;
+      else if ((!ov.empId || ov.empId === '') && ov.dept && emp.dept && ov.dept === emp.dept) rank = 2;
+      else if (ov.empId === '*' && !ov.dept) rank = 1;
+      if (rank > bestRank) { bestRank = rank; hit = ov; }
+    }
+    if (!hit) return { sc: fallbackSc, rot: fallbackRot, override: null };
+    const raw = (scheds || []).find(s => s.id === hit.scheduleId) || hit.schedSnap;
+    return {
+      sc: raw ? normSched(raw) : fallbackSc,
+      rot: hit.rotOffset != null ? (+hit.rotOffset || 0) : fallbackRot,
+      override: hit
+    };
+  }
   function computeSummary() {
     const out = [];
     const todayK = dayKey(new Date());   // الأيام بعد اليوم لا تُعد غيابًا (معاينة فترة لم تنتهِ)
     const byEmp = {};
     [...S.recs].sort((a, b) => a.t - b.t).forEach(r => (byEmp[r.empId] = byEmp[r.empId] || []).push(r));
     S.emps.filter(e => (e.active || (stopOf(e) && stopOf(e) > S.from)) && (!S.emp || e.id === S.emp)).forEach(e => { if (!byEmp[e.id]) byEmp[e.id] = []; });
+    const ovList = S.set && Array.isArray(S.set.schedOverrides) ? S.set.schedOverrides : [];
     Object.entries(byEmp).forEach(([empId, rs]) => {
       if (S.emp && empId !== S.emp) return;
       const emp = S.emps.find(e => e.id === empId);
@@ -3601,19 +4744,21 @@ function adminApp(db, auth) {
       if (emp.empType === 'task') return;
       const stopKey = stopOf(emp);
       const name = emp ? emp.name : (rs.length ? rs[rs.length - 1].empName : empId);
-      const sc = emp && emp.scheduleId ? normSched(S.scheds.find(s => s.id === emp.scheduleId) || {}) : null;
-      const rot = emp ? (emp.rotOffset || 0) : 0;
+      const baseSc = emp && emp.scheduleId ? normSched(S.scheds.find(s => s.id === emp.scheduleId) || {}) : null;
+      const baseRot = emp ? (emp.rotOffset || 0) : 0;
       const sd = emp ? emp.startDate : null;
-      const lim = forgotLimitMs(sc);
+      const lim = forgotLimitMs(baseSc);
       const sesAll = pairSessions(rs, lim);
       let k = S.from;
       while (k <= S.to) {
+        const { sc, rot } = ovList.length ? resolveDaySched(emp, k, S.scheds, ovList, baseSc, baseRot) : { sc: baseSc, rot: baseRot };
+        const dayLim = sc === baseSc ? lim : forgotLimitMs(sc);
         const ses = sesAll.filter(s => dayKey(s.start) === k);
-        const met = calcDay(sc, k, ses, S.holKeys, rot, { nowMs: Date.now(), cap: lim });
+        const met = calcDay(sc, k, ses, S.holKeys, rot, { nowMs: Date.now(), cap: dayLim });
         let status;
         if (ses.length) {
           const lastSes = ses[ses.length - 1];
-          status = (met.open && lastSes && (Date.now() - lastSes.start) >= lim) ? 'forgot' : met.open ? 'open' : 'work';
+          status = (met.open && lastSes && (Date.now() - lastSes.start) >= dayLim) ? 'forgot' : met.open ? 'open' : 'work';
           if (status === 'forgot') { met.raw = 0; met.net = 0; met.otMin = 0; met.otEq = 0; met.otRate = 0; met.early = 0; }
         }
         else if (onLeave(S.leaves, empId, k) && isLeaveDay(sc, k, rot, S.holKeys)) status = 'leave';
@@ -3648,6 +4793,13 @@ function adminApp(db, auth) {
     return { inss, solid, incomeTax, stamp, total: inss + solid + incomeTax + stamp, employerInss };
   }
 
+  /* فحص سريان المكافأة والجزاء حسب الشهر المحدد (adjMonth: YYYY-MM).
+     إذا لم يُحدد adjMonth يسري الرقم على أي فترة (توافق كامل مع البيانات القديمة)، وإذا حُدّد يسري فقط على الفترة المتقاطعة مع ذلك الشهر. */
+  function activeAdj(e, from, to) {
+    const m = e && typeof e.adjMonth === 'string' ? e.adjMonth.trim() : '';
+    const ok = !m || (!from || !to || (from.slice(0, 7) <= m && to.slice(0, 7) >= m));
+    return { bonus: ok ? (+e.bonus || 0) : 0, penalty: ok ? (+e.penalty || 0) : 0, adjMonth: m, active: ok };
+  }
   function payrollRows() {
     const agg = new Map();
     const blank = () => ({ net: 0, otMin: 0, otEq: 0, late: 0, early: 0, absent: 0, absentDays: [], daysWorked: 0, forgotDays: 0, forgotList: [], forgotPlan: 0, plMin: 0, plDays: 0, lv: [], lateK: 0, earlyK: 0, otK: 0 });
@@ -3697,8 +4849,9 @@ function adminApp(db, auth) {
         dedAbs = Math.min(base, absDed + lvDed);
         dedForgot = g.forgotList.reduce((a, dKey) => a + (amt / dimOf(dKey)), 0) * FD;
       }
-      const allowBonus = (+e.allowance || 0) + (+e.bonus || 0);
-      const dedPen = +e.penalty || 0;
+      const adj = activeAdj(e, S.from, S.to);
+      const allowBonus = (+e.allowance || 0) + adj.bonus;
+      const dedPen = adj.penalty;
       const dedLoan = (+e.loanTotal > 0 && +e.loanInst > 0) ? Math.min(+e.loanTotal, +e.loanInst) : 0;
       const grossAfterAtt = Math.max(0, base + otPay + allowBonus - dedLate - dedEarly - dedAbs - dedForgot);
       const statDetail = e.lyStatutory ? calcLibyanStatutory(grossAfterAtt, e.familyStatus) : null;
@@ -3713,6 +4866,7 @@ function adminApp(db, auth) {
   const RUN_ST = { draft: ['b-warn', 'مسودة'], approved: ['b-pri', 'معتمد'], paid: ['b-ok', 'مصروف'] };
   const runBy = () => { const u = auth.currentUser; return { uid: u.uid, name: u.email || '' }; };
   const runRows = id => collection(db, 'payrollRuns', id, 'rows');
+  const runCache = () => S.runRowsCache || (S.runRowsCache = new Map());
   async function loadRuns() {
     try {
       const s = await getDocs(query(collection(db, 'payrollRuns'), orderBy('createdAt', 'desc'), limit(36)));
@@ -3721,8 +4875,17 @@ function adminApp(db, auth) {
   }
   const refreshRuns = async () => { await loadRuns(); if ($('#content') && S.recSub === 'payroll') viewRecs($('#content')); };
   async function wipeRows(id) {
+    runCache().delete(id);
     const old = await getDocs(runRows(id));
     for (let i = 0; i < old.docs.length; i += 400) { const b = writeBatch(db); old.docs.slice(i, i + 400).forEach(d => b.delete(d.ref)); await b.commit(); }
+  }
+  /* ---- التصدير والقسائم من النسخة المحفوظة (مع كاش في الذاكرة لتجنب إعادة قراءة المسيّرات) ---- */
+  async function runRowsOf(id, force = false) {
+    const c = runCache();
+    if (!force && c.has(id)) return c.get(id);
+    const rows = (await getDocs(runRows(id))).docs.map(d => d.data());
+    c.set(id, rows);
+    return rows;
   }
   async function runSave(existingId) {
     if (!(isSuper() || isPay())) return toast('غير مسموح', 'err');
@@ -3741,7 +4904,7 @@ function adminApp(db, auth) {
     const inputs = { forgotDeductDays: forgotDed(), tzOffset: TZOFF, holKeys: (S.holKeys || []).filter(k => k >= S.from && k <= S.to), loanCount: rows.filter(x => +x.dedLoan > 0).length, build: 'runs-2' };
     const prevRun = (S.runs || []).filter(x => x.id !== existingId && x.to < S.from).sort((a, b) => String(b.to).localeCompare(String(a.to)))[0];
     let prevRows = [];
-    if (prevRun) { try { prevRows = (await getDocs(runRows(prevRun.id))).docs.map(d => d.data()); } catch (e) { console.warn(e); } }
+    if (prevRun) { try { prevRows = await runRowsOf(prevRun.id); } catch (e) { console.warn(e); } }
     const alerts = runAlertList(rows, prevRows);
     try {
       toast('جاري حفظ المسيّر…');
@@ -3750,6 +4913,8 @@ function adminApp(db, auth) {
       else { rid = doc(collection(db, 'payrollRuns')).id; await setDoc(doc(db, 'payrollRuns', rid), { from: S.from, to: S.to, status: 'draft', createdBy: runBy(), createdAt: serverTimestamp(), totals, inputs, empCount: rows.length }); }
       for (let i = 0; i < rows.length; i += 400) { const b = writeBatch(db); rows.slice(i, i + 400).forEach(x => b.set(doc(db, 'payrollRuns', rid, 'rows', x.empId), x)); await b.commit(); }
       if (existingId) await updateDoc(doc(db, 'payrollRuns', rid), { totals, inputs, empCount: rows.length, updatedAt: serverTimestamp() });
+      runCache().set(rid, rows);
+      logAudit('run_save', `${S.from} ← ${S.to}`, `حفظ مسودة مسيّر (${rows.length} موظف · الصافي: ${totals.net})`);
       toast(`حُفظ المسيّر كمسودة (${rows.length} موظف${alerts.length ? ` · ${runAlertSummary(alerts).warn} تحذير و${runAlertSummary(alerts).info} ملاحظة للمراجعة` : ''})`, 'good'); await refreshRuns();
     } catch (e) { console.error(e); toast(e && e.code === 'permission-denied' ? 'غير مسموح: انشر قواعد Firestore المحدثة أولًا' : 'تعذر حفظ المسيّر', 'err'); await refreshRuns(); }
   }
@@ -3767,38 +4932,74 @@ function adminApp(db, auth) {
     try {
       const snap = await getDocs(runRows(id));
       if (snap.size !== run.empCount) return toast(`عدد الصفوف (${snap.size}) لا يطابق المسجّل (${run.empCount}). أعد حساب المسودة.`, 'err');
+      const rowData = snap.docs.map(d => d.data());
+      runCache().set(id, rowData);
       const rowsHash = await runHash(snap.docs.map(d => ({ id: d.id, data: d.data() })));
-      const loanRows = snap.docs.map(d => d.data()).filter(r => +r.dedLoan > 0);
-      if (loanRows.length) {   // تحقق مسبق: لا يُعتمد المسيّر إن تعذر تسجيل أقساط السلف (رصيد تغيّر بعد المسودة)
-        const emps = {}; for (const r of loanRows) { const d = await getDoc(doc(db, 'employees', r.empId)); emps[r.empId] = d.exists() ? d.data() : null; }
+      const loanRows = rowData.filter(r => +r.dedLoan > 0);
+      if (loanRows.length) {   // تحقق مسبق متوازٍ مع دمج الخزينة المالية المعزولة (empFinance) إن وجدت
+        const emps = {};
+        await Promise.all(loanRows.map(async r => {
+          const d = await getDoc(doc(db, 'employees', r.empId));
+          if (!d.exists()) { emps[r.empId] = null; return; }
+          let ed = d.data();
+          if (ed.finIsolated) {
+            const fd = await getDoc(doc(db, 'empFinance', r.empId));
+            if (fd.exists()) ed = mergeEmpFinance(ed, fd.data());
+          }
+          emps[r.empId] = ed;
+        }));
         const plan = planInstallments(loanRows, emps, id, runBy());
         if (plan.problems.length) return alert('لم يُعتمد المسيّر:\n' + plan.problems.join('\n'));
       }
-      const rowData = snap.docs.map(d => d.data());
       const prevRun = (S.runs || []).filter(x => x.id !== id && x.to < run.from).sort((a, b) => String(b.to).localeCompare(String(a.to)))[0];
       let prevRows = [];
-      if (prevRun) { try { prevRows = (await getDocs(runRows(prevRun.id))).docs.map(d => d.data()); } catch (e) { console.warn(e); } }
+      if (prevRun) { try { prevRows = await runRowsOf(prevRun.id); } catch (e) { console.warn(e); } }
       const alerts = runAlertList(rowData, prevRows);
       if (alerts.length) {
         const sm = runAlertSummary(alerts);
         if (!confirm(`تنبيهات المراجعة: ${sm.warn} تحذير و${sm.info} ملاحظة\n\n` + alerts.slice(0, 10).map(a => '• ' + a.text).join('\n') + (alerts.length > 10 ? `\n… و${alerts.length - 10} أخرى` : '') + '\n\nهل تعتمد المسيّر رغم ذلك؟')) return;
       }
       await updateDoc(doc(db, 'payrollRuns', id), { status: 'approved', approvedBy: runBy(), approvedAt: serverTimestamp(), rowsHash, rowsCount: snap.size });
+      logAudit('run_approve', `${run.from} ← ${run.to}`, `اعتماد وتجميد المسيّر (${snap.size} موظف · البصمة: ${rowsHash.slice(0, 12)}…)`);
       toast('اعتُمد المسيّر وجُمّدت أرقامه', 'good');
-      try { await runPostLedger(id); } catch (e) { console.error(e); toast('اعتُمد المسيّر لكن تعذر تسجيل قيود السلف؛ استخدم زر «قيود السلف» في بطاقة المسيّر', 'err'); }
+      if (run.from.slice(0, 7) === run.to.slice(0, 7) && run.to < dayKey(new Date()).slice(0, 7) + '-01') {
+        const mk = run.from.slice(0, 7), ms = dayStart(mk + '-01'), me = dayStart(nextMonthKey(mk) + '-01');
+        const mRecs = (S.recs || []).filter(r => r.t && r.t >= ms && r.t < me);
+        if (mRecs.length) saveMonthSummaryDoc(mk, mRecs).catch(() => {});
+      }
+      try { await runPostLedger(id, rowData); } catch (e) { console.error(e); toast('اعتُمد المسيّر لكن تعذر تسجيل قيود السلف؛ استخدم زر «قيود السلف» في بطاقة المسيّر', 'err'); }
+      // تصفير المكافآت والجزاءات المؤقتة التي استُنفدت في هذا المسيّر لمنع تكرار صرفها أو خصمها في الشهر التالي
+      try {
+        const toClear = S.emps.filter(e => ((+e.bonus || 0) > 0 || (+e.penalty || 0) > 0) && activeAdj(e, run.from, run.to).active && rowData.some(r => r.empId === e.id));
+        if (toClear.length) {
+          for (let i = 0; i < toClear.length; i += 150) {
+            const b = writeBatch(db);
+            toClear.slice(i, i + 150).forEach(e => {
+              b.update(doc(db, 'employees', e.id), { bonus: 0, penalty: 0, adjMonth: '' });
+              if (e.finIsolated) b.set(doc(db, 'empFinance', e.id), { bonus: 0, penalty: 0, adjMonth: '', updatedAt: serverTimestamp() }, { merge: true });
+            });
+            await b.commit();
+          }
+          toClear.forEach(e => {
+            e.bonus = 0; e.penalty = 0; e.adjMonth = '';
+            if (e.finIsolated && S.finMap && S.finMap.has(e.id)) Object.assign(S.finMap.get(e.id), { bonus: 0, penalty: 0, adjMonth: '' });
+          });
+        }
+      } catch (e) { console.warn('clear adj after approve:', e); }
       await refreshRuns();
     } catch (e) { console.error(e); toast(e && e.code === 'permission-denied' ? 'غير مسموح' : 'تعذر الاعتماد', 'err'); }
   }
   async function runPay(id) {
     const run = (S.runs || []).find(r => r.id === id); if (!run || run.status !== 'approved') return;
     if (!confirm('تسجيل أن هذا المسيّر صُرف فعلًا؟')) return;
-    try { await updateDoc(doc(db, 'payrollRuns', id), { status: 'paid', paidBy: runBy(), paidAt: serverTimestamp() }); toast('سُجّل الصرف', 'good'); await refreshRuns(); }
+    try { await updateDoc(doc(db, 'payrollRuns', id), { status: 'paid', paidBy: runBy(), paidAt: serverTimestamp() }); logAudit('run_pay', `${run.from} ← ${run.to}`, 'تسجيل صرف مسيّر الرواتب'); toast('سُجّل الصرف', 'good'); await refreshRuns(); }
     catch (e) { console.error(e); toast('تعذر تسجيل الصرف', 'err'); }
   }
   async function runVerify(id) {
     const run = (S.runs || []).find(r => r.id === id); if (!run || !run.rowsHash) return toast('لا بصمة لهذا المسيّر (مسودة)', 'err');
     try {
       const snap = await getDocs(runRows(id));
+      runCache().set(id, snap.docs.map(d => d.data()));
       const h = await runHash(snap.docs.map(d => ({ id: d.id, data: d.data() })));
       if (h === run.rowsHash && snap.size === run.rowsCount) toast('سلامة المسيّر سليمة: الصفوف مطابقة لبصمة الاعتماد', 'good');
       else alert('تنبيه: صفوف هذا المسيّر لا تطابق بصمة الاعتماد. تم تعديلها أو حذف بعضها خارج التطبيق. راجع سجل Firebase.');
@@ -3807,11 +5008,9 @@ function adminApp(db, auth) {
   async function runDel(id) {
     const run = (S.runs || []).find(r => r.id === id); if (!run || run.status !== 'draft') return;
     if (!confirm('حذف هذه المسودة؟')) return;
-    try { await wipeRows(id); await deleteDoc(doc(db, 'payrollRuns', id)); toast('حُذفت المسودة', 'good'); await refreshRuns(); }
+    try { await wipeRows(id); await deleteDoc(doc(db, 'payrollRuns', id)); logAudit('run_delete', `${run.from} ← ${run.to}`, 'حذف مسودة مسيّر رواتب'); toast('حُذفت المسودة', 'good'); await refreshRuns(); }
     catch (e) { console.error(e); toast('تعذر الحذف', 'err'); }
   }
-  /* ---- التصدير والقسائم من النسخة المحفوظة (لا يُعاد أي حساب حيّ) ---- */
-  async function runRowsOf(id) { return (await getDocs(runRows(id))).docs.map(d => d.data()); }
   async function withRunRows(id, fn) {
     const run = (S.runs || []).find(r => r.id === id);
     if (!run) return toast('المسيّر غير موجود', 'err');
@@ -3880,20 +5079,38 @@ function adminApp(db, auth) {
   }
   /* ---- دفتر السلف ---- */
   const ledgerCol = id => collection(db, 'employees', id, 'loanLedger');
-  async function runPostLedger(id) {
+  async function runPostLedger(id, preloadedRows = null) {
     const run = (S.runs || []).find(r => r.id === id); if (!run || !['approved', 'paid'].includes(run.status)) return true;
-    const rows = (await getDocs(runRows(id))).docs.map(d => d.data()).filter(r => +r.dedLoan > 0);
+    const allRows = preloadedRows || await runRowsOf(id);
+    const rows = allRows.filter(r => +r.dedLoan > 0);
     if (!rows.length) return true;
-    const missing = [];
-    for (const r of rows) { const ex = await getDoc(doc(db, 'employees', r.empId, 'loanLedger', 'inst_' + id)); if (!ex.exists()) missing.push(r); }
+    const checks = await Promise.all(rows.map(async r => {
+      const ex = await getDoc(doc(db, 'employees', r.empId, 'loanLedger', 'inst_' + id));
+      return ex.exists() ? null : r;
+    }));
+    const missing = checks.filter(Boolean);
     if (!missing.length) return true;
     const emps = {};
-    for (const r of missing) { const d = await getDoc(doc(db, 'employees', r.empId)); emps[r.empId] = d.exists() ? d.data() : null; }
+    await Promise.all(missing.map(async r => {
+      const d = await getDoc(doc(db, 'employees', r.empId));
+      if (!d.exists()) { emps[r.empId] = null; return; }
+      let ed = d.data();
+      if (ed.finIsolated) {
+        const fd = await getDoc(doc(db, 'empFinance', r.empId));
+        if (fd.exists()) ed = mergeEmpFinance(ed, fd.data());
+      }
+      emps[r.empId] = ed;
+    }));
     const plan = planInstallments(missing, emps, id, runBy());
     if (plan.problems.length) { alert('تعذر تسجيل قيود السلف:\n' + plan.problems.join('\n')); return false; }
     for (let i = 0; i < plan.items.length; i += 8) {
       const b = writeBatch(db);
-      plan.items.slice(i, i + 8).forEach(it => { b.set(doc(db, 'employees', it.empId, 'loanLedger', it.id), { ...it.entry, at: serverTimestamp() }); b.update(doc(db, 'employees', it.empId), { loanTotal: it.newBalance }); });
+      plan.items.slice(i, i + 8).forEach(it => {
+        const empObj = S.emps.find(x => x.id === it.empId);
+        b.set(doc(db, 'employees', it.empId, 'loanLedger', it.id), { ...it.entry, at: serverTimestamp() });
+        b.update(doc(db, 'employees', it.empId), { loanTotal: (empObj && empObj.finIsolated) ? null : it.newBalance });
+        if (empObj && empObj.finIsolated) b.set(doc(db, 'empFinance', it.empId), { loanTotal: it.newBalance, updatedAt: serverTimestamp() }, { merge: true });
+      });
       await b.commit();
     }
     plan.items.forEach(it => { const e = S.emps.find(x => x.id === it.empId); if (e) e.loanTotal = it.newBalance; });
@@ -3905,8 +5122,12 @@ function adminApp(db, auth) {
   }
   async function loanOpen() {
     try {
-      const cand = S.emps.filter(e => +e.loanTotal > 0), need = [];
-      for (const e of cand) { const q = await getDocs(query(ledgerCol(e.id), limit(1))); if (q.empty) need.push(e); }
+      const cand = S.emps.filter(e => +e.loanTotal > 0);
+      const checks = await Promise.all(cand.map(async e => {
+        const q = await getDocs(query(ledgerCol(e.id), limit(1)));
+        return q.empty ? e : null;
+      }));
+      const need = checks.filter(Boolean);
       if (!need.length) return toast(cand.length ? 'كل الأرصدة القائمة لها قيود مسبقًا' : 'لا توجد أرصدة سلف قائمة', 'good');
       const tot = r2(need.reduce((a, e) => a + (+e.loanTotal || 0), 0));
       if (!confirm(`تسجيل قيد افتتاحي لـ ${need.length} موظف بإجمالي ${tot} د.ل؟\nلا يمكن تعديل القيد لاحقًا (التصحيح بقيد تسوية).`)) return;
@@ -3937,13 +5158,13 @@ function adminApp(db, auth) {
   async function runView(id) {
     const run = (S.runs || []).find(r => r.id === id); if (!run) return;
     let rows;
-    try { rows = (await getDocs(runRows(id))).docs.map(d => d.data()).sort((a, b) => String(a.name).localeCompare(String(b.name), 'ar')); }
+    try { rows = [...(await runRowsOf(id))].sort((a, b) => String(a.name).localeCompare(String(b.name), 'ar')); }
     catch (e) { console.error(e); return toast('تعذر تحميل الصفوف', 'err'); }
     const m = v => r2(v).toString(), T = run.totals || runTotals(rows), st = RUN_ST[run.status] || ['b-mute', run.status];
-    // تنبيهات المراجعة تُحسب بمقارنة المسيّر المحفوظ بالمسيّر السابق الأقرب زمنيًا
+    // تنبيهات المراجعة تُحسب بمقارنة المسيّر المحفوظ بالمسيّر السابق الأقرب زمنيًا (مخدوم من الكاش)
     let prevRows = [];
     const prevRun = (S.runs || []).filter(x => x.id !== id && x.to < run.from).sort((a, b) => String(b.to).localeCompare(String(a.to)))[0];
-    if (prevRun) { try { prevRows = (await getDocs(runRows(prevRun.id))).docs.map(d => d.data()); } catch (e) { console.warn(e); } }
+    if (prevRun) { try { prevRows = await runRowsOf(prevRun.id); } catch (e) { console.warn(e); } }
     const alerts = runAlertList(rows, prevRows), sm = runAlertSummary(alerts);
     openModal({
       title: `مسيّر ${esc(run.from)} ← ${esc(run.to)} <span class="badge ${st[0]}">${st[1]}</span>`, saveText: 'إغلاق',
@@ -3987,6 +5208,9 @@ function adminApp(db, auth) {
 
   function viewRecs(el) {
     if (!['super_admin', 'payroll_admin'].includes(S.role) && S.recSub === 'payroll') S.recSub = 'summary';
+    if (S.recSub === 'payroll' && !S.finLoaded && (isSuper() || isPay()) && S.emps.some(e => e.finIsolated)) {
+      ensureFinanceLoaded().then(() => { if ($('#content') && S.tab === 'recs' && S.recSub === 'payroll') viewRecs($('#content')); });
+    }
     const sum = summary();
     const pay = payrollRows().filter(r => r.pm !== 'none');
     const raw = filtered();
@@ -4030,10 +5254,16 @@ function adminApp(db, auth) {
         ${pay.map(r => `<tr><td><div class="who"><span class="av">${ini(r.name)}</span><div>${esc(r.name)}${r.forgotDays ? ` <span class="badge b-warn" title="لم تُصحَّح بصمة انصرافها">${r.forgotDays} يوم منسي</span>` : ''}${r.iban ? `<small class="muted" style="display:block;direction:ltr">${esc(r.bankName)} · ${esc(r.iban)}</small>` : ''}</div></div></td><td><span class="badge ${r.pm === 'monthly' ? 'b-pri' : r.pm === 'task' ? 'b-warn' : 'b-ok'}">${r.pm === 'monthly' ? 'شهري ' + m(r.amt) : r.pm === 'task' ? 'بالمهام' : 'بالساعة ' + m(r.amt)}</span></td><td>${m(r.base)}</td><td><b>${m(r.otPay)}</b></td><td>${m(r.allowBonus || 0)}</td><td class="muted">${m(r.dedLate + r.dedEarly)}</td><td class="muted">${m(r.dedAbs + (r.dedForgot || 0))}</td><td class="muted" title="${r.statDetail ? `ضمان: ${m(r.statDetail.inss)} | تضامن: ${m(r.statDetail.solid)} | ضريبة: ${m(r.statDetail.incomeTax)} | دمغة: ${m(r.statDetail.stamp)}` : ''}">${m(r.statDed || 0)}</td><td class="muted">${m((r.dedLoan || 0) + (r.dedPen || 0))}</td><td><b class="badge b-ok" style="font-size:14px">${m(r.net)}</b></td><td><button class="btn sm sec" data-act="slipEmp" data-id="${r.empId}">${ic('print', 15)} قسيمة</button></td></tr>`).join('')}
         </tbody><tfoot><tr><td colspan="2">الإجمالي الكلي</td><td>${m(T.base)}</td><td>${m(T.otPay)}</td><td>${m(T.ab)}</td><td>${m(T.dl)}</td><td>${m(T.da)}</td><td>${m(T.sl)}</td><td>${m(T.ln)}</td><td><b class="badge b-ok" style="font-size:14.5px">${m(T.net)}</b></td><td></td></tr></tfoot></table></div>`;
       })()}</div>${runsCard()}`
-    : `
-      <div class="card">${ch('pin', `سجل عمليات البصمة التفصيلي (${raw.length})`)}<div class="tw"><table><thead><tr><th>الموظف</th><th>العملية</th><th>التاريخ</th><th>الوقت</th><th>الموقع</th><th>البعد</th><th>الخريطة</th></tr></thead><tbody>
-      ${raw.map(r => `<tr><td><b>${esc(r.empName)}</b></td><td><span class="badge ${r.type === 'in' ? 'b-ok' : 'b-bad'}">${r.type === 'in' ? 'حضور' : 'انصراف'}</span></td><td>${fmtDate(r.t)}</td><td>${fmtTime(r.t, true)}</td><td>${esc(r.locationName)}</td><td>${r.distance} م</td><td><a class="btn sm sec" style="text-decoration:none" href="${mapLink(r.lat, r.lng)}" target="_blank">${ic('map', 15)} عرض</a></td></tr>`).join('') || '<tr><td colspan="7" class="muted center">لا توجد بيانات في هذه الفترة</td></tr>'}
-      </tbody></table></div></div>`
+    : (() => {
+      const anom = detectRecAnomalies(raw);
+      return `<div class="card">${ch('pin', `سجل عمليات البصمة التفصيلي (${raw.length})`)}${anom.size ? `<div class="warnbox" style="margin-bottom:10px"><b>تنبيه رقابي (${anom.size}):</b> رصد محرك فحص الإحداثيات بصمات تحمل مؤشرات غير طبيعية (تطابق عشري مطلق أو سرعة انتقال غير منطقية)؛ مرّر المؤشر على شارة التحذير بجانب البصمة للتفاصيل.</div>` : ''}<div class="tw"><table><thead><tr><th>الموظف</th><th>العملية</th><th>التاريخ</th><th>الوقت</th><th>الموقع</th><th>البعد</th><th>الخريطة</th></tr></thead><tbody>
+      ${raw.map(r => {
+        const issues = anom.get(r.empId + '/' + r.id);
+        const flagHtml = issues ? ` <span class="badge b-warn" title="${esc(issues.join(' · '))}">⚠️ اشتباه GPS</span>` : (r.deviceId === 'offline-gps-verified' ? ' <span class="badge b-pri" title="بصمة أوفلاين موثّقة بالـ GPS">📍 أوفلاين</span>' : '');
+        return `<tr><td><b>${esc(r.empName)}</b>${flagHtml}</td><td><span class="badge ${r.type === 'in' ? 'b-ok' : 'b-bad'}">${r.type === 'in' ? 'حضور' : 'انصراف'}</span></td><td>${fmtDate(r.t)}</td><td>${fmtTime(r.t, true)}</td><td>${esc(r.locationName)}</td><td>${r.distance} م</td><td><a class="btn sm sec" style="text-decoration:none" href="${mapLink(r.lat, r.lng)}" target="_blank">${ic('map', 15)} عرض</a></td></tr>`;
+      }).join('') || '<tr><td colspan="7" class="muted center">لا توجد بيانات في هذه الفترة</td></tr>'}
+      </tbody></table></div></div>`;
+    })()
     }`;
   }
 
@@ -4047,6 +5277,7 @@ function adminApp(db, auth) {
     const tab = ev.target.closest('[data-tab]'); if (tab) { S.tab = tab.dataset.tab; return render(); }
     const esub = ev.target.closest('[data-esub]'); if (esub) {
       if (esub.dataset.esub === 'admins' && !isSuper()) return toast('إدارة الصلاحيات متاحة للمدير العام فقط', 'err');
+      if (esub.dataset.esub === 'audit' && !(isSuper() || isAud())) return toast('سجل التدقيق متاح للمدير العام والمدقق فقط', 'err');
       S.empSub = esub.dataset.esub; return viewEmps($('#content'));
     }
     const ssub = ev.target.closest('[data-ssub]'); if (ssub) { S.schedSub = ssub.dataset.ssub; return viewSched($('#content')); }
@@ -4057,8 +5288,8 @@ function adminApp(db, auth) {
 
     const b = ev.target.closest('[data-act]'); if (!b) return;
     const act = b.dataset.act, id = b.dataset.id;
-        const superOnly = new Set(['addAdmin', 'delAdmin', 'copyRules', 'v2Done', 'hardDelEmp', 'backupDB', 'restoreDB', 'runApprove', 'loanOpen']);
-    const viewOnly = new Set(['logout', 'reload', 'copy', 'wa', 'moreReqs']);
+        const superOnly = new Set(['addAdmin', 'delAdmin', 'copyRules', 'v2Done', 'hardDelEmp', 'backupDB', 'restoreDB', 'runApprove', 'loanOpen', 'sealMonth', 'archivePurgeMonth', 'restoreArchiveMonth', 'isolateFinAll']);
+    const viewOnly = new Set(['logout', 'reload', 'copy', 'wa', 'moreReqs', 'reloadAudit', 'auditCsv']);
         const payrollAllowed = new Set(['logout', 'reload', 'editEmp', 'runSave', 'runRecalc', 'runView', 'runPay', 'runVerify', 'runDel', 'runLedger', 'loanLog', 'runXlsx', 'runBankCsv', 'runSlips', 'runSlip', 'xlsx', 'print', 'bankCsv', 'printSlips', 'slipEmp', 'appr', 'rej', 'copy', 'wa']);
     if (superOnly.has(act) && !isSuper()) return toast('هذه العملية متاحة للمدير العام فقط', 'err');
     if (['manager', 'auditor'].includes(S.role) && !viewOnly.has(act)) return toast('هذا الدور للعرض فقط', 'err');
@@ -4067,11 +5298,15 @@ function adminApp(db, auth) {
       const req = S.reqs.find(x => x.id === id && x.empId === b.dataset.e);
       if (!req || !['loan', 'task'].includes(req.kind)) return toast('يستطيع محاسب الرواتب اعتماد طلبات السلف والمهام فقط', 'err');
     }
+    if (S.role === 'hr_admin' && ['appr', 'rej'].includes(act)) {
+      const req = S.reqs.find(x => x.id === id && x.empId === b.dataset.e);
+      if (req && req.kind === 'loan') return toast('اعتماد طلبات السلف المالية محصور بالمدير العام ومحاسب الرواتب', 'err');
+    }
     if (S.recsFail.length && ['xlsx', 'bankCsv', 'printSlips', 'slipEmp', 'runXlsx', 'runBankCsv', 'runSlips', 'runSlip'].includes(act) && !confirm('تنبيه: تعذّرت قراءة سجلات: ' + [...new Set(S.recsFail)].join('، ') + '\nقد تكون الأرقام ناقصة (غياب خاطئ). هل تتابع رغم ذلك؟')) return;
     try {
       if (act === 'logout') {
         // نمسح كل ما خُزّن على الجهاز (كاش الإعدادات والأشهر وكاش Firestore) ثم نعيد تحميل الصفحة
-        try { localStorage.removeItem(CFG_KEY); } catch {}
+        try { localStorage.removeItem(CFG_KEY); sessionStorage.removeItem(ROLE_CACHE_KEY); } catch {}
         await RecCache.clear(); stopTodayFeed();
         await signOut(auth);
         try { await terminate(db); await clearIndexedDbPersistence(db); } catch {}
@@ -4085,7 +5320,23 @@ function adminApp(db, auth) {
         const phone = $('#ePhone').value.replace(/\D/g, '');
         const nid = randToken(); const isTask = !!($('#eType') && $('#eType').value === 'task');
         await setDoc(doc(db, 'employees', nid), { name, phone, active: true, deviceId: null, scheduleId: (isTask ? '' : ($('#eSched') ? $('#eSched').value : '')), empType: isTask ? 'task' : 'staff', payMode: isTask ? 'task' : 'none', payAmount: 0, rotOffset: 0, startDate: dayKey(new Date()), createdAt: serverTimestamp() });
+        logAudit('emp_create', name, isTask ? 'إضافة موظف مهام جديد' : 'إضافة موظف دوام جديد');
         await refresh('emps'); toast('تمت الإضافة — انسخ الرابط وأرسله للموظف', 'good');
+      }
+      if (act === 'reloadAudit') { S.auditLogs = null; viewEmps($('#content')); await loadAuditLogs(true); viewEmps($('#content')); return toast('تم تحديث سجل التدقيق', 'good'); }
+      if (act === 'auditCsv') {
+        const logs = Array.isArray(S.auditLogs) ? S.auditLogs : [];
+        if (!logs.length) return toast('لا توجد قيود لتصديرها', 'err');
+        const aoa = [['التاريخ والوقت', 'العملية', 'الهدف / المعني', 'التفاصيل', 'المشرف المنفّذ']];
+        logs.forEach(x => {
+          const d = x.at && x.at.toDate ? x.at.toDate() : null;
+          const lb = (AUDIT_LABELS[x.action] || ['', x.action || ''])[1];
+          aoa.push([d ? `${fmtDate(d)} ${fmtTime(d, true)}` : '', lb, x.target || '', x.detail || '', (x.by && x.by.name) || '']);
+        });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(new Blob([csvAoa(aoa)], { type: 'text/csv;charset=utf-8' }));
+        a.download = `meqat_audit_log_${dayKey(new Date())}.csv`; a.click();
+        return toast('تم تنزيل سجل التدقيق الرقابي (CSV)', 'good');
       }
       if (act === 'copy') { await navigator.clipboard.writeText(linkOf(id)); toast('تم نسخ رابط الموظف', 'good'); }
       if (act === 'wa') {
@@ -4095,18 +5346,19 @@ function adminApp(db, auth) {
         const a = document.createElement('a'); a.href = `https://wa.me/${e.phone || ''}?text=${encodeURIComponent(msg)}`; a.target = '_blank'; a.rel = 'noopener noreferrer'; a.click();
       }
       if (act === 'devPin') return deviceManager(S.emps.find(x => x.id === id));
-      if (act === 'resetDev') { if (confirm('إعادة ضبط كل الأجهزة المرتبطة بهذا الموظف؟ سيتوجب عليه فتح الرابط من جهازه بعد ذلك.')) { await updateDoc(doc(db, 'employees', id), { deviceId: null, uid: null, devices: null, rebindProof: null }); await refresh('emps'); toast('تمت إعادة الضبط', 'good'); } }
+      if (act === 'resetDev') { const e = S.emps.find(x => x.id === id); if (confirm('إعادة ضبط كل الأجهزة المرتبطة بهذا الموظف؟ سيتوجب عليه فتح الرابط من جهازه بعد ذلك.')) { await updateDoc(doc(db, 'employees', id), { deviceId: null, uid: null, devices: null, rebindProof: null }); logAudit('dev_reset', (e && e.name) || id, 'إعادة ضبط جميع الأجهزة المرتبطة'); await refresh('emps'); toast('تمت إعادة الضبط', 'good'); } }
       if (act === 'toggle') {
         const e = S.emps.find(x => x.id === id);
         if (e.active && !confirm(`إيقاف «${e.name}»؟\nتبقى سجلاته وتقاريره السابقة محفوظة، ولا يُحتسب غيابه بعد اليوم.`)) return;
         await updateDoc(doc(db, 'employees', id), e.active ? { active: false, archivedAt: serverTimestamp() } : { active: true, archivedAt: null });
+        logAudit('emp_toggle', e.name, e.active ? 'إيقاف/أرشفة الموظف' : 'إعادة تفعيل الموظف');
         await refresh('emps');
       }
       if (act === 'hardDelEmp') {
         const empToDel = S.emps.find(x => x.id === id);
         if (!empToDel || empToDel.active) return toast('الحذف النهائي متاح فقط للموظفين الموقوفين/المُرشَّفين', 'err');
         if (!confirm(`حذف «${empToDel.name}» نهائياً مع كل سجلاته وطلباته؟ لا يمكن التراجع.`)) return;
-        for (const sub of ['records', 'requests', 'joins']) {
+        for (const sub of ['records', 'requests', 'joins', 'loanLedger']) {
           for (;;) {
             const grp = await getDocs(query(collection(db, 'employees', id, sub), limit(300)));
             if (!grp.size) break;
@@ -4116,7 +5368,9 @@ function adminApp(db, auth) {
             if (grp.size < 300) break;
           }
         }
+        try { await deleteDoc(doc(db, 'empFinance', id)); } catch {}
         await deleteDoc(doc(db, 'employees', id));
+        logAudit('emp_delete', empToDel.name, 'حذف نهائي للموظف مع سجلاته وطلباته');
         await RecCache.clear(); S.reqs = S.reqs.filter(r => r.empId !== id); S.leaves = S.leaves.filter(r => r.empId !== id); S.recs = S.recs.filter(r => r.empId !== id); S.todayPrev = (S.todayPrev || []).filter(r => r.empId !== id); S.todayLive = (S.todayLive || []).filter(r => r.empId !== id); mergeToday(); await refresh('emps'); toast('حُذف الموظف وسجلاته نهائياً', 'good');
       }
       if (act === 'myLoc') {
@@ -4158,6 +5412,93 @@ function adminApp(db, auth) {
         return toast('تم تنزيل كشف الصرف المصرفي (CSV/Excel)', 'good');
       }
       if (act === 'assetDoc') return printAssetDoc(S.emps.find(x => x.id === id));
+      if (act === 'sealMonth' || act === 'archivePurgeMonth') {
+        const mk = ($('#archMonth') ? $('#archMonth').value.trim() : '');
+        const curMk = dayKey(new Date()).slice(0, 7);
+        if (!/^\d{4}-\d{2}$/.test(mk) || mk >= curMk) return toast('اختر شهراً منتهياً (قبل الشهر الجاري)', 'err');
+        const ms = dayStart(mk + '-01'), me = dayStart(nextMonthKey(mk) + '-01');
+        toast(`جاري جلب بصمات شهر ${mk}…`);
+        const f = [], raw = await fetchRecs(ms, me, f);
+        if (f.length) return toast('تعذّرت قراءة سجلات بعض الموظفين — أعد المحاولة قبل التجميد', 'err');
+        if (!raw.length) {
+          // ربما أُفرغت البصمات الخام سابقاً وبقي الملخص المجمّع
+          const ex = await getDoc(doc(db, 'monthlySummaries', mk));
+          if (ex.exists()) return toast(`ملخص شهر ${mk} مجمّد ومحفوظ مسبقاً (${ex.data().count} بصمة)`, 'good');
+          return toast(`لا توجد بصمات مسجّلة في شهر ${mk}`, 'err');
+        }
+        const saved = await saveMonthSummaryDoc(mk, raw);
+        if (!saved) return toast('حجم سجلات الشهر يتجاوز حد الوثيقة الواحدة', 'err');
+        await RecCache.set(recScope() + '|' + TZOFF + '|' + mk, { at: Date.now(), rows: raw.map(recSer) });
+        logAudit('month_seal', mk, `تجميد ملخص شهر ${mk} (${saved.count} بصمة · SHA-256: ${saved.sha256.slice(0, 12)}…)`);
+        if (act === 'sealMonth') {
+          return toast(`تم تجميد ملخص ${mk} (${saved.count} بصمة) — سيُقرأ بقراءة واحدة فقط من أي جهاز ✅`, 'good');
+        }
+        // تصدير ملف الأرشيف الموقّع قبل خيار تفريغ الوثائق الفردية
+        const archObj = {
+          app: 'meqat-month-archive',
+          version: 1,
+          mk,
+          tzOff: TZOFF,
+          exportedAt: new Date().toISOString(),
+          count: saved.count,
+          sha256: saved.sha256,
+          packed: saved.packed
+        };
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(new Blob([JSON.stringify(archObj, null, 2)], { type: 'application/json' }));
+        a.download = `meqat_archive_${mk}.json`;
+        a.click();
+        if (!confirm(`تم تنزيل ملف الأرشيف (meqat_archive_${mk}.json) وحفظ الملخص المجمّع في النظام (${saved.count} بصمة).\n\nهل تريد الآن حذف وثائق البصمات الخام الفردية (${raw.length} وثيقة) لشهر ${mk} من Firestore لتفريغ المساحة المجانية؟\n(ستبقى تقارير ورواتب شهر ${mk} تعمل طبيعياً في اللوحة عبر الملخص المجمّع)`)) {
+          return toast(`تم تنزيل الأرشيف وتجميد الملخص دون حذف البصمات الخام`, 'good');
+        }
+        toast(`جاري تفريغ ${raw.length} وثيقة بصمة خام لشهر ${mk}…`);
+        for (let i = 0; i < raw.length; i += 350) {
+          const b = writeBatch(db);
+          raw.slice(i, i + 350).forEach(r => b.delete(doc(db, 'employees', r.empId, 'records', r.id)));
+          await b.commit();
+        }
+        logAudit('month_archive', mk, `أرشفة وتفريغ ${raw.length} بصمة خام لشهر ${mk} (SHA-256: ${saved.sha256.slice(0, 12)}…)`);
+        return toast(`تمت أرشفة وتفريغ ${raw.length} بصمة خام لشهر ${mk} بنجاح ✅`, 'good');
+      }
+      if (act === 'restoreArchiveMonth') {
+        const inp = $('#archRestoreInp'); if (!inp) return;
+        inp.value = '';
+        inp.onchange = async e => {
+          const f = e.target.files[0]; if (!f) return;
+          try {
+            const d = JSON.parse(await f.text());
+            if (d.app !== 'meqat-month-archive' || !/^\d{4}-\d{2}$/.test(d.mk || '') || typeof d.packed !== 'string') {
+              return toast('ملف أرشيف شهر غير صالح', 'err');
+            }
+            const calcHash = await sha256Hex(d.packed);
+            if (d.sha256 && calcHash !== d.sha256) {
+              return alert('رفض الاستعادة: بصمة النزاهة (SHA-256) لا تطابق محتوى الملف — قد يكون الملف معدّلاً!');
+            }
+            const recs = unpackMonthRecs(d, msVal => Timestamp.fromMillis(msVal));
+            if (!recs.length) return toast('الأرشيف فارغ', 'err');
+            if (!confirm(`استعادة أرشيف شهر ${d.mk} (${recs.length} بصمة موثّقة ببصمة SHA-256) إلى قاعدة البيانات؟`)) return;
+            await _setDoc(doc(db, 'monthlySummaries', d.mk), { mk: d.mk, tzOff: +d.tzOff || TZOFF, count: recs.length, packed: d.packed, sha256: calcHash, updatedAt: serverTimestamp(), by: runBy() });
+            if (confirm(`تمت استعادة وثيقة ملخص الشهر (${d.mk}) بنجاح (التقارير والرواتب جاهزة للقراءة الفورية).\nهل تريد أيضاً إعادة كتابة وثائق البصمات الفردية (${recs.length} وثيقة) تحت كل موظف؟`)) {
+              for (let i = 0; i < recs.length; i += 350) {
+                const b = writeBatch(db);
+                recs.slice(i, i + 350).forEach(r => {
+                  b.set(doc(db, 'employees', r.empId, 'records', r.id), {
+                    type: r.type, time: r.time, lat: r.lat, lng: r.lng, accuracy: 0,
+                    distance: r.distance, locationId: r.locationId || 'archive',
+                    locationName: r.locationName || '', empName: r.empName || '', deviceId: 'archive-restore'
+                  });
+                });
+                await b.commit();
+              }
+            }
+            await RecCache.clear();
+            logAudit('month_restore', d.mk, `استعادة أرشيف شهر ${d.mk} (${recs.length} بصمة)`);
+            await refresh('recs');
+            toast(`تمت استعادة أرشيف شهر ${d.mk} بنجاح ✅`, 'good');
+          } catch (err) { console.error(err); toast('فشلت استعادة الأرشيف', 'err'); }
+        };
+        inp.click(); return;
+      }
       if (act === 'backupDB') {
         // الطوابع الزمنية (Timestamp) تُحفظ بصيغة {__ts: ملّي ثانية} كي تُستعاد كطوابع حقيقية لا كخرائط
         const tsRep = function (k, v) { const o = this[k]; return (o && typeof o === 'object' && typeof o.toMillis === 'function' && typeof o.toDate === 'function') ? { __ts: o.toMillis() } : v; };
@@ -4235,10 +5576,64 @@ function adminApp(db, auth) {
               });
               await b.commit();
             }
+            const monthsTouched = [...new Set(recs.map(r => dayKey(new Date(r.ms)).slice(0, 7)))];
+            await Promise.all(monthsTouched.map(m => invalidateMonthSummary(m)));
             await RecCache.clear(); await refresh('emps', 'recs'); toast(`تم استيراد ${recs.length} بصمة بنجاح ✅`, 'good');
           } catch (err) { console.error(err); toast('فشل استيراد ملف البصمات', 'err'); }
         };
         inp.click(); return;
+      }
+      if (act === 'isolateFinAll') {
+        await ensureFinanceLoaded(true);
+        const targets = S.emps.filter(e => !e.finIsolated || e.payAmount > 0 || e.iban || e.loanTotal > 0);
+        if (!targets.length) return toast('جميع الموظفين معزولون مالياً بالفعل', 'good');
+        if (!confirm(`عزل وترحيل البيانات المالية والمصرفية لـ ${targets.length} موظف إلى الخزينة المحمية (empFinance) ومسحها من وثائق الموظفين العامة؟\n(يبقى المدير العام ومحاسب الرواتب قادرين على إدارتها بشكل طبيعي تماماً)`)) return;
+        for (let i = 0; i < targets.length; i += 150) {
+          const b = writeBatch(db);
+          targets.slice(i, i + 150).forEach(e => {
+            const fin = { ...extractEmpFinance(e), updatedAt: serverTimestamp() };
+            b.set(doc(db, 'empFinance', e.id), fin, { merge: true });
+            b.update(doc(db, 'employees', e.id), stripEmpFinance({ empType: e.empType }));
+          });
+          await b.commit();
+        }
+        S.finLoaded = false;
+        await loadEmps();
+        await ensureFinanceLoaded(true);
+        logAudit('fin_isolate', `عزل مالي شامل`, `ترحيل وعزل البيانات المالية لـ ${targets.length} موظف إلى empFinance`);
+        render();
+        return toast(`تم عزل وترحيل البيانات المالية لـ ${targets.length} موظف بنجاح 🔒`, 'good');
+      }
+      if (act === 'addSchedOv') {
+        const tgt = ($('#ovTarget') ? $('#ovTarget').value : '*');
+        const sid = ($('#ovSched') ? $('#ovSched').value : '');
+        const from = ($('#ovFrom') ? $('#ovFrom').value : '');
+        const to = ($('#ovTo') ? $('#ovTo').value : '');
+        const rotPos = Math.max(1, parseInt($('#ovRot') ? $('#ovRot').value : '1', 10) || 1);
+        const note = ($('#ovNote') ? $('#ovNote').value.trim().slice(0, 80) : '');
+        const sc = S.scheds.find(s => s.id === sid);
+        if (!sc) return toast('اختر الجدول البديل أولاً', 'err');
+        if (!from || !to || to < from) return toast('حدد فترة استثناء صحيحة', 'err');
+        let empId = '', dept = '';
+        if (tgt === '*') empId = '*';
+        else if (tgt.startsWith('dept:')) dept = tgt.slice(5);
+        else if (tgt.startsWith('emp:')) empId = tgt.slice(4);
+        const curList = (S.set && Array.isArray(S.set.schedOverrides)) ? [...S.set.schedOverrides] : [];
+        const snapSc = { id: sc.id, name: sc.name, mode: sc.mode, days: sc.days, shifts: sc.shifts, cycle: sc.cycle, anchor: sc.anchor, breakMin: sc.breakMin, graceLate: sc.graceLate, graceEarly: sc.graceEarly, graceMode: sc.graceMode, ot: sc.ot };
+        const ovItem = { id: 'ov_' + Date.now().toString(36), empId, dept, scheduleId: sid, rotOffset: rotPos - 1, from, to, note, schedSnap: snapSc };
+        curList.push(ovItem);
+        await setDoc(doc(db, 'settings', 'general'), { schedOverrides: curList, updatedAt: serverTimestamp() }, { merge: true });
+        logAudit('sched_override', note || sc.name, `إضافة استثناء دوام (${from} ← ${to}) بجدول «${sc.name}»`);
+        await refresh('set');
+        return toast('أُضيف استثناء الدوام المؤقت بنجاح ✅', 'good');
+      }
+      if (act === 'delSchedOv') {
+        if (!confirm('حذف هذا الاستثناء المؤقت؟')) return;
+        const curList = ((S.set && Array.isArray(S.set.schedOverrides)) ? S.set.schedOverrides : []).filter(o => o.id !== id);
+        await setDoc(doc(db, 'settings', 'general'), { schedOverrides: curList, updatedAt: serverTimestamp() }, { merge: true });
+        logAudit('sched_override', id, 'حذف استثناء دوام مؤقت');
+        await refresh('set');
+        return toast('حُذف الاستثناء المؤقت', 'good');
       }
       if (act === 'newSched') scheduleEditor(null);
       if (act === 'editSched') scheduleEditor(S.scheds.find(x => x.id === id));
@@ -4276,6 +5671,7 @@ function adminApp(db, auth) {
         const tz = parseInt($('#sTz').value, 10);
         const fgd = parseFloat($('#sForgot').value);
         await setDoc(doc(db, 'settings', 'general'), { orgName: org, tzOffset: isNaN(tz) ? TZ_OFFSET_MIN : tz, ...(isSuper() ? { forgotDeductDays: isNaN(fgd) ? 0 : Math.min(1, Math.max(0, fgd)) } : {}), empNotice: ($('#sNotice') ? $('#sNotice').value.trim().slice(0, 300) : ''), updatedAt: serverTimestamp() }, { merge: true });
+        logAudit('settings_update', org || 'إعدادات المنشأة', `تحديث إعدادات المنشأة (التوقيت: ${tz})`);
         if (!isNaN(tz) && tz !== TZOFF) TZOFF = tz;
         await refresh('set', 'recs'); toast('حُفظت إعدادات المنشأة', 'good');
       }
@@ -4347,8 +5743,12 @@ function adminApp(db, auth) {
 
         if (st === 'approved' && r && r.kind === 'fix') {
           const base = dayStart(r.from);
+          const offMeta = r.type === 'offline_gps' ? parseOfflineNote(r.note) : null;
           const mkTime = (type, tstr) => { let m = hm(tstr); if (type === 'out' && r.fixIn && m <= hm(r.fixIn)) m += 1440; return Timestamp.fromDate(new Date(base.getTime() + m * 60000)); };
-          const mkRec = type => ({ type, lat: 0, lng: 0, accuracy: 0, distance: 0, locationId: 'admin', locationName: 'تصحيح إداري (طلب معتمد)', empName: r.empName, deviceId: 'admin-fix' });
+          const mkRec = type => offMeta ? ({
+            type, lat: +offMeta.lat || 0, lng: +offMeta.lng || 0, accuracy: +offMeta.acc || 0, distance: +offMeta.dist || 0,
+            locationId: offMeta.locId || 'admin', locationName: r.typeName || 'بصمة أوفلاين موثّقة', empName: r.empName, deviceId: 'offline-gps-verified'
+          }) : ({ type, lat: 0, lng: 0, accuracy: 0, distance: 0, locationId: 'admin', locationName: 'تصحيح إداري (طلب معتمد)', empName: r.empName, deviceId: 'admin-fix' });
           let latestType = null, latestTs = null, latestId = null;
           if (r.fixIn) {
             const inRef = doc(collection(db, 'employees', empId, 'records'));
@@ -4369,14 +5769,29 @@ function adminApp(db, auth) {
           }
         }
         if (st === 'approved' && r && r.kind === 'loan') {
+          await ensureFinanceLoaded();
           const empDoc = S.emps.find(x => x.id === empId) || {};
           const addAmt = parseFloat(r.type) || 0, newInst = parseFloat(r.typeName) || (+empDoc.loanInst || 0);
-          const newTotal = (+empDoc.loanTotal || 0) + addAmt;
-          batch.update(doc(db, 'employees', empId), { loanTotal: newTotal, loanInst: newInst });
-          if (addAmt > 0) batch.set(doc(db, 'employees', empId, 'loanLedger', 'grant_' + id), { type: 'grant', delta: addAmt, balanceAfter: r2(newTotal), reqId: id, note: 'سلفة بطلب معتمد', by: runBy(), at: serverTimestamp() });
+          const newTotal = r2((+empDoc.loanTotal || 0) + addAmt);
+          if (empDoc.finIsolated) {
+            batch.set(doc(db, 'empFinance', empId), { loanTotal: newTotal, loanInst: newInst, updatedAt: serverTimestamp() }, { merge: true });
+          } else {
+            batch.update(doc(db, 'employees', empId), { loanTotal: newTotal, loanInst: newInst });
+          }
+          if (addAmt > 0) batch.set(doc(db, 'employees', empId, 'loanLedger', 'grant_' + id), { type: 'grant', delta: addAmt, balanceAfter: newTotal, reqId: id, note: 'سلفة بطلب معتمد', by: runBy(), at: serverTimestamp() });
         }
         await batch.commit();
-        if (st === 'approved' && r.kind === 'fix') await RecCache.clear();
+        if (st === 'approved' && r && r.kind === 'loan') {
+          const empDoc = S.emps.find(x => x.id === empId);
+          if (empDoc && empDoc.finIsolated) {
+            const addAmt = parseFloat(r.type) || 0, newInst = parseFloat(r.typeName) || (+empDoc.loanInst || 0);
+            const newTotal = r2((+empDoc.loanTotal || 0) + addAmt);
+            await saveEmpFinanceCache(empId, { ...(S.finMap && S.finMap.get(empId) || {}), loanTotal: newTotal, loanInst: newInst });
+          }
+        }
+        logAudit(st === 'approved' ? 'req_approve' : 'req_reject', r.empName || empId, `${r.kind} (${r.from}${r.to && r.to !== r.from ? ' ← ' + r.to : ''})`);
+        if (st === 'approved' && r.kind === 'fix') { await RecCache.clear(); await invalidateMonthSummary(r.from); }
+        else await RecCache.del('reqs|' + recScope() + '|' + reqWin());
         try {
           const nd = await getDoc(doc(db, 'employees', empId, 'requests', id));
           if (nd.exists()) { const nr = reqMap(nd, empId), i = S.reqs.findIndex(x => x.id === id && x.empId === empId); if (i >= 0) S.reqs[i] = nr; else S.reqs.push(nr); S.leaves = S.reqs.filter(x => x.kind === 'leave' && x.status === 'approved'); }
