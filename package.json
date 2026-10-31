@@ -1,0 +1,22 @@
+{
+  "name": "meqat-attendance",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "node scripts/serve.mjs . 3000 --watch",
+    "build": "node scripts/assemble.mjs && node scripts/build.mjs dist",
+    "preview": "node scripts/serve.mjs dist 3000",
+    "clean": "rm -rf dist",
+    "test:rules": "firebase emulators:exec --only firestore --project meqat-rules-test \"node --test tests/*.test.mjs\"",
+    "test:unit": "node --experimental-global-webcrypto --test tests/admin-migrate.test.mjs tests/pin-unit.test.mjs tests/month-summary.test.mjs tests/offday-ot.test.mjs tests/forgot-limit.test.mjs tests/payroll.test.mjs tests/payroll-runs-unit.test.mjs tests/loan-ledger-unit.test.mjs tests/payroll-export-unit.test.mjs tests/spoof-offline-unit.test.mjs tests/rules-sync.test.mjs tests/build.test.mjs tests/syntax.test.mjs tests/no-native-dialogs.test.mjs tests/assemble-sync.test.mjs",
+    "rules:sync": "node scripts/rules-sync.mjs",
+    "rules:check": "node scripts/rules-sync.mjs --check",
+    "test:e2e": "node --test --test-concurrency=1 tests/e2e/app.e2e.mjs",
+    "assemble": "node scripts/assemble.mjs",
+    "assemble:check": "node scripts/assemble.mjs --check"
+  }
+}

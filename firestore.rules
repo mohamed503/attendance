@@ -1,0 +1,422 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // المالك المعرّف عند توليد القواعد يبقى super_admin لاستعادة الوصول.
+    function isOwnerEmail() {
+      return request.auth != null && request.auth.token.get('email', '') == 'mohamedalforjany654@gmail.com';
+    }
+    function uidAdminPath() {
+      return /databases/$(database)/documents/admins/$(request.auth.uid);
+    }
+    function emailAdminPath() {
+      return /databases/$(database)/documents/admins/$(request.auth.token.email);
+    }
+    function currentAdminData() {
+      let up = uidAdminPath();
+      let ep = emailAdminPath();
+      return exists(up) ? get(up).data
+        : (request.auth.token.get('email_verified', false) == true && exists(ep) ? get(ep).data : {});
+    }
+    // لا يُمنح أي دور افتراضيًا لمجرد وجود حساب Firebase؛ الوثيقة المفقودة = رفض.
+    // الوثائق القديمة التي لا تحتوي role تُعامل كمدقق للقراءة فقط، لا كمدير عام.
+    function roleIs(wanted) {
+      let up = uidAdminPath();
+      let ep = emailAdminPath();
+      return request.auth != null && (
+        (isOwnerEmail() && wanted == 'super_admin')
+        || (exists(up) && get(up).data.get('role', 'auditor') == wanted)
+        || (request.auth.token.get('email_verified', false) == true
+            && exists(ep) && get(ep).data.get('role', 'auditor') == wanted)
+      );
+    }
+    function isSuperAdmin() { return roleIs('super_admin'); }
+    function isHrAdmin() { return roleIs('hr_admin'); }
+    function isPayrollAdmin() { return roleIs('payroll_admin'); }
+    function isManager() { return roleIs('manager'); }
+    function isAuditor() { return roleIs('auditor'); }
+    function isAdmin() {
+      return isSuperAdmin() || isHrAdmin() || isPayrollAdmin() || isManager() || isAuditor();
+    }
+    function managerScope() {
+      return currentAdminData().get('deptScope', '');
+    }
+    function managerCanReadEmployee(empId) {
+      return isManager() && managerScope() is string && managerScope() != ''
+        && get(/databases/$(database)/documents/employees/$(empId)).data.get('dept', '') == managerScope();
+    }
+    function globalReadRole() {
+      return isSuperAdmin() || isHrAdmin() || isPayrollAdmin() || isAuditor();
+    }
+    function isOwnerData(d) {
+      return request.auth != null
+        && (d.get('uid', null) == request.auth.uid
+            || (d.get('devices', null) != null && request.auth.uid in d.devices.values()));
+    }
+    function ownerOnly(empId) {
+      return isOwnerData(get(/databases/$(database)/documents/employees/$(empId)).data);
+    }
+    function validAdminProfile() {
+      let d = request.resource.data;
+      return d.keys().hasOnly(['name', 'email', 'role', 'deptScope', 'addedAt'])
+        && d.keys().hasAll(['name', 'email', 'role'])
+        && d.name is string && d.name.size() > 0 && d.name.size() <= 100
+        && d.email is string && d.email.size() <= 254
+        && d.role in ['super_admin', 'hr_admin', 'payroll_admin', 'manager', 'auditor']
+        && (d.role != 'manager' || (d.get('deptScope', '') is string && d.get('deptScope', '').size() > 0 && d.get('deptScope', '').size() <= 100));
+    }
+
+    // رمز إضافة جهاز: عشوائي (8 خانات فأكثر)، له انتهاء لا يتجاوز 7 أيام من لحظة الإصدار.
+    function validPin() {
+      let d = request.resource.data;
+      return d.keys().hasOnly(['pin', 'exp', 'createdAt'])
+        && d.pin is string && d.pin.size() >= 8 && d.pin.size() <= 32
+        && d.exp is timestamp && d.exp > request.time && d.exp <= request.time + duration.value(7, 'd')
+        && d.createdAt == request.time;
+    }
+    function validMaxDev() {
+      return request.resource.data.get('maxDevices', 2) in [1, 2, 3];
+    }
+
+    // ---- مسيّرات الرواتب المجمّدة ----
+    // دورة الحياة: draft (قابل للتعديل) ← approved (المدير العام فقط، يجمّد الأرقام) ← paid (تسجيل الصرف). لا حذف بعد draft.
+    function validRunCreate() {
+      let d = request.resource.data;
+      return d.keys().hasOnly(['from', 'to', 'status', 'createdBy', 'createdAt', 'updatedAt', 'note', 'totals', 'inputs', 'empCount'])
+        && d.keys().hasAll(['from', 'to', 'status', 'createdBy', 'createdAt', 'totals', 'empCount'])
+        && d.status == 'draft' && d.from is string && d.to is string && d.from.size() == 10 && d.to.size() == 10 && d.from <= d.to
+        && d.createdBy.uid == request.auth.uid && d.createdAt == request.time
+        && d.empCount is int && d.empCount >= 0;
+    }
+    function runDraftEdit() {
+      return resource.data.status == 'draft' && request.resource.data.status == 'draft'
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['totals', 'inputs', 'empCount', 'note', 'updatedAt'])
+        && request.resource.data.get('updatedAt', request.time) == request.time;
+    }
+    function runApprove() {
+      let n = request.resource.data;
+      return resource.data.status == 'draft' && n.status == 'approved'
+        && n.diff(resource.data).affectedKeys().hasOnly(['status', 'approvedBy', 'approvedAt', 'rowsHash', 'rowsCount'])
+        && n.approvedBy.uid == request.auth.uid && n.approvedAt == request.time
+        && n.rowsHash is string && n.rowsHash.size() == 64 && n.rowsCount is int && n.rowsCount == n.empCount;
+    }
+    function runPay() {
+      let n = request.resource.data;
+      return resource.data.status == 'approved' && n.status == 'paid'
+        && n.diff(resource.data).affectedKeys().hasOnly(['status', 'paidBy', 'paidAt', 'payNote'])
+        && n.paidBy.uid == request.auth.uid && n.paidAt == request.time;
+    }
+    function runStatus(rid) {
+      return get(/databases/$(database)/documents/payrollRuns/$(rid)).data.status;
+    }
+
+    // ---- دفتر حركات السلف: قيود إضافة فقط (لا تعديل ولا حذف). التصحيح بقيد adjust مسبَّب. ----
+    // معرّفات القيود تمنع التكرار: opening وgrant_<طلب> وinst_<مسيّر> (create-only، فأي محاولة ثانية تُرفض).
+    function validLedger(empId, lid) {
+      let d = request.resource.data;
+      return d.keys().hasOnly(['type', 'delta', 'balanceAfter', 'note', 'reqId', 'runId', 'by', 'at'])
+        && d.keys().hasAll(['type', 'delta', 'balanceAfter', 'by', 'at'])
+        && d.type in ['opening', 'grant', 'installment', 'adjust']
+        && d.delta is number && d.balanceAfter is number && d.balanceAfter >= 0
+        && d.by.uid == request.auth.uid && d.at == request.time
+        && (d.type != 'opening' || (lid == 'opening' && d.delta > 0 && d.delta == d.balanceAfter))
+        && (d.type != 'grant' || (d.delta > 0 && d.reqId is string && lid == 'grant_' + d.reqId))
+        && (d.type != 'installment' || (d.delta < 0 && d.runId is string && lid == 'inst_' + d.runId
+              && runStatus(d.runId) in ['approved', 'paid']
+              && -d.delta == get(/databases/$(database)/documents/payrollRuns/$(d.runId)/rows/$(empId)).data.dedLoan))
+        && (d.type != 'adjust' || (d.delta != 0 && d.note is string && d.note.size() >= 3 && d.note.size() <= 300));
+    }
+
+    match /admins/{uid} {
+      // المشرف يقرأ ملفه فقط؛ تعداد أو تعديل صلاحيات المشرفين للمدير العام وحده.
+      allow get: if isSuperAdmin() || (request.auth != null && (request.auth.uid == uid
+        || (request.auth.token.get('email_verified', false) == true && request.auth.token.get('email', '') == uid)));
+      allow list: if isSuperAdmin();
+      allow create: if isSuperAdmin() && (validAdminProfile()
+        || (uid == 'owner' && request.resource.data.keys().hasOnly(['name', 'email', 'addedAt'])
+            && request.resource.data.name is string && request.resource.data.email is string));
+      allow update: if isSuperAdmin() && uid != 'owner' && validAdminProfile();
+      allow delete: if isSuperAdmin() && uid != 'owner';
+    }
+    // ---- سجل التدقيق الرقابي: إضافة فقط (create-only)، لا يُعدَّل ولا يُحذف ----
+    function validAuditLog() {
+      let d = request.resource.data;
+      return d.keys().hasOnly(['action', 'target', 'detail', 'by', 'at'])
+        && d.keys().hasAll(['action', 'target', 'detail', 'by', 'at'])
+        && d.action is string && d.action.size() > 0 && d.action.size() <= 60
+        && d.target is string && d.target.size() <= 120
+        && d.detail is string && d.detail.size() <= 500
+        && d.by.uid == request.auth.uid && d.at == request.time;
+    }
+    match /auditLogs/{id} {
+      allow read: if isSuperAdmin() || isAuditor();
+      allow create: if (isSuperAdmin() || isHrAdmin() || isPayrollAdmin()) && validAuditLog();
+      allow update, delete: if false;
+    }
+    // ---- ملخصات الأشهر المجمّعة: وثيقة واحدة لكل شهر مغلق توفّر آلاف القراءات إلى قراءة واحدة ----
+    function validMonthSummary(mk) {
+      let d = request.resource.data;
+      return mk.matches('[0-9]{4}-[0-9]{2}')
+        && d.keys().hasOnly(['mk', 'tzOff', 'count', 'packed', 'sha256', 'updatedAt', 'by'])
+        && d.keys().hasAll(['mk', 'tzOff', 'count', 'packed', 'sha256', 'updatedAt', 'by'])
+        && d.mk == mk && d.tzOff is number && d.count is int && d.count >= 0
+        && d.packed is string && d.packed.size() <= 900000
+        && d.sha256 is string && d.sha256.size() == 64
+        && d.by.uid == request.auth.uid && d.updatedAt == request.time;
+    }
+    match /monthlySummaries/{mk} {
+      allow read: if globalReadRole();
+      allow create, update: if (isSuperAdmin() || isHrAdmin() || isPayrollAdmin()) && validMonthSummary(mk);
+      allow delete: if isSuperAdmin() || isHrAdmin() || isPayrollAdmin();
+    }
+    match /pins/{id} {
+      allow read, delete: if isSuperAdmin() || isHrAdmin();
+      allow create, update: if (isSuperAdmin() || isHrAdmin()) && validPin();
+    }
+    match /payrollRuns/{rid} {
+      allow read: if isSuperAdmin() || isPayrollAdmin();
+      allow create: if (isSuperAdmin() || isPayrollAdmin()) && validRunCreate();
+      allow update: if ((isSuperAdmin() || isPayrollAdmin()) && (runDraftEdit() || runPay()))
+        || (isSuperAdmin() && runApprove());
+      allow delete: if (isSuperAdmin() || isPayrollAdmin()) && resource.data.status == 'draft';
+      match /rows/{empId} {
+        allow read: if isSuperAdmin() || isPayrollAdmin();
+        allow create, update: if (isSuperAdmin() || isPayrollAdmin()) && runStatus(rid) == 'draft'
+          && request.resource.data.empId == empId && request.resource.data.net is number;
+        allow delete: if (isSuperAdmin() || isPayrollAdmin()) && runStatus(rid) == 'draft';
+      }
+    }
+    match /locations/{id} {
+      allow read: if request.auth != null;
+      allow write: if isSuperAdmin() || isHrAdmin();
+    }
+    match /schedules/{id} {
+      allow read: if request.auth != null;
+      allow write: if isSuperAdmin() || isHrAdmin();
+    }
+    match /holidays/{id} {
+      allow read: if request.auth != null;
+      allow write: if isSuperAdmin() || isHrAdmin();
+    }
+    match /settings/{id} {
+      allow read: if request.auth != null;
+      allow create: if isSuperAdmin() || (isHrAdmin()
+        && request.resource.data.keys().hasOnly(['orgName', 'tzOffset', 'empNotice', 'leaveTypes', 'schedOverrides', 'cfgVersion', 'updatedAt']));
+      allow update: if isSuperAdmin() || (isHrAdmin()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['orgName', 'tzOffset', 'empNotice', 'leaveTypes', 'schedOverrides', 'cfgVersion', 'updatedAt']));
+      allow delete: if isSuperAdmin();
+    }
+    // ---- الخزينة المالية المعزولة لكل موظف: لا يقرؤها إلا المدير العام ومحاسب الرواتب وصاحب العلاقة ----
+    function validEmpFinance() {
+      let d = request.resource.data;
+      return d.keys().hasOnly([
+        'payMode','payAmount','allowance','bonus','penalty','adjMonth','loanTotal','loanInst','lyStatutory','familyStatus',
+        'nationalId','bankName','iban','taskPrices','updatedAt'
+      ]);
+    }
+    match /empFinance/{empId} {
+      allow read: if isSuperAdmin() || isPayrollAdmin() || ownerOnly(empId);
+      allow create, update: if (isSuperAdmin() || isPayrollAdmin()) && validEmpFinance();
+      allow delete: if isSuperAdmin();
+    }
+    match /taskTypes/{id} {
+      allow read: if request.auth != null;
+      allow write: if isSuperAdmin() || isHrAdmin();
+    }
+
+    match /employees/{empId} {
+      allow get: if isSuperAdmin() || isHrAdmin() || isPayrollAdmin() || isAuditor()
+        || managerCanReadEmployee(empId) || ownerOnly(empId) || unclaimed();
+      // Firestore Rules are not filters: manager queries must include dept == their deptScope.
+      allow list: if globalReadRole() || (isManager() && managerScope() is string
+        && managerScope() != '' && resource.data.get('dept', '') == managerScope());
+      // الموارد البشرية تنشئ ملف موظف أساسيًا فقط؛ الحقول المالية والمصرفية وهوية الجهاز لا تُكتب عند الإنشاء.
+      allow create: if isSuperAdmin() || (isHrAdmin() && validHrCreate());
+      allow delete: if isSuperAdmin();
+      allow update: if isSuperAdmin()
+        || (isHrAdmin() && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'name','phone','dept','jobTitle','contractEnd','docExpiry','bioId','assets','scheduleId','rotOffset',
+          'startDate','leaveQuota','empType','locs','active','deviceId','uid','devices','rebindProof','maxDevices'
+        ]) && validMaxDev())
+        || (isPayrollAdmin() && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'payMode','payAmount','allowance','bonus','penalty','adjMonth','loanTotal','loanInst','lyStatutory','familyStatus',
+          'nationalId','bankName','iban','taskPrices','finIsolated'
+        ]))
+        || claimDevice() || migrateLegacy() || rebindLegacy() || rebindMap() || joinDevice() || punchState();
+
+      function validHrCreate() {
+        let d = request.resource.data;
+        return d.keys().hasOnly(['name','phone','dept','jobTitle','contractEnd','docExpiry','bioId','assets',
+            'scheduleId','rotOffset','startDate','leaveQuota','empType','locs','active','deviceId','createdAt','payMode','payAmount','maxDevices'])
+          && d.keys().hasAll(['name','active','empType'])
+          && d.name is string && d.name.size() > 0 && d.name.size() <= 100
+          && d.active == true && d.empType in ['staff', 'task']
+          && d.get('deviceId', null) == null
+          && d.get('payMode', 'none') in ['none', 'task'] && d.get('payAmount', 0) == 0
+          && validMaxDev()
+          && d.get('createdAt', request.time) == request.time;
+      }
+      function unclaimed() {
+        return request.auth != null && request.auth.token.firebase.sign_in_provider == 'anonymous'
+          && resource.data.get('uid', null) == null
+          && resource.data.get('devices', null) == null && resource.data.active == true;
+      }
+      function claimDevice() {
+        let n = request.resource.data;
+        return unclaimed() && (resource.data.get('deviceId', null) == null
+            || n.get('rebindProof', null) == resource.data.get('deviceId', null))
+          && n.diff(resource.data).affectedKeys().hasOnly(['deviceId', 'devices', 'rebindProof'])
+          && n.devices.size() == 1 && n.devices.values().hasOnly([request.auth.uid])
+          && n.devices.keys().hasOnly([n.deviceId]);
+      }
+      function migrateLegacy() {
+        let n = request.resource.data;
+        return request.auth != null && resource.data.get('devices', null) == null
+          && resource.data.get('uid', null) == request.auth.uid
+          && n.diff(resource.data).affectedKeys().hasOnly(['devices', 'uid'])
+          && n.get('uid', null) == null && n.devices.size() == 1
+          && n.devices.values().hasOnly([request.auth.uid]);
+      }
+      function rebindLegacy() {
+        let n = request.resource.data;
+        return request.auth != null && resource.data.active == true
+          && resource.data.get('devices', null) == null && resource.data.get('uid', null) != null
+          && resource.data.get('deviceId', null) != null
+          && n.get('rebindProof', null) == resource.data.get('deviceId', null)
+          && n.diff(resource.data).affectedKeys().hasOnly(['uid', 'rebindProof']) && n.uid == request.auth.uid;
+      }
+      function rebindMap() {
+        let n = request.resource.data;
+        return request.auth != null && resource.data.active == true
+          && resource.data.get('devices', null) != null
+          && n.diff(resource.data).affectedKeys().hasOnly(['devices'])
+          && n.devices.diff(resource.data.devices).affectedKeys().size() == 1
+          && n.devices.diff(resource.data.devices).changedKeys().size() == 1
+          && n.devices.size() == resource.data.devices.size() && request.auth.uid in n.devices.values();
+      }
+      function joinDevice() {
+        let n = request.resource.data;
+        return request.auth != null && resource.data.active == true
+          && resource.data.get('devices', null) != null
+          && n.diff(resource.data).affectedKeys().hasOnly(['devices', 'lastJoinAt'])
+          && (!('lastJoinAt' in n.diff(resource.data).affectedKeys()) || n.lastJoinAt == request.time)
+          && n.devices.diff(resource.data.devices).addedKeys().size() == 1
+          && n.devices.diff(resource.data.devices).affectedKeys().size() == 1
+          && n.devices.size() <= resource.data.get('maxDevices', 2) && request.auth.uid in n.devices.values()
+          && exists(/databases/$(database)/documents/employees/$(empId)/joins/$(request.auth.uid));
+      }
+      function punchState() {
+        let a = request.resource.data;
+        return ownerOnly(empId) && resource.data.active == true
+          && a.diff(resource.data).affectedKeys().hasOnly(['state', 'lastAt', 'lastRecId'])
+          && a.state in ['in', 'out'] && a.lastAt == request.time && a.lastRecId is string
+          && !exists(/databases/$(database)/documents/employees/$(empId)/records/$(a.lastRecId))
+          && existsAfter(/databases/$(database)/documents/employees/$(empId)/records/$(a.lastRecId));
+      }
+      match /loanLedger/{lid} {
+        allow read: if isSuperAdmin() || isPayrollAdmin();
+        allow create: if (isSuperAdmin() || isPayrollAdmin()) && validLedger(empId, lid);
+        allow update, delete: if false;
+      }
+      match /joins/{jid} {
+        allow read: if isSuperAdmin() || isHrAdmin();
+        allow create, update: if validJoin(jid);
+        allow delete: if isSuperAdmin() || isHrAdmin();
+        function validJoin(jid) {
+          let d = request.resource.data;
+          let p = get(/databases/$(database)/documents/pins/$(empId)).data;
+          return request.auth != null && request.auth.uid == jid
+            && d.keys().hasOnly(['pin', 'ua', 'at'])
+            && d.pin is string && d.at == request.time
+            && d.pin == p.pin
+            && p.get('exp', null) != null
+            && request.time < p.get('exp', request.time);
+        }
+      }
+      match /records/{recId} {
+        allow read: if isSuperAdmin() || isHrAdmin() || isPayrollAdmin() || isAuditor()
+          || managerCanReadEmployee(empId) || ownerOnly(empId);
+        allow create: if isSuperAdmin() || isHrAdmin() || validRecord();
+        allow update, delete: if isSuperAdmin() || isHrAdmin();
+        function validRecord() {
+          let d = request.resource.data;
+          let e = get(/databases/$(database)/documents/employees/$(empId)).data;
+          let a = getAfter(/databases/$(database)/documents/employees/$(empId)).data;
+          let l = get(/databases/$(database)/documents/locations/$(d.locationId)).data;
+          let st = e.get('state', null);
+          let last = e.get('lastAt', null);
+          // 50400000 = 14 ساعة = FORGOT_MS، وهو الحد الأدنى لمهلة نسيان الانصراف؛ مهلة الجدول (forgotMsOf) لا تقل عنه أبدًا،
+          // فالقاعدة لا تمنع ما يسمح به التطبيق. يجب أن يبقى الرقمان متطابقين (يحرسه الاختبار tests/forgot-limit.test.mjs).
+          let dx = (d.lng - l.lng) * l.kx;
+          let dy = (d.lat - l.lat) * l.ky;
+          return request.auth != null
+            && d.keys().hasOnly(['type','time','lat','lng','accuracy','distance','locationId','locationName','empName','deviceId'])
+            && d.keys().hasAll(['type','time','lat','lng','accuracy','distance','locationId','locationName','empName','deviceId'])
+            && d.time == request.time && d.type in ['in', 'out']
+            && d.lat is number && d.lng is number
+            && d.lat >= -90 && d.lat <= 90 && d.lng >= -180 && d.lng <= 180
+            && d.accuracy is number && d.accuracy >= 0 && d.accuracy <= 250
+            && d.distance is number && d.locationId is string
+            && isOwnerData(e) && e.active == true
+            && d.empName == e.name && d.deviceId == e.get('deviceId', null)
+            && (!('locs' in e) || e.locs.size() == 0 || d.locationId in e.locs)
+            && d.locationName == l.name && l.get('active', true) != false && math.sqrt(dx * dx + dy * dy) <= l.radius + 10
+            && a.get('lastRecId', null) == recId && a.get('state', null) == d.type
+            && (last == null || request.time.toMillis() - last.toMillis() >= 20000)
+            && ((d.type == 'in' && (st == null || st == 'out' || (last != null && request.time.toMillis() - last.toMillis() >= 50400000)))
+              || (d.type == 'out' && (st == null || st == 'in')));
+        }
+      }
+      match /requests/{rid} {
+        allow read: if isSuperAdmin() || isHrAdmin() || isPayrollAdmin() || isAuditor()
+          || managerCanReadEmployee(empId) || ownerOnly(empId);
+        allow create: if isSuperAdmin() || isHrAdmin() || validRequest();
+        allow update: if isSuperAdmin() || isHrAdmin() || payrollDecision();
+        allow delete: if isSuperAdmin() || isHrAdmin()
+          || (ownerOnly(empId) && resource.data.status == 'pending');
+        function payrollDecision() {
+          return isPayrollAdmin() && resource.data.kind in ['loan', 'task']
+            && resource.data.status == 'pending' && request.resource.data.status in ['approved', 'rejected']
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+              'status','reviewedAt','reviewedBy','qtyApproved','unitPrice','amount'
+            ]);
+        }
+        function validTaskReq(d, e) {
+          let tid = d.get('taskId', '');
+          let tt = get(/databases/$(database)/documents/taskTypes/$(tid)).data;
+          return e.get('empType', 'staff') == 'task'
+            && tid is string && tid.size() > 0 && tid.size() <= 40
+            && d.get('taskName', '').size() <= 80
+            && d.get('qty', 0) is number && d.get('qty', 0) >= 1 && d.get('qty', 0) <= 500
+            && tt.name == d.get('taskName', '')
+            && tt.get('active', true) != false;
+        }
+        function validRequest() {
+          let d = request.resource.data;
+          let e = get(/databases/$(database)/documents/employees/$(empId)).data;
+          return request.auth != null
+            && d.keys().hasOnly(['kind','type','typeName','from','to','fixIn','fixOut','note','status','empName','createdAt','taskId','taskName','qty'])
+            && d.keys().hasAll(['kind','from','to','status','empName','createdAt'])
+            && d.status == 'pending'
+            && d.kind in ['leave', 'fix', 'task', 'loan', 'cert']
+            && d.createdAt == request.time
+            && d.from is string && d.from.matches('[0-9]{4}-[0-9]{2}-[0-9]{2}')
+            && d.to is string && d.to.matches('[0-9]{4}-[0-9]{2}-[0-9]{2}') && d.from <= d.to
+            && d.get('note', '') is string && d.get('note', '').size() <= 300
+            && d.get('type', '') is string && d.get('type', '').size() <= 40
+            && d.get('typeName', '') is string && d.get('typeName', '').size() <= 60
+            && d.get('fixIn', '') is string && d.get('fixIn', '').size() <= 5
+            && d.get('fixOut', '') is string && d.get('fixOut', '').size() <= 5
+            && isOwnerData(e) && e.active == true && d.empName == e.name
+            && (d.kind != 'task' || validTaskReq(d, e));
+        }
+      }
+    }
+    // Collection-group access is intentionally limited to global roles; managers read by authorized employee path.
+    match /{path=**}/records/{recId} {
+      allow read: if globalReadRole();
+    }
+    match /{path=**}/requests/{rid} {
+      allow read: if globalReadRole();
+    }
+  }
+}

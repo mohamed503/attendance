@@ -1,0 +1,24 @@
+{
+ "parts": [
+  "html/00-head.html",
+  "styles/10-tokens.css",
+  "styles/20-base.css",
+  "styles/30-admin.css",
+  "styles/40-employee.css",
+  "html/10-body-open.html",
+  "js/00-config-license-notify.js",
+  "js/10-firebase-state-icons.js",
+  "js/20-helpers-schedule-engine.js",
+  "js/30-daily-calc-engine.js",
+  "js/40-utils-env-setup.js",
+  "js/50-employee-app.js",
+  "js/60-login.js",
+  "js/70-admin-core-data.js",
+  "js/80-admin-today-editors.js",
+  "js/90-admin-emps-sched-locs.js",
+  "js/92-admin-exports-print.js",
+  "js/94-admin-reqs-reports-payroll.js",
+  "js/96-admin-events.js",
+  "html/90-tail.html"
+ ]
+}
