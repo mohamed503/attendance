@@ -6,7 +6,7 @@
 <meta name="theme-color" content="#EAF4EE">
 <title>لوحة تسليم «مِيقَاتْ» — إدارة العملاء والباقات والتراخيص</title>
 <link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;500;600;700;800&family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&family=Readex+Pro:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
 /* ===== «نبض» — اللوحة الخضراء (الجزء 1: الأساس) ===== */
 :root{--bg:#EAF4EE;--card:#fff;--surface:#F2F8F4;--ink:#0E2A20;--mute:#587265;--line:#D3E5DA;--pri:#0E6B4D;--pri-l:#D3EBDD;--pri-t:#0E6B4D;--navy:#0E2A20;--on:#fff;
@@ -216,6 +216,97 @@ a.btn{text-decoration:none}
 }
 @media(prefers-reduced-motion:reduce){*{transition:none!important}}
 @media print{.rail,.top,.no-print,.toast{display:none!important}body{background:#fff}.wrap{padding:0}#content{display:none!important}#guide{display:block!important;padding:0}#guide .gcard{border:1px solid #ccc;background:#f8f9fb}#guide a{color:#0E6B4D}}
+
+/* ===== التصميم الأخضر الموحّد مع التطبيق (يتجاوز ما سبق دون المساس بالمنطق) ===== */
+:root{--bg:#EDF3EE;--card:#fff;--surface:#F4F9F5;--ink:#0B2418;--mute:#587063;--line:#D6E4DA;--pri:#0B5B41;--pri-l:#DAEEE2;--pri-t:#0B5B41;--mint:#C8F169;--mint-ink:#233A06;--sun:#F2C14E;--sun-ink:#2A1D00;--coral:#FF7352;--coral-ink:#3D1005;--ok:#0B6B48;--bad:#B03A1F;--warn:#865E00;--side:#08442F;--side-ink:#E8F5EC;--side-mute:#B7D3C3;--r-lg:18px;--r-md:12px}
+[data-theme="dark"]{--bg:#06120C;--card:#0D1F16;--surface:#122A1E;--ink:#E6F4EA;--mute:#8BAB99;--line:#1B3727;--pri:#0F7A55;--pri-l:#173D2B;--pri-t:#7FE3B0;--mint:#C8F169;--mint-ink:#233A06;--sun:#F2B93B;--sun-ink:#2A1D00;--coral:#FF7352;--coral-ink:#3D1005;--ok:#7FE3B0;--bad:#FF9477;--warn:#F5C95A;--side:#0A1B13;--side-ink:#E6F4EA;--side-mute:#8BAB99}
+body{font-family:"IBM Plex Sans Arabic",Tahoma,Arial,sans-serif}
+h1,h2,h3,.stat b,.plan .pn,.plan .pp,.rail-brand b,.s-num{font-family:"Readex Pro","IBM Plex Sans Arabic",sans-serif}
+.shell{grid-template-columns:236px minmax(0,1fr);max-width:none}
+.rail{padding:0;display:block}
+#tabbar{position:sticky;top:0;align-self:start;width:auto;height:100vh;margin:0;border:0;border-radius:0;background:var(--side);color:var(--side-ink);padding:18px 14px;gap:4px;align-items:stretch;overflow-y:auto;scrollbar-width:none}
+#tabbar::-webkit-scrollbar{display:none}
+[data-theme="dark"] #tabbar{border-inline-end:1px solid var(--line)}
+.rail-head{display:flex;align-items:center;gap:10px;padding:2px 6px 16px}
+.rail-brand{display:flex;flex-direction:column;line-height:1.25;min-width:0}
+.rail-brand b{font-size:17px;color:#fff}.rail-brand small{font-size:12px;color:var(--side-mute)}
+#tabbar .lg{width:40px;height:40px;margin:0;border-radius:12px;background:var(--mint);color:var(--mint-ink);flex:none}
+#tabbar .tab{width:100%;height:46px;padding:0 12px;border-radius:12px;display:flex;flex-direction:row;align-items:center;justify-content:flex-start;gap:12px;color:var(--side-mute);font-weight:600;font-size:14.5px}
+#tabbar .tab .tl{display:block;white-space:nowrap}
+#tabbar .tab:hover{background:rgba(255,255,255,.07);color:var(--side-ink)}
+#tabbar .tab.on{background:rgba(255,255,255,.13);color:#fff;box-shadow:inset 3px 0 0 var(--mint)}
+html[dir=rtl] #tabbar .tab.on{box-shadow:inset -3px 0 0 var(--mint)}
+.wrap{padding:26px 30px 48px}
+.top h1{font-size:30px;font-weight:700;letter-spacing:0}
+.top small{font-size:13.5px}
+.pillb,#themeBtn{border-radius:12px;height:42px;font-size:14px}
+#themeBtn{width:42px}
+.card{border-radius:var(--r-lg);padding:20px}
+.mbox{border-radius:20px}
+input,select,textarea{border-radius:12px;border-width:1px}
+.btn{border-radius:12px;height:42px;font-weight:600}.btn.sm{height:36px}
+.btn.sec{background:var(--pri-l);color:var(--pri-t)}
+.btn.ok{background:var(--mint);color:var(--mint-ink)}
+.tw{border-radius:14px}
+th{font-weight:600}
+tbody tr:hover td{background:var(--surface)}
+.badge{border-radius:99px;padding:3px 11px;font-weight:600}
+.b-ok{background:color-mix(in srgb,var(--ok) 16%,transparent);color:var(--ok)}
+.b-bad{background:color-mix(in srgb,var(--bad) 15%,transparent);color:var(--bad)}
+.b-warn{background:color-mix(in srgb,var(--sun) 28%,transparent);color:var(--warn)}
+.b-pri{background:var(--pri-l);color:var(--pri-t)}
+.notice{background:color-mix(in srgb,var(--sun) 24%,var(--card));color:var(--ink);border:1px solid color-mix(in srgb,var(--sun) 55%,transparent);border-radius:14px}
+details.fold{border-radius:var(--r-lg)}details.undo{border-radius:12px}
+.act-drop{border-radius:14px}.act-drop button,.act-drop a{border-radius:10px}
+pre.code{border-radius:14px}
+.subtabs{border-radius:14px}.stab{border-radius:10px}.stab.on{background:var(--pri);color:#fff}
+.flt button{border-radius:10px}.flt button[aria-pressed=true]{background:var(--pri);color:#fff}
+.srch input{border-radius:12px}
+.toast{border-radius:12px}
+/* بلاطات الأرقام: هادئة وبنفس باليت التطبيق */
+.stats{gap:12px}
+.stat{border-radius:var(--r-lg)!important;min-height:120px;padding:18px 20px}
+.stat b{font-size:48px;font-weight:700;letter-spacing:-.02em}
+.stat:nth-child(1){background:var(--pri);color:#fff}
+.stat:nth-child(2){background:var(--mint);color:var(--mint-ink)}
+.stat:nth-child(3){background:var(--card);color:var(--warn);border:1px solid var(--line)}
+.stat:nth-child(4){background:var(--card);color:var(--bad);border:1px solid var(--line)}
+.stat:nth-child(3) span,.stat:nth-child(4) span{color:var(--ink)}
+/* قائمة العملاء */
+.cli{border-radius:14px;border:1px solid var(--line);background:var(--card)}
+.av{border-radius:12px;background:var(--c);color:var(--ci)}
+.ab{border-radius:10px}
+.empty{border-radius:14px}
+/* الباقات والمولّد والخطوات */
+.plan{border-radius:var(--r-lg)!important}
+.plan.p1{background:var(--card);color:var(--ink);border:1px solid var(--line)}
+.plan.p1 input:not([type=checkbox]){background:var(--surface)}
+.plan.p2{background:var(--pri);color:#fff}
+.plan.p3{background:var(--side);color:var(--side-ink)}
+.hero{border-radius:var(--r-lg)}
+.step-row{border-radius:14px}.s-num{border-radius:12px}
+.olst li{border-radius:14px}.olst li::before{border-radius:10px}
+#mList .card{border-inline-start-width:4px}
+#guide .gcard{border-radius:14px}
+/* تابلت: شريط أيقونات */
+@media (min-width:761px) and (max-width:1099px){
+ .shell{grid-template-columns:76px minmax(0,1fr)}
+ #tabbar{padding:14px 10px;align-items:center}
+ #tabbar .tab{width:48px;justify-content:center;padding:0}#tabbar .tab .tl,.rail-brand{display:none}
+ .rail-head{padding:2px 0 14px}.wrap{padding:22px 20px 40px}
+ .stats{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+@media (max-width:760px){
+ .rail-head{display:none}
+ #tabbar{position:fixed;top:auto;bottom:calc(12px + env(safe-area-inset-bottom,0px));inset-inline:12px;width:auto;z-index:60;overflow-x:auto;overflow-y:hidden;scrollbar-width:none;background:var(--card);color:var(--ink);border:1px solid var(--line);border-radius:20px;height:auto;padding:8px;flex-direction:row;align-items:center;gap:2px}
+ .shell{display:block}
+ #tabbar .tab{width:68px;height:56px;flex-direction:column;justify-content:center;gap:2px;padding:0;color:var(--mute);font-size:10.5px}
+ #tabbar .tab .tl{font-size:10.5px}
+ #tabbar .tab:hover{background:var(--pri-l);color:var(--pri-t)}
+ #tabbar .tab.on,html[dir=rtl] #tabbar .tab.on{background:var(--pri);color:#fff;box-shadow:none}
+ .top h1{font-size:24px}.stat b{font-size:38px}.stat{min-height:100px}
+ .wrap{padding:18px 14px 120px}
+}
 </style>
 </head>
 <body>
@@ -272,6 +363,20 @@ const addDays = (key, n) => { const d = new Date(key + 'T00:00:00Z'); d.setUTCDa
 const daysBetween = (a, b) => Math.round((Date.parse(b + 'T00:00:00Z') - Date.parse(a + 'T00:00:00Z')) / 86400000);
 const fmtD = k => k ? k.split('-').reverse().join('/') : '—';
 function toast(msg, type = '') { const t = document.createElement('div'); t.className = 'toast ' + type; t.textContent = msg; document.body.appendChild(t); setTimeout(() => t.remove(), 3200); }
+/* حوار تأكيد بتصميم اللوحة بدل confirm() الأصلي (يعيد Promise<boolean>) */
+function dlgConfirm(msg, { ok = 'تأكيد', danger = false } = {}) {
+  return new Promise(res => {
+    const prev = document.activeElement, ov = document.createElement('div'); ov.className = 'mbg'; ov.style.zIndex = 300;
+    ov.innerHTML = `<div class="mbox" role="alertdialog" aria-modal="true" aria-labelledby="dlgMsg" style="max-width:420px"><p id="dlgMsg" style="margin:0 0 18px;font-weight:600;line-height:1.9;white-space:pre-line">${esc(msg)}</p><div style="display:flex;gap:10px;justify-content:flex-end"><button class="btn sec" data-r="0" type="button">إلغاء</button><button class="btn ${danger ? 'bad' : ''}" data-r="1" type="button">${esc(ok)}</button></div></div>`;
+    const done = v => { ov.remove(); document.removeEventListener('keydown', onKey, true); if (prev && prev.focus) prev.focus(); res(v); };
+    const onKey = e => { if (e.key === 'Escape') { e.stopPropagation(); done(false); } };
+    ov.onclick = e => { const b = e.target.closest('[data-r]'); if (b) done(b.dataset.r === '1'); else if (e.target === ov) done(false); };
+    document.addEventListener('keydown', onKey, true); document.body.appendChild(ov); ov.querySelector('[data-r="1"]').focus();
+  });
+}
+/* رابط صفحة المستودع على github.com ليس رابط الموقع المنشور: يعرض صفحة GitHub ويمنع المتصفح جلبه (CORS) */
+const urlProblem = u => { try { const h = new URL(u).hostname; if (h === 'github.com' || h === 'www.github.com') return 'هذا رابط صفحة المستودع وليس الموقع المنشور. استخدم رابط GitHub Pages بالشكل: https://اسم-حسابك.github.io/اسم-المستودع/index.html (فعّله من Settings ثم Pages في المستودع)'; } catch {} return ''; };
+const fetchHint = e => (e && e.name === 'TypeError') ? 'تعذّر الوصول إلى الرابط (خطأ شبكة أو منع CORS). تأكد أن الرابط يفتح في المتصفح ويعرض الملف نفسه، وأنه رابط الموقع المنشور وليس صفحة المستودع.' : (e.message || String(e));
 function download(content, name, type = 'text/html;charset=utf-8') { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([content], { type })); a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 800); }
 
 /* ===== حزمة التسليم: ZIP كامل (بدون مكتبات خارجية) ===== */
@@ -319,9 +424,11 @@ function readmeFor(c, s, isDemo) {
 }
 async function buildPack(c, html, tplUrl, isDemo) {
   const safe = String(c.company || 'client').replace(/[\\/:*?"<>| ]+/g, '_'), s = licFor(c);
+  const ownerEmail = c.ownerEmail || (isDemo ? getDemo().email : '');
+  const rules = rulesText(ownerEmail);   // يرمي خطأ عند غياب البريد قبل أي تنزيل
   const sib = await fetchSiblings(tplUrl);
   const files = [{ name: 'site/index.html', data: html }, ...sib.files.map(f => ({ name: 'site/' + f.name, data: f.data })),
-    { name: 'firestore.rules.txt', data: rulesText(c.ownerEmail || '') }, { name: 'README_التسليم.txt', data: '﻿' + readmeFor(c, s, isDemo) }];
+    { name: 'firestore.rules.txt', data: rules }, { name: 'README_التسليم.txt', data: '﻿' + readmeFor(c, s, isDemo) }];
   const zname = (isDemo ? 'demo_' : 'meqat_') + safe + '_' + todayKey() + '.zip';
   download(makeZip(files), zname, 'application/zip');
   return { zname, missing: sib.missing };
@@ -379,7 +486,7 @@ function normalizeClient(c) {
   const planId = text('planId', 40, DEF_PLANS[0].id);
   if (!PLAN_ID_RE.test(planId)) throw new Error('معرّف الباقة غير صالح');
   const start = text('start', 10, todayKey());
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(start)) throw new Error('تاريخ بداية غير صالح');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(start) || new Date(start + 'T00:00:00Z').toISOString().slice(0, 10) !== start) throw new Error('تاريخ بداية غير صالح');
   const durationDays = Number(c.durationDays ?? 365);
   if (!Number.isFinite(durationDays) || durationDays < 1 || durationDays > 36500) throw new Error('مدة الاشتراك غير صالحة');
   const phone = text('phone', 24).replace(/\D/g, '');
@@ -484,7 +591,7 @@ function renderClients(el, sub = 'list') {
         return `<div class="cli cs-${k}" data-f="${f}" data-q="${esc(q)}">
           <div class="av" aria-hidden="true">${esc((c.company || '؟').trim().charAt(0))}</div>
           <div class="c-main"><b>${esc(c.company)}</b>${checkBadge(c)}${c.contact || c.phone ? `<small>${esc(c.contact || '')}${c.contact && c.phone ? ' · ' : ''}${c.phone ? `<span dir="ltr">${esc(c.phone)}</span>` : ''}</small>` : ''}</div>
-          <div class="c-plan"><span class="badge b-pri">${esc(p.name)}</span>${c.kind === 'trial' ? '<span class="badge b-warn">تجريبي</span>' : '<span class="badge b-mute">مدفوع</span>'}</div>
+          <div class="c-plan"><span class="badge b-pri">${esc(p.name)}</span>${c.kind === 'trial' ? '<span class="badge b-warn">تجريبي</span>' : c.kind === 'demo' ? '<span class="badge b-pri">ديمو</span>' : '<span class="badge b-mute">مدفوع</span>'}</div>
           <div class="c-st"><span class="badge ${s.badge[0]}">${s.badge[1]}</span><small>${exp}</small></div>
           <div class="c-act">
             ${quickLinks(c)}
@@ -511,10 +618,10 @@ function renderClients(el, sub = 'list') {
   };
   $('#cSearch').oninput = applyF;
   el.querySelectorAll('#cFlt button').forEach(b => b.onclick = () => { el.querySelectorAll('#cFlt button').forEach(x => x.setAttribute('aria-pressed', x === b)); applyF(); });
-  el.querySelectorAll('[data-cli]').forEach(b => b.onclick = () => {
+  el.querySelectorAll('[data-cli]').forEach(b => b.onclick = async () => {
     const id = b.dataset.cli; const list2 = getClients(); const c = list2.find(x => x.id === id); if (!c) return;
     const act = b.dataset.act;
-    if (act === 'delCli') { if (!confirm(`حذف «${c.company}» من الأرشيف؟`)) return; saveClients(list2.filter(x => x.id !== id)); toast('حُذف', 'good'); go('clients'); }
+    if (act === 'delCli') { if (!await dlgConfirm(`حذف «${c.company}» من الأرشيف؟`, { ok: 'حذف', danger: true })) return; saveClients(list2.filter(x => x.id !== id)); toast('حُذف', 'good'); go('clients'); }
     if (act === 'editCli') { editClient(c); }
     if (act === 'checkCli') { openChecklist(c); }
     if (act === 'rulesGen') { go('generator'); setTimeout(() => { const c = $('#rClient'); if (c) { c.value = id; c.dispatchEvent(new Event('change')); } }, 80); }
@@ -540,7 +647,10 @@ const checkDone = c => CHECK_STEPS.filter(([k]) => (c.checks || {})[k]).length;
 const checkBadge = c => { const n = checkDone(c), t = CHECK_STEPS.length; return `<span class="badge ${n === t ? 'b-ok' : n ? 'b-warn' : 'b-mute'}" style="font-size:11px">التسليم ${n} من ${t}</span>`; };
 function openChecklist(c) {
   const ov = document.createElement('div'); document.body.appendChild(ov);
-  const draw = () => {
+  const onEsc = e => { if (e.key === 'Escape') closeCk(); };
+  const closeCk = () => { document.removeEventListener('keydown', onEsc); ov.remove(); if (CUR === 'clients') go('clients'); };
+  document.addEventListener('keydown', onEsc);
+  const draw = (focusK) => {
     const n = checkDone(c), t = CHECK_STEPS.length;
     ov.innerHTML = `<div class="mbg" role="dialog" aria-modal="true">
     <div class="mbox" style="max-width:620px">
@@ -554,10 +664,11 @@ function openChecklist(c) {
     ov.querySelectorAll('input[data-k]').forEach(i => i.onchange = () => {
       c.checks = { ...(c.checks || {}), [i.dataset.k]: i.checked };
       const l = getClients(), x = l.findIndex(y => y.id === c.id); if (x >= 0) { l[x].checks = c.checks; saveClients(l); }
-      draw();
+      draw(i.dataset.k);
     });
-    $('#ckClose', ov).onclick = () => { ov.remove(); if (CUR === 'clients') go('clients'); };
-    $('#ckReset', ov).onclick = () => { if (!confirm('تصفير كل العلامات لهذا العميل؟')) return; c.checks = {}; const l = getClients(), x = l.findIndex(y => y.id === c.id); if (x >= 0) { l[x].checks = {}; saveClients(l); } draw(); };
+    if (focusK) { const f = ov.querySelector(`input[data-k="${focusK}"]`); if (f) f.focus(); }
+    $('#ckClose', ov).onclick = closeCk;
+    $('#ckReset', ov).onclick = async () => { if (!await dlgConfirm('تصفير كل العلامات لهذا العميل؟', { ok: 'تصفير', danger: true })) return; c.checks = {}; const l = getClients(), x = l.findIndex(y => y.id === c.id); if (x >= 0) { l[x].checks = {}; saveClients(l); } draw(); };
   };
   draw();
 }
@@ -577,7 +688,7 @@ function editClient(c) {
     </div>
     <div class="row" style="margin-top:10px">
       <div class="field"><label>الباقة</label><select id="mPlan">${getPlans().map(p => `<option value="${esc(p.id)}" ${c.planId === p.id ? 'selected' : ''}>${esc(p.name)}</option>`).join('')}</select></div>
-      <div class="field"><label>نوع الاشتراك</label><select id="mKind"><option value="paid" ${c.kind !== 'trial' ? 'selected' : ''}>مدفوع</option><option value="trial" ${c.kind === 'trial' ? 'selected' : ''}>تجريبي</option></select></div>
+      <div class="field"><label>نوع الاشتراك</label><select id="mKind"><option value="paid" ${c.kind === 'paid' ? 'selected' : ''}>مدفوع</option><option value="trial" ${c.kind === 'trial' ? 'selected' : ''}>تجريبي</option>${c.kind === 'demo' ? '<option value="demo" selected>ديمو</option>' : ''}</select></div>
       <div class="field"><label>تاريخ البداية</label><input id="mStart" type="date" value="${sN(c.start)}"></div>
       <div class="field"><label>المدة بالأيام</label><input id="mDur" type="number" value="${c.durationDays || 365}"></div>
       <div class="field"><label for="mPerm">مدة مفتوحة</label><label class="perm"><input id="mPerm" type="checkbox" ${c.permanent ? 'checked' : ''}>اشتراك دائم</label></div>
@@ -596,7 +707,11 @@ function editClient(c) {
       <button class="btn sec" id="mCancel">إلغاء</button><button class="btn" id="mSave">حفظ التعديلات</button>
     </div>
   </div></div>`;
-  const close = () => overlay.remove();
+  const onEsc = e => { if (e.key === 'Escape') close(); };
+  const close = () => { document.removeEventListener('keydown', onEsc); overlay.remove(); };
+  document.addEventListener('keydown', onEsc);
+  const mbg = overlay.querySelector('.mbg'); mbg.onclick = e => { if (e.target === mbg) close(); };
+  $('#mCompany', overlay).focus();
   $('#mCancel', overlay).onclick = close;
   $('#mSave', overlay).onclick = () => {
     const list = getClients(); const i = list.findIndex(x => x.id === c.id); if (i < 0) return close();
@@ -647,7 +762,7 @@ $('#impBtn').onclick = () => $('#impFile').click();
 $('#impFile').onchange = e => {
   const f = e.target.files[0]; if (!f) return;
   const r = new FileReader();
-  r.onload = () => {
+  r.onload = async () => {
     try {
       const d = JSON.parse(r.result);
       if (d.app !== 'meqat-console' || !Array.isArray(d.clients) || d.clients.length > 5000) throw new Error('bad');
@@ -665,9 +780,9 @@ $('#impFile').onchange = e => {
       }
       const importedTpl = d.tplUrl == null || d.tplUrl === '' ? '' : safeHttpUrl(d.tplUrl);
       if (d.tplUrl && !importedTpl) throw new Error('bad template URL');
-      if (confirm(`استيراد أرشيف بتاريخ ${String(d.exportedAt || '?').slice(0, 40)} بـ ${importedClients.length} عميل؟\nسيُدمَج مع الحالي (العميل بنفس الاسم ولا يُكرّر).`)) {
+      if (await dlgConfirm(`استيراد أرشيف بتاريخ ${String(d.exportedAt || '?').slice(0, 40)} بـ ${importedClients.length} عميل؟\nسيُدمَج مع الحالي (العميل بنفس الاسم ولا يُكرّر).`)) {
         const cur = getClients();
-        importedClients.forEach(c2 => { if (!cur.some(x => x.company === c2.company)) cur.push(c2); });
+        importedClients.forEach(c2 => { if (cur.some(x => x.company === c2.company)) return; if (cur.some(x => x.id === c2.id)) c2 = { ...c2, id: uid() + uid() }; cur.push(c2); });   // معرّف مكرر لشركة مختلفة ⇒ معرّف جديد حتى لا يُستبدل/يُلتبس سجلان
         saveClients(cur);
         if (importedPlans) store.set('mc_plans', importedPlans);
         if (importedDemo) store.set('mc_demo', importedDemo);
@@ -687,7 +802,7 @@ const TABS = [['clients', 'العملاء والأرشيف', 'العملاء', '
 let CUR = 'clients';
 function go(t) {
   CUR = t;
-  $('#tabbar').innerHTML = '<div class="lg" aria-hidden="true">م</div>' + TABS.map(([k, n, sh, i]) => `<button class="tab ${CUR === k ? 'on' : ''}" data-t="${k}" title="${n}" aria-label="${n}" ${CUR === k ? 'aria-current="page"' : ''}>${ic(i, 22)}<span class="tl">${sh}</span></button>`).join('');
+  $('#tabbar').innerHTML = '<div class="rail-head"><div class="lg" aria-hidden="true">م</div><div class="rail-brand"><b>مِيقَاتْ</b><small>لوحة التسليم</small></div></div>' + TABS.map(([k, n, sh, i]) => `<button class="tab ${CUR === k ? 'on' : ''}" data-t="${k}" title="${n}" aria-label="${n}" ${CUR === k ? 'aria-current="page"' : ''}>${ic(i, 22)}<span class="tl">${sh}</span></button>`).join('');
   { const on = $('#tabbar .tab.on'); if (on && on.scrollIntoView) on.scrollIntoView({ inline: 'center', block: 'nearest' }); }
   $('#pgTitle').textContent = TABS.find(x => x[0] === t)[1]; document.title = TABS.find(x => x[0] === t)[1] + ' — لوحة تسليم «مِيقَاتْ»';
   $('#tabbar').querySelectorAll('button').forEach(b => b.onclick = () => go(b.dataset.t));
@@ -748,7 +863,7 @@ function renderPlans(el) {
     catch (err) { return toast(err.message || 'قيم الباقات غير صالحة', 'err'); }
     toast('حُفظت الباقات', 'good'); go('plans');
   };
-  $('#pReset').onclick = () => { if (!confirm('استعادة الباقات الافتراضية؟ ستُفقد تعديلاتك الحالية على الباقات.')) return; store.set('mc_plans', DEF_PLANS); toast('أُعيدت الباقات الافتراضية', 'good'); go('plans'); };
+  $('#pReset').onclick = async () => { if (!await dlgConfirm('استعادة الباقات الافتراضية؟ ستُفقد تعديلاتك الحالية على الباقات.', { ok: 'استعادة', danger: true })) return; store.set('mc_plans', DEF_PLANS); toast('أُعيدت الباقات الافتراضية', 'good'); go('plans'); };
 }
 
 /* ============ مولّد النسخ والقواعد ============ */
@@ -783,6 +898,8 @@ function licFor(c) {
 
 function rulesText(email0) {
   const email = String(email0 || '').trim().toLowerCase().replace(/[^a-z0-9@._+\-]/g, '');
+  // بريد فارغ يجعل الشرط token.get('email','') == '' صحيحاً لكل حساب مجهول (الموظفين) فيصيرون super_admin، لذا نرفض التوليد.
+  if (!EMAIL_RE.test(email)) throw new Error('بريد المالك مطلوب وصالح لتوليد القواعد؛ دونه تصير حسابات الموظفين مديرين عامين');
   return `rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
@@ -890,6 +1007,20 @@ service cloud.firestore {
         && n.diff(resource.data).affectedKeys().hasOnly(['status', 'paidBy', 'paidAt', 'payNote'])
         && n.paidBy.uid == request.auth.uid && n.paidAt == request.time;
     }
+    // صفّ مسيّر الرواتب: قائمة حقول مغلقة + أنواع رقمية وعدم سالبية للمبالغ التي يعتمد عليها دفتر السلف والإجماليات.
+    function validRunRow(empId) {
+      let d = request.resource.data;
+      return d.keys().hasOnly([
+        'empId','name','dept','jobTitle','nationalId','bankName','iban','pm','amt','paidH','otEq','base','otPay','allowBonus',
+        'dedLate','dedEarly','dedAbs','dedForgot','dedLoan','dedPen','statDed','statDetail','net','absent','unpaidDays','payDays',
+        'lateMin','earlyMin','forgotDays','taskQty','inp'
+      ]) && d.empId == empId && d.net is number && d.net >= 0
+        && d.get('dedLoan', 0) is number && d.get('dedLoan', 0) >= 0
+        && d.get('base', 0) is number && d.get('otPay', 0) is number && d.get('allowBonus', 0) is number
+        && d.get('dedLate', 0) is number && d.get('dedEarly', 0) is number && d.get('dedAbs', 0) is number
+        && d.get('dedForgot', 0) is number && d.get('dedPen', 0) is number && d.get('statDed', 0) is number
+        && d.get('name', '') is string && d.get('pm', '') is string;
+    }
     function runStatus(rid) {
       return get(/databases/$(database)/documents/payrollRuns/$(rid)).data.status;
     }
@@ -956,6 +1087,12 @@ service cloud.firestore {
     match /pins/{id} {
       allow read, delete: if isSuperAdmin() || isHrAdmin();
       allow create, update: if (isSuperAdmin() || isHrAdmin()) && validPin();
+      // استهلاك الرمز: الجهاز الذي ربط بنجاح يختم الرمز باسمه (دفعة واحدة مع مستند joins) فلا يصلح لجهاز آخر.
+      allow update: if request.auth != null
+        && resource.data.get('usedBy', request.auth.uid) == request.auth.uid
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['usedBy', 'usedAt'])
+        && request.resource.data.usedBy == request.auth.uid && request.resource.data.usedAt == request.time
+        && existsAfter(/databases/$(database)/documents/employees/$(id)/joins/$(request.auth.uid));
     }
     match /payrollRuns/{rid} {
       allow read: if isSuperAdmin() || isPayrollAdmin();
@@ -966,7 +1103,7 @@ service cloud.firestore {
       match /rows/{empId} {
         allow read: if isSuperAdmin() || isPayrollAdmin();
         allow create, update: if (isSuperAdmin() || isPayrollAdmin()) && runStatus(rid) == 'draft'
-          && request.resource.data.empId == empId && request.resource.data.net is number;
+          && validRunRow(empId);
         allow delete: if (isSuperAdmin() || isPayrollAdmin()) && runStatus(rid) == 'draft';
       }
     }
@@ -1113,6 +1250,7 @@ service cloud.firestore {
             && d.keys().hasOnly(['pin', 'ua', 'at'])
             && d.pin is string && d.at == request.time
             && d.pin == p.pin
+            && p.get('usedBy', request.auth.uid) == request.auth.uid
             && p.get('exp', null) != null
             && request.time < p.get('exp', request.time);
         }
@@ -1264,11 +1402,13 @@ function renderGen(el) {
 
   $('#gRun').onclick = genFile;
 
-  $('#rClient').onchange = () => { const c = getClients().find(x => x.id === $('#rClient').value); if (c) $('#rEmail').value = c.ownerEmail || ''; $('#rClient').blur(); };
-  $('#rEmail').oninput = () => { $('#rBox').textContent = rulesText($('#rEmail').value); };
-  $('#rCopy').onclick = () => { const t = rulesText($('#rEmail').value); navigator.clipboard.writeText(t).then(() => toast('نُسخت القواعد. الصقها في Firestore ثم Rules ثم Publish', 'good')).catch(() => toast('انسخها يدوياً من المربع', 'err')); };
-  $('#rDl').onclick = () => { const cId = $('#rClient').value; const c = getClients().find(x => x.id === cId); download(rulesText($('#rEmail').value), c ? `firestore.rules_${c.company}.txt` : 'firestore.rules.txt', 'text/plain;charset=utf-8'); };
-  $('#rEmail').value = ''; $('#rBox').textContent = rulesText('');
+  const rulesNow = () => { try { return rulesText($('#rEmail').value); } catch (e) { toast(e.message, 'err'); return null; } };
+  const showRules = () => { try { $('#rBox').textContent = rulesText($('#rEmail').value); } catch { $('#rBox').textContent = 'اختر عميلاً له بريد مالك، أو اكتب بريد المالك لتظهر القواعد هنا (البريد إلزامي)'; } };
+  $('#rClient').onchange = () => { const c = getClients().find(x => x.id === $('#rClient').value); if (c) $('#rEmail').value = c.ownerEmail || ''; showRules(); $('#rClient').blur(); };
+  $('#rEmail').oninput = showRules;
+  $('#rCopy').onclick = () => { const t = rulesNow(); if (t == null) return; navigator.clipboard.writeText(t).then(() => toast('نُسخت القواعد. الصقها في Firestore ثم Rules ثم Publish', 'good')).catch(() => toast('انسخها يدوياً من المربع', 'err')); };
+  $('#rDl').onclick = () => { const cId = $('#rClient').value; const c = getClients().find(x => x.id === cId); const t = rulesNow(); if (t == null) return; download(t, c ? `firestore.rules_${c.company}.txt` : 'firestore.rules.txt', 'text/plain;charset=utf-8'); };
+  $('#rEmail').value = ''; showRules();
 
   $('#qClient').onchange = () => { const c = getClients().find(x => x.id === $('#qClient').value); $('#qBox').textContent = c ? cfgPreview(c) : '—'; };
   $('#qCopy').onclick = () => { navigator.clipboard.writeText($('#qBox').textContent).then(() => toast('نُسخ البلوك', 'good')).catch(() => {}); };
@@ -1279,15 +1419,17 @@ async function genFile() {
   if ($('#otaVerIn') && $('#otaVerIn').value.trim()) store.set('mc_ota_ver', $('#otaVerIn').value.trim());
   if ($('#otaNotesIn')) store.set('mc_ota_notes', $('#otaNotesIn').value.trim());
   const sel = $('#gClient'), out = $('#gOut'), btn = $('#gRun');
-  let c;
-  try { c = normalizeClient(getClients().find(x => x.id === sel.value)); }
+  let raw = getClients().find(x => x.id === sel.value), c;
+  if (!raw) return toast('اختر العميل أولاً', 'err');
+  if (raw.kind === 'demo') { const d = getDemo(); raw = { ...raw, apiKey: raw.apiKey || d.apiKey, projectId: raw.projectId || d.projectId, appId: raw.appId || d.appId }; }   // الديمو يأخذ إعدادات Firebase من تبويب الديمو
+  try { c = normalizeClient(raw); }
   catch { return toast('بيانات العميل غير صالحة؛ صحّح السجل قبل التوليد', 'err'); }
-  if (!c) return toast('اختر العميل أولاً', 'err');
-  if (c.kind !== 'demo' && (!c.apiKey || !c.projectId || !c.appId)) return toast('بيانات Firebase ناقصة لهذا العميل — عدّل بياناته وأدخل apiKey وprojectId وappId', 'err');
   const isDemo = c.kind === 'demo';
-  let url = isDemo ? '' : $('#tplUrl').value.trim();
-  if (isDemo) url = $('#dTplUrl') ? $('#dTplUrl').value.trim() : '';
+  if (!c.apiKey || !c.projectId || !c.appId) return toast(isDemo ? 'أكمل إعدادات الديمو في تبويب «الديمو» أولاً' : 'بيانات Firebase ناقصة لهذا العميل — عدّل بياناته وأدخل apiKey وprojectId وappId', 'err');
+  if (!isDemo && !c.ownerEmail) return toast('بريد المالك مطلوب لتوليد القواعد — عدّل بيانات العميل وأضفه', 'err');
+  const url = $('#tplUrl').value.trim() || store.get('mc_tpl', '');
   if (!/^https?:\/\//.test(url)) return toast('أدخل رابط قالب النظام المنشور (يبدأ بـ https)', 'err');
+  { const bad = urlProblem(url); if (bad) return toast(bad, 'err'); }
   store.set('mc_tpl', url);
   btn.disabled = true; const oldTxt = btn.textContent; btn.textContent = 'جارٍ الجلب والمعالجة…';
   try {
@@ -1335,7 +1477,7 @@ async function genFile() {
     toast('تولّدت نسخة العميل ✅', 'good');
   } catch (e) {
     out.hidden = false;
-    out.innerHTML = `<div class="card res-bad"><b>تعذّر التوليد:</b> ${esc(e.message || String(e))}</div>`;
+    out.innerHTML = `<div class="card res-bad"><b>تعذّر التوليد:</b> ${esc(fetchHint(e))}</div>`;
   }
   btn.disabled = false; btn.textContent = oldTxt;
 }
@@ -1401,6 +1543,7 @@ function renderDemo(el) {
 async function genFileFor(c, url, out) {
   try { c = normalizeClient(c); } catch { out.hidden = false; out.innerHTML = '<div class="card res-bad"><b>بيانات العميل أو إعدادات Firebase غير صالحة</b></div>'; return; }
   url = safeHttpUrl(url);
+  { const bad = url && urlProblem(url); if (bad) { out.hidden = false; out.innerHTML = `<div class="card res-bad"><b>${esc(bad)}</b></div>`; return; } }
   if (!url) { out.hidden = false; out.innerHTML = `<div class="card res-bad"><b>أدخل رابط القالب المنشور أولاً</b></div>`; return; }
   out.hidden = false; out.innerHTML = `<div class="card muted">جارٍ الجلب والمعالجة…</div>`;
   try {
@@ -1420,7 +1563,7 @@ async function genFileFor(c, url, out) {
     const pk = await buildPack(c, html, url, true);
     out.innerHTML = `<div class="card res-ok"><h3>نُزِّلت حزمة الديمو (<span dir="ltr">${esc(pk.zname)}</span>)</h3>${pk.missing.length ? '<p class="hint" style="color:var(--bad);font-weight:600">تنبيه: تعذّر جلب: <span dir="ltr">' + esc(pk.missing.join(', ')) + '</span></p>' : ''}<p class="hint">تابع الخطوات من 4 إلى 6 أعلاه.</p></div>`;
     toast('نزلت نسخة الديمو ✅', 'good');
-  } catch (e) { out.innerHTML = `<div class="card res-bad"><b>تعذّر التوليد:</b> ${esc(e.message || String(e))}</div>`; }
+  } catch (e) { out.innerHTML = `<div class="card res-bad"><b>تعذّر التوليد:</b> ${esc(fetchHint(e))}</div>`; }
 }
 
 /* ============ قواعد البيانات خطوة بخطوة ============ */
