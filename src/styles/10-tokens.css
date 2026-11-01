@@ -1,0 +1,32 @@
+/* ===== رموز التصميم (فاتح/داكن) — أخضر «ميقات» الغابي ===== */
+:root{
+  /* السطوح والنص */
+  --bg:#EDF3EE; --card:#FFFFFF; --surface:#F4F9F5; --ink:#0B2418; --mute:#587063; --line:#D6E4DA;
+  /* الهوية */
+  --pri:#0B5B41; --pri-d:#08442F; --pri-l:#DAEEE2; --pri-t:#0B5B41; --on:#FFFFFF;
+  --mint:#C8F169; --mint-ink:#233A06;           /* الليموني: الحالة الحية والاعتماد فقط */
+  /* الحالات: لون الأساس للأشرطة/النقاط، و-t للنص على خلفية فاتحة */
+  --ok:#14A06B; --ok-t:#0B6B48; --late:#E3A81B; --late-t:#865E00; --abs:#E4573A; --abs-t:#B03A1F; --leave:#6E9A83; --leave-t:#3F6A53;
+  --ok-bg:#DAEEE2; --warn:#865E00; --bad:#B03A1F;
+  --sun:#F2C14E; --sun-ink:#2A1D00; --coral:#FF7352; --coral-ink:#3D1005;
+  /* مكوّنات */
+  --navy:var(--ink); --th-bg:var(--surface); --tr-hover:var(--surface); --inp-bg:var(--surface);
+  --side:#08442F; --side-ink:#E8F5EC; --side-mute:#B7D3C3;
+  --sh:0 1px 0 rgba(11,36,24,.04),0 10px 30px -14px rgba(11,36,24,.20); --sh-lg:0 24px 60px -24px rgba(11,36,24,.35);
+  /* شكل */
+  --r-sm:10px; --r-md:12px; --r-lg:16px; --r-xl:20px; --r-pill:99px;
+  --f-ui:"IBM Plex Sans Arabic","Segoe UI",Tahoma,"Noto Sans Arabic",Arial,sans-serif;
+  --f-num:"Readex Pro","IBM Plex Sans Arabic","Segoe UI",Tahoma,Arial,sans-serif;
+  color-scheme:light;
+}
+[data-theme="dark"]{
+  --bg:#06120C; --card:#0D1F16; --surface:#122A1E; --ink:#E6F4EA; --mute:#8BAB99; --line:#1B3727;
+  --pri:#22A06B; --pri-d:#0F5A3D; --pri-l:#123626; --pri-t:#7FE3B0; --on:#04150D;
+  --mint:#C8F169; --mint-ink:#1D3205;
+  --ok:#3DD598; --ok-t:#7FE3B0; --late:#F2B93B; --late-t:#F5C95A; --abs:#FF7352; --abs-t:#FF9477; --leave:#6E9A83; --leave-t:#9CC7B0;
+  --ok-bg:#123626; --warn:#F5C95A; --bad:#FF9477;
+  --sun:#F2B93B; --sun-ink:#2A1D00;
+  --side:#0A1B13; --side-ink:#E6F4EA; --side-mute:#8BAB99;
+  --sh:0 1px 0 rgba(0,0,0,.3),0 14px 34px -14px rgba(0,0,0,.7); --sh-lg:0 30px 70px -26px rgba(0,0,0,.8);
+  color-scheme:dark;
+}
