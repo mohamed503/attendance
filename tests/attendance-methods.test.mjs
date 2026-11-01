@@ -5,13 +5,12 @@ import { readFileSync } from 'node:fs';
 import { createHash, generateKeyPairSync, createSign } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
-import { userKey, mapId } from '../workers/biometric-ingest/src/normalize.js';
 
 const html = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', 'index.html'), 'utf8');
 const s = html.indexOf('/*AM-START*/'), e = html.indexOf('/*AM-END*/');
 assert.ok(s > 0 && e > s, 'AM block missing');
 const sha = 'const sha256Hex = async str => { const b = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(str)); return Array.from(new Uint8Array(b), x => x.toString(16).padStart(2, "0")).join(""); };';
-const E = new Function(sha + html.slice(s, e) + '\nreturn { locMethods, locMode, methodsText, stepsFor, qrWindow, qrToken, qrPayload, parseQrPayload, newQrSecret, b64u, derToRaw, waVerify, devParseDT, devParseTime, devRowsFromText, devDetect, devParse, devBuild, devIdKey, bioMapId };')();
+const E = new Function(sha + html.slice(s, e) + '\nreturn { locMethods, locMode, methodsText, stepsFor, qrWindow, qrToken, qrPayload, parseQrPayload, newQrSecret, b64u, derToRaw, waVerify, devParseDT, devParseTime, devRowsFromText, devDetect, devParse, devBuild, devIdKey };')();
 
 test('سياسة الموقع: الافتراضي GPS وحده، وتُنقّى القيم الدخيلة', () => {
   assert.deepEqual(E.locMethods({}), ['gps']);
@@ -111,8 +110,4 @@ test('الرقم التسلسلي لـ Excel وصفوف التالفة', () => {
 test('إعادة الاستيراد حتمية: نفس الملف يعطي نفس الأوقات (معرّفات bio_ms ثابتة)', () => {
   const t = '101\t2026-10-25 08:00:00\n101\t2026-10-25 16:00:00';
   assert.deepEqual(run(t).recs.map(x => x.ms), run(t).recs.map(x => x.ms));
-});
-
-test('معرّف وثيقة الربط في المتصفح يطابق ما يحسبه Worker (وإلا لن يجد Worker الربط)', () => {
-  for (const [dev, id] of [['gate', '101'], ['gate', '0101'], ['d2', 'ABC-9'], ['d2', '١٠١'], ['x', ' 7 '], ['x', 'a b/c']]) assert.equal(E.bioMapId(dev, id), mapId(dev, userKey(id)));
 });

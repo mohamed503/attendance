@@ -162,8 +162,6 @@ function devDetect(rows) {
   }
   return d;
 }
-/* معرّف وثيقة ربط (جهاز + معرّف مستخدم): يطابق mapId في workers/biometric-ingest/src/normalize.js */
-const bioMapId = (deviceId, rawId) => `${deviceId}__${devIdKey(rawId).replace(/[^a-z0-9_-]/g, '_')}`.slice(0, 300);
 const devType = s => { const x = devDigits(s).trim().toLowerCase(); if (['0', '3', '4', 'i', 'in', 'check-in', 'checkin', 'c/in', 'دخول', 'حضور'].includes(x)) return 'in'; if (['1', '2', '5', 'o', 'out', 'check-out', 'checkout', 'c/out', 'خروج', 'انصراف'].includes(x)) return 'out'; return null; };
 const devIdKey = s => { const x = devDigits(s).trim(); return /^\d+$/.test(x) ? String(+x) : x.toLowerCase(); };
 

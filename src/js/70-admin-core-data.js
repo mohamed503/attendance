@@ -80,10 +80,7 @@ function adminApp(db, auth) {
     month_archive: ['b-warn', 'أرشفة وتفريغ بصمات شهر'],
     month_restore: ['b-pri', 'استعادة أرشيف بصمات شهر'],
     fin_isolate: ['b-ok', 'عزل البيانات المالية في الخزينة'],
-    sched_override: ['b-pri', 'إدارة استثناء دوام / تبديل وردية'],
-    bio_device: ['b-pri', 'إدارة جهاز بصمة / رمزه'],
-    bio_map: ['b-pri', 'ربط معرّف جهاز بموظف'],
-    bio_pending: ['b-warn', 'معالجة حركات أجهزة معلّقة']
+    sched_override: ['b-pri', 'إدارة استثناء دوام / تبديل وردية']
   };
   function logAudit(action, target, detail) {
     if (!['super_admin', 'hr_admin', 'payroll_admin'].includes(S.role)) return;
@@ -546,9 +543,9 @@ function adminApp(db, auth) {
     const pend = S.reqs.filter(r => r.status === 'pending').length;
     const LF = licFeatures();
     const fgN = forgotAlerts().length;
-    const tabs = [['today', 'اليوم', 'today'], ['emps', 'الموظفون', 'users'], ['sched', 'الدوام والإعدادات', 'sched'], ['locs', 'المواقع', 'pin'], ...(isSuper() || isHr() ? [['bio', 'أجهزة البصمة', 'device']] : []), ['reqs', `الطلبات${pend ? ' (' + pend + ')' : ''}`, 'send'], ...(LF.tasks === false ? [] : [['tasks', 'المهام', 'task']]), ['recs', `التقارير والرواتب${fgN ? ' (' + fgN + ')' : ''}`, 'report']];
-    const TT = { today: 'اليوم', emps: 'الموظفون', sched: 'الدوام والإعدادات', locs: 'المواقع', bio: 'أجهزة البصمة', reqs: 'الطلبات', tasks: 'المهام', recs: 'التقارير والرواتب' };
- const SH = { today: 'اليوم', emps: 'الموظفون', sched: 'الدوام', locs: 'المواقع', bio: 'الأجهزة', reqs: 'الطلبات', tasks: 'المهام', recs: 'التقارير' };
+    const tabs = [['today', 'اليوم', 'today'], ['emps', 'الموظفون', 'users'], ['sched', 'الدوام والإعدادات', 'sched'], ['locs', 'المواقع', 'pin'], ['reqs', `الطلبات${pend ? ' (' + pend + ')' : ''}`, 'send'], ...(LF.tasks === false ? [] : [['tasks', 'المهام', 'task']]), ['recs', `التقارير والرواتب${fgN ? ' (' + fgN + ')' : ''}`, 'report']];
+    const TT = { today: 'اليوم', emps: 'الموظفون', sched: 'الدوام والإعدادات', locs: 'المواقع', reqs: 'الطلبات', tasks: 'المهام', recs: 'التقارير والرواتب' };
+ const SH = { today: 'اليوم', emps: 'الموظفون', sched: 'الدوام', locs: 'المواقع', reqs: 'الطلبات', tasks: 'المهام', recs: 'التقارير' };
  const CNT = { reqs: pend || 0, recs: fgN || 0 };
  root.innerHTML = `<div class="shell"><aside class="rail"><nav class="rail-nav" id="adminNav" aria-label="تبويبات لوحة الإدارة"><div class="rail-head"><div class="lg" aria-hidden="true">${logoMark(28)}</div><div class="rail-brand"><b>${BRAND}</b><small>${esc(brandName())}</small></div></div>
  ${tabs.map(([k, n, i]) => `<button class="tab ${S.tab === k ? 'on' : ''}" data-tab="${k}" title="${TT[k]}" aria-label="${TT[k]}"${S.tab === k ? ' aria-current="page"' : ''}>${ic(i, 22)}<span class="tl">${SH[k]}</span>${CNT[k] ? `<em>${CNT[k]}</em>` : ''}</button>`).join('')}<span class="rail-sp"></span>${(() => { const em = (auth.currentUser && auth.currentUser.email) || ''; const nm = (em.split('@')[0] || 'مشرف'); const RLN = { super_admin: 'مدير عام', hr_admin: 'موارد بشرية', payroll_admin: 'محاسب رواتب', manager: 'مدير قسم', auditor: 'مدقق' }; return `<div class="rail-me" title="${esc(em)}"><span class="av">${ini(nm)}</span><div class="rail-mt"><b>${esc(nm)}</b><small>${RLN[S.role] || ''}</small></div></div>`; })()}</nav></aside>
@@ -571,7 +568,7 @@ function adminApp(db, auth) {
       <div id="content"></div></main></div>`;
     { const nv = $('#adminNav'), on = nv && nv.querySelector('.tab.on'); if (on) { const a = on.getBoundingClientRect(), b = nv.getBoundingClientRect(); nv.scrollLeft += (a.left + a.width / 2) - (b.left + b.width / 2); } }
     refreshPwaButtons();
-    ({ today: viewToday, emps: viewEmps, sched: viewSched, locs: viewLocs, bio: viewBio, reqs: viewReqs, tasks: viewTasks, recs: viewRecs })[S.tab]($('#content'));
+    ({ today: viewToday, emps: viewEmps, sched: viewSched, locs: viewLocs, reqs: viewReqs, tasks: viewTasks, recs: viewRecs })[S.tab]($('#content'));
  { const so = document.querySelector('.stab.on'); if (so && so.scrollIntoView) so.scrollIntoView({ inline: 'center', block: 'nearest' }); }
   }
 

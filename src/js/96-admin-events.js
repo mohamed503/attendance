@@ -17,12 +17,6 @@
       S.recSub = rsub.dataset.rsub; return viewRecs($('#content'));
     }
 
-    const bb = ev.target.closest('[data-bact]');
-    if (bb) {
-      if (!(isSuper() || isHr())) return toast('إدارة أجهزة البصمة للمدير العام والموارد البشرية فقط', 'err');
-      try { await bioAction(bb.dataset.bact, bb); } catch (e) { console.error(e); toast(e.code === 'permission-denied' ? 'غير مسموح: حدّث قواعد Firestore ثم أعد المحاولة' : 'تعذر تنفيذ العملية', 'err'); }
-      return;
-    }
     const b = ev.target.closest('[data-act]'); if (!b) return;
     const act = b.dataset.act, id = b.dataset.id;
         const superOnly = new Set(['addAdmin', 'delAdmin', 'copyRules', 'v2Done', 'hardDelEmp', 'backupDB', 'restoreDB', 'runApprove', 'loanOpen', 'sealMonth', 'archivePurgeMonth', 'restoreArchiveMonth', 'isolateFinAll']);

@@ -397,17 +397,6 @@ service cloud.firestore {
     match /locSecrets/{id} {
       allow read, write: if isSuperAdmin() || isHrAdmin();
     }
-    // ---- ربط أجهزة البصمة: تعريف الأجهزة (بصمة رمز الوصول لا الرمز نفسه) وجدول (جهاز + معرّف) ⟵ موظف والأحداث المعلّقة ----
-    // Worker يكتب عبر حساب خدمة (يتجاوز القواعد)؛ المتصفح للمدير العام والموارد البشرية فقط، ولا وصول لأي موظف.
-    match /biometricDevices/{id} {
-      allow read, write: if isSuperAdmin() || isHrAdmin();
-    }
-    match /biometricMap/{id} {
-      allow read, write: if isSuperAdmin() || isHrAdmin();
-    }
-    match /biometricPending/{id} {
-      allow read, write: if isSuperAdmin() || isHrAdmin();
-    }
     match /schedules/{id} {
       allow read: if request.auth != null;
       allow write: if isSuperAdmin() || isHrAdmin();
