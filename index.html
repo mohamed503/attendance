@@ -2957,11 +2957,13 @@ async function employeeApp(db, auth, token) {
   window.addEventListener('online', () => { flushOfflineQueue(false); });
 
   /* يطلب من الموظف مسح رمز QR الظاهر عند الموقع ويعيد {locId, tok} */
+  let qrAt = 0;
   async function askQr(allowedIds) {
     setMsg('وجّه الكاميرا إلى رمز QR المعروض عند مكان العمل…');
     const raw = await scanQrOnce();
     const q = parseQrPayload(raw);
     if (!q) throw new Error('qr-format');
+    qrAt = Date.now();
     if (allowedIds && !allowedIds.includes(q.locId)) throw new Error('qr-loc');
     return q;
   }
@@ -3038,13 +3040,14 @@ async function employeeApp(db, auth, token) {
       }
       const plan = stepsFor(best.l, gpsPassed);
       if (!plan.ok) { setMsg(outMsg || gpsMsg || 'هذا الموقع يشترط تأكيد موقعك بالـ GPS.', 'err'); return loadHist(); }
-      if (plan.need.includes('qr') && !qr) qr = await askQr([best.l.id]);
       if (plan.need.includes('bio')) {
         if (!navigator.onLine) throw new Error('offline-bio');
         const bio = await ensureBio();
         setMsg('تحقق ببصمتك أو وجهك على الهاتف…');
         wa = await waAssert(bio, `${token}|${type}|${best.l.id}|${Math.floor(Date.now() / 1000)}`);
       }
+      // رمز QR يصلح نحو 35–90 ثانية فقط عند الخادم: نمسحه بعد البصمة مباشرة (أو نعيد المسح إن مضى عليه أكثر من 15 ث)
+      if (plan.need.includes('qr') && (!qr || Date.now() - qrAt > 15000)) qr = await askQr([best.l.id]);
     } catch (e) {
       setMsg(e && e.message === 'offline-bio' ? 'التحقق ببصمة الجهاز يحتاج اتصالاً بالإنترنت.' : amErr(e), 'err');
       return loadHist();
