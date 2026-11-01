@@ -1,0 +1,9 @@
+name = "meqat-biometric-ingest"
+main = "src/index.js"
+compatibility_date = "2026-11-01"
+workers_dev = true
+
+[vars]
+FIREBASE_PROJECT_ID = "hodr-wa-inseraf"
+# الأسرار (لا تُكتب هنا): wrangler secret put FIREBASE_CLIENT_EMAIL ، wrangler secret put FIREBASE_PRIVATE_KEY
+# رموز الأجهزة لم تعد أسراراً في Cloudflare: تُنشأ وتُدوَّر من لوحة ميقات (تبويب أجهزة البصمة) وتُحفظ بصمتها في Firestore.

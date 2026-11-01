@@ -59,7 +59,7 @@ function adminApp(db, auth) {
   const isPay = () => S.role === 'payroll_admin';
   const isAud = () => S.role === 'auditor';
   // يطابق قيود قواعد Firestore: الموارد البشرية لا تكتب الحقول المالية، والرواتب لا تكتب حقول الموظف/الدوام.
-  const HR_EMP_KEYS = new Set(['name','phone','dept','jobTitle','contractEnd','docExpiry','bioId','assets','scheduleId','rotOffset','startDate','leaveQuota','empType','locs','active']);
+  const HR_EMP_KEYS = new Set(['name','phone','dept','jobTitle','contractEnd','docExpiry','bioId','assets','scheduleId','rotOffset','startDate','leaveQuota','empType','locs','active','bio']);
   const PAY_EMP_KEYS = new Set(['payMode','payAmount','allowance','bonus','penalty','adjMonth','loanTotal','loanInst','lyStatutory','familyStatus','nationalId','bankName','iban','taskPrices','finIsolated']);
   const AUDIT_LABELS = {
     emp_create: ['b-ok', 'إضافة موظف'],
@@ -80,7 +80,10 @@ function adminApp(db, auth) {
     month_archive: ['b-warn', 'أرشفة وتفريغ بصمات شهر'],
     month_restore: ['b-pri', 'استعادة أرشيف بصمات شهر'],
     fin_isolate: ['b-ok', 'عزل البيانات المالية في الخزينة'],
-    sched_override: ['b-pri', 'إدارة استثناء دوام / تبديل وردية']
+    sched_override: ['b-pri', 'إدارة استثناء دوام / تبديل وردية'],
+    bio_device: ['b-pri', 'إدارة جهاز بصمة / رمزه'],
+    bio_map: ['b-pri', 'ربط معرّف جهاز بموظف'],
+    bio_pending: ['b-warn', 'معالجة حركات أجهزة معلّقة']
   };
   function logAudit(action, target, detail) {
     if (!['super_admin', 'hr_admin', 'payroll_admin'].includes(S.role)) return;
@@ -543,9 +546,9 @@ function adminApp(db, auth) {
     const pend = S.reqs.filter(r => r.status === 'pending').length;
     const LF = licFeatures();
     const fgN = forgotAlerts().length;
-    const tabs = [['today', 'اليوم', 'today'], ['emps', 'الموظفون', 'users'], ['sched', 'الدوام والإعدادات', 'sched'], ['locs', 'المواقع', 'pin'], ['reqs', `الطلبات${pend ? ' (' + pend + ')' : ''}`, 'send'], ...(LF.tasks === false ? [] : [['tasks', 'المهام', 'task']]), ['recs', `التقارير والرواتب${fgN ? ' (' + fgN + ')' : ''}`, 'report']];
-    const TT = { today: 'اليوم', emps: 'الموظفون', sched: 'الدوام والإعدادات', locs: 'المواقع', reqs: 'الطلبات', tasks: 'المهام', recs: 'التقارير والرواتب' };
- const SH = { today: 'اليوم', emps: 'الموظفون', sched: 'الدوام', locs: 'المواقع', reqs: 'الطلبات', tasks: 'المهام', recs: 'التقارير' };
+    const tabs = [['today', 'اليوم', 'today'], ['emps', 'الموظفون', 'users'], ['sched', 'الدوام والإعدادات', 'sched'], ['locs', 'المواقع', 'pin'], ...(isSuper() || isHr() ? [['bio', 'أجهزة البصمة', 'device']] : []), ['reqs', `الطلبات${pend ? ' (' + pend + ')' : ''}`, 'send'], ...(LF.tasks === false ? [] : [['tasks', 'المهام', 'task']]), ['recs', `التقارير والرواتب${fgN ? ' (' + fgN + ')' : ''}`, 'report']];
+    const TT = { today: 'اليوم', emps: 'الموظفون', sched: 'الدوام والإعدادات', locs: 'المواقع', bio: 'أجهزة البصمة', reqs: 'الطلبات', tasks: 'المهام', recs: 'التقارير والرواتب' };
+ const SH = { today: 'اليوم', emps: 'الموظفون', sched: 'الدوام', locs: 'المواقع', bio: 'الأجهزة', reqs: 'الطلبات', tasks: 'المهام', recs: 'التقارير' };
  const CNT = { reqs: pend || 0, recs: fgN || 0 };
  root.innerHTML = `<div class="shell"><aside class="rail"><nav class="rail-nav" id="adminNav" aria-label="تبويبات لوحة الإدارة"><div class="rail-head"><div class="lg" aria-hidden="true">${logoMark(28)}</div><div class="rail-brand"><b>${BRAND}</b><small>${esc(brandName())}</small></div></div>
  ${tabs.map(([k, n, i]) => `<button class="tab ${S.tab === k ? 'on' : ''}" data-tab="${k}" title="${TT[k]}" aria-label="${TT[k]}"${S.tab === k ? ' aria-current="page"' : ''}>${ic(i, 22)}<span class="tl">${SH[k]}</span>${CNT[k] ? `<em>${CNT[k]}</em>` : ''}</button>`).join('')}<span class="rail-sp"></span>${(() => { const em = (auth.currentUser && auth.currentUser.email) || ''; const nm = (em.split('@')[0] || 'مشرف'); const RLN = { super_admin: 'مدير عام', hr_admin: 'موارد بشرية', payroll_admin: 'محاسب رواتب', manager: 'مدير قسم', auditor: 'مدقق' }; return `<div class="rail-me" title="${esc(em)}"><span class="av">${ini(nm)}</span><div class="rail-mt"><b>${esc(nm)}</b><small>${RLN[S.role] || ''}</small></div></div>`; })()}</nav></aside>
@@ -559,8 +562,8 @@ function adminApp(db, auth) {
  <button class="ib" data-act="logout" title="تسجيل الخروج" aria-label="تسجيل الخروج">${ic('power', 22)}</button>
  </div></header>
  ${licBannerHtml()}
-      ${S.idxUrl ? `<div class="notice"><b>خطوة لمرة واحدة:</b> يلزم إنشاء فهرس لتسريع التقارير. <a href="${esc(S.idxUrl)}" target="_blank">اضغط هنا لإنشائه</a> وانتظر دقيقة ثم اضغط «تحديث». حتى ذلك الحين تُحمَّل السجلات بالطريقة البديلة الآمنة.</div>` : ''}
-      ${S.idxUrlReq ? `<div class="notice"><b>خطوة لمرة واحدة (لتوفير القراءات):</b> يلزم إنشاء فهرس لطلبات الموظفين. <a href="${esc(S.idxUrlReq)}" target="_blank">اضغط هنا لإنشائه</a> وانتظر دقيقة ثم اضغط «تحديث». قد يظهر رابط ثانٍ بعد الأول، أنشئه أيضاً. حتى ذلك الحين تُقرأ كل الطلبات بالطريقة القديمة.</div>` : ''}
+      ${S.idxUrl && !(()=>{try{return localStorage.getItem('att_idx_hide')}catch{return ''}})() ? `<div class="notice"><b>خطوة لمرة واحدة:</b> يلزم إنشاء فهرس لتسريع التقارير. <a href="${esc(S.idxUrl)}" target="_blank">اضغط هنا لإنشائه</a> وانتظر دقيقة ثم اضغط «تحديث». حتى ذلك الحين تُحمَّل السجلات بالطريقة البديلة الآمنة.<div style="margin-top:10px"><button class="btn sm sec" data-act="idxHide" data-k="att_idx_hide">${ic('check', 16)} أنشأته، لا تُظهر هذا التنبيه مجدداً</button></div></div>` : ''}
+      ${S.idxUrlReq && !(()=>{try{return localStorage.getItem('att_idxreq_hide')}catch{return ''}})() ? `<div class="notice"><b>خطوة لمرة واحدة (لتوفير القراءات):</b> يلزم إنشاء فهرس لطلبات الموظفين. <a href="${esc(S.idxUrlReq)}" target="_blank">اضغط هنا لإنشائه</a> وانتظر دقيقة ثم اضغط «تحديث». قد يظهر رابط ثانٍ بعد الأول، أنشئه أيضاً. حتى ذلك الحين تُقرأ كل الطلبات بالطريقة القديمة.<div style="margin-top:10px"><button class="btn sm sec" data-act="idxHide" data-k="att_idxreq_hide">${ic('check', 16)} أنشأته، لا تُظهر هذا التنبيه مجدداً</button></div></div>` : ''}
       ${(S.recsFail.length || S.todayFail.length) ? `<div class="notice"><b>تحذير — بيانات ناقصة:</b> تعذّرت قراءة سجلات: ${esc([...new Set([...S.recsFail, ...S.todayFail])].join('، '))}. قد يظهرون غائبين خطأً في اليوم والتقارير والرواتب. اضغط «تحديث» قبل اعتماد أي رواتب.</div>` : ''}
       ${S.rulesOld ? `<div class="notice"><b>تحديث لمرة واحدة:</b> لحفظ جداول الدوام يلزم تحديث قواعد Firestore. اضغط الزر لنسخ القواعد الجديدة، ثم افتح Firestore › Rules، وامسح القديم والصق الجديد واضغط Publish، ثم حدّث الصفحة.<div style="margin-top:10px"><button class="btn sm" data-act="copyRules">${ic('copy', 16)} نسخ القواعد الجديدة</button></div></div>` : ''}
       ${S.reqsErr || S.adminsErr ? `<div class="notice"><b>تحديث مطلوب:</b> قواعد Firestore المنشورة حالياً لا تتيح قراءة طلبات الموظفين جماعياً أو بيانات المشرفين. انسخ القواعد الأحدث وانشرها ثم أعد التحميل.<div style="margin-top:10px"><button class="btn sm" data-act="copyRules">${ic('copy', 16)} نسخ القواعد الأحدث</button></div></div>` : ''}
@@ -568,7 +571,7 @@ function adminApp(db, auth) {
       <div id="content"></div></main></div>`;
     { const nv = $('#adminNav'), on = nv && nv.querySelector('.tab.on'); if (on) { const a = on.getBoundingClientRect(), b = nv.getBoundingClientRect(); nv.scrollLeft += (a.left + a.width / 2) - (b.left + b.width / 2); } }
     refreshPwaButtons();
-    ({ today: viewToday, emps: viewEmps, sched: viewSched, locs: viewLocs, reqs: viewReqs, tasks: viewTasks, recs: viewRecs })[S.tab]($('#content'));
+    ({ today: viewToday, emps: viewEmps, sched: viewSched, locs: viewLocs, bio: viewBio, reqs: viewReqs, tasks: viewTasks, recs: viewRecs })[S.tab]($('#content'));
  { const so = document.querySelector('.stab.on'); if (so && so.scrollIntoView) so.scrollIntoView({ inline: 'center', block: 'nearest' }); }
   }
 

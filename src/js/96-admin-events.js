@@ -17,11 +17,17 @@
       S.recSub = rsub.dataset.rsub; return viewRecs($('#content'));
     }
 
+    const bb = ev.target.closest('[data-bact]');
+    if (bb) {
+      if (!(isSuper() || isHr())) return toast('إدارة أجهزة البصمة للمدير العام والموارد البشرية فقط', 'err');
+      try { await bioAction(bb.dataset.bact, bb); } catch (e) { console.error(e); toast(e.code === 'permission-denied' ? 'غير مسموح: حدّث قواعد Firestore ثم أعد المحاولة' : 'تعذر تنفيذ العملية', 'err'); }
+      return;
+    }
     const b = ev.target.closest('[data-act]'); if (!b) return;
     const act = b.dataset.act, id = b.dataset.id;
         const superOnly = new Set(['addAdmin', 'delAdmin', 'copyRules', 'v2Done', 'hardDelEmp', 'backupDB', 'restoreDB', 'runApprove', 'loanOpen', 'sealMonth', 'archivePurgeMonth', 'restoreArchiveMonth', 'isolateFinAll']);
-    const viewOnly = new Set(['logout', 'reload', 'copy', 'wa', 'moreReqs', 'reloadAudit', 'auditCsv']);
-        const payrollAllowed = new Set(['logout', 'reload', 'editEmp', 'runSave', 'runRecalc', 'runView', 'runPay', 'runVerify', 'runDel', 'runLedger', 'loanLog', 'runXlsx', 'runBankCsv', 'runSlips', 'runSlip', 'xlsx', 'print', 'bankCsv', 'printSlips', 'slipEmp', 'appr', 'rej', 'copy', 'wa']);
+    const viewOnly = new Set(['logout', 'idxHide', 'reload', 'copy', 'wa', 'moreReqs', 'reloadAudit', 'auditCsv']);
+        const payrollAllowed = new Set(['logout', 'idxHide', 'reload', 'editEmp', 'runSave', 'runRecalc', 'runView', 'runPay', 'runVerify', 'runDel', 'runLedger', 'loanLog', 'runXlsx', 'runBankCsv', 'runSlips', 'runSlip', 'xlsx', 'print', 'bankCsv', 'printSlips', 'slipEmp', 'appr', 'rej', 'copy', 'wa']);
     if (superOnly.has(act) && !isSuper()) return toast('هذه العملية متاحة للمدير العام فقط', 'err');
     if (['manager', 'auditor'].includes(S.role) && !viewOnly.has(act)) return toast('هذا الدور للعرض فقط', 'err');
     if (S.role === 'payroll_admin' && !payrollAllowed.has(act)) return toast('هذه العملية ليست ضمن صلاحيات محاسب الرواتب', 'err');
@@ -263,57 +269,7 @@
         };
         inp.click(); return;
       }
-      if (act === 'impBio') {
-        const inp = $('#bioFileInp'); if (!inp) return;
-        inp.value = '';
-        inp.onchange = async e => {
-          const f = e.target.files[0]; if (!f) return;
-          try {
-            const txt = await f.text();
-            const byBio = new Map();
-            S.emps.forEach(emp => { if (emp.bioId) byBio.set(String(emp.bioId).trim(), emp); });
-            if (!byBio.size) return toast('اربط أرقام البصمة (ZKTeco ID) بالموظفين أولاً من تعديل بيانات الموظف', 'err');
-            // يدعم attlog.dat (معرّف ⟵ تاريخ ووقت ⟵ …) وملفات CSV (معرّف، تاريخ ووقت، [حالة])
-            const raw = [];
-            for (const line of txt.split(/\r?\n/)) {
-              const p = line.split(/[\t,;]+/).map(s => s.trim().replace(/^"|"$/g, ''));
-              if (p.length < 2) continue;
-              const emp = byBio.get(p[0]); if (!emp) continue;
-              const m = p[1].match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::(\d{2}))?/); if (!m) continue;
-              // الوقت في الجهاز هو توقيت المنشأة، فنحوّله بحسب المنطقة الزمنية المضبوطة لا بحسب جهاز المدير
-              const ms = Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +(m[6] || 0)) - TZOFF * 60000;
-              let type = null;
-              if (p.length === 3) { const s = p[2].toLowerCase(); if (['1', 'o', 'out', 'انصراف'].includes(s)) type = 'out'; else if (['0', 'i', 'in', 'حضور'].includes(s)) type = 'in'; }
-              raw.push({ emp, ms, type });
-            }
-            if (!raw.length) return toast('لم يُعثر على سجلات مطابقة لأرقام البصمة المسجلة', 'err');
-            // ترتيب + حذف التكرار القريب (أقل من دقيقة) + تحديد حضور/انصراف بالتناوب داخل اليوم إن لم تُحدَّد الحالة
-            raw.sort((x, y) => x.emp.id.localeCompare(y.emp.id) || x.ms - y.ms);
-            const recs = []; let lastE = '', lastMs = 0, dayId = '', n = 0;
-            for (const r of raw) {
-              if (r.emp.id === lastE && r.ms - lastMs < 60000) continue;
-              const dk = r.emp.id + '|' + Math.floor((r.ms + TZOFF * 60000) / 86400000);
-              if (dk !== dayId) { dayId = dk; n = 0; }
-              recs.push({ emp: r.emp, ms: r.ms, type: r.type || (n % 2 === 0 ? 'in' : 'out') });
-              n++; lastE = r.emp.id; lastMs = r.ms;
-            }
-            const empN = new Set(recs.map(r => r.emp.id)).size;
-            if (!await mqConfirm(`تم العثور على ${recs.length} حركة بصمة تخص ${empN} موظفاً (من ${fmtDate(new Date(recs[0].ms))} إلى ${fmtDate(new Date(recs[recs.length - 1].ms))}).\nهل تريد استيرادها؟ (إعادة استيراد نفس الملف لا تكرّر السجلات)`)) return;
-            for (let i = 0; i < recs.length; i += 350) {
-              const b = writeBatch(db);
-              recs.slice(i, i + 350).forEach(r => {
-                const ref = doc(db, 'employees', r.emp.id, 'records', 'bio_' + r.ms);
-                b.set(ref, { type: r.type, time: Timestamp.fromMillis(r.ms), lat: 0, lng: 0, accuracy: 0, distance: 0, locationId: 'biometric', locationName: 'جهاز البصمة', empName: r.emp.name, deviceId: 'zkteco-import' });
-              });
-              await b.commit();
-            }
-            const monthsTouched = [...new Set(recs.map(r => dayKey(new Date(r.ms)).slice(0, 7)))];
-            await Promise.all(monthsTouched.map(m => invalidateMonthSummary(m)));
-            await RecCache.clear(); await refresh('emps', 'recs'); toast(`تم استيراد ${recs.length} بصمة بنجاح ✅`, 'good');
-          } catch (err) { console.error(err); toast('فشل استيراد ملف البصمات', 'err'); }
-        };
-        inp.click(); return;
-      }
+      if (act === 'impBio') return openDeviceImport();
       if (act === 'isolateFinAll') {
         await ensureFinanceLoaded(true);
         const targets = S.emps.filter(e => !e.finIsolated || e.payAmount > 0 || e.iban || e.loanTotal > 0);
@@ -371,7 +327,8 @@
       if (act === 'dupSched') { const x = JSON.parse(JSON.stringify(S.scheds.find(y => y.id === id))); delete x.id; delete x.createdAt; delete x.updatedAt; x.name += ' (نسخة)'; await addDoc(collection(db, 'schedules'), { ...x, createdAt: serverTimestamp() }); await refresh('scheds'); toast('تم نسخ الجدول', 'good'); }
       if (act === 'delSched') { const n = S.emps.filter(e => e.scheduleId === id).length; if (await mqConfirm(n ? `هذا الجدول مرتبط بـ ${n} موظف وسيصبحون بدون جدول. هل تريد حذفه؟` : 'حذف هذا الجدول؟')) { await deleteDoc(doc(db, 'schedules', id)); await refresh('scheds'); } }
       if (act === 'editEmp') employeeEditor(S.emps.find(x => x.id === id));
-      if (act === 'delLoc') { if (await mqConfirm('حذف هذا الموقع؟')) { await deleteDoc(doc(db, 'locations', id)); await refresh('locs'); } }
+      if (act === 'delLoc') { if (await mqConfirm('حذف هذا الموقع؟')) { await deleteDoc(doc(db, 'locations', id)); try { await deleteDoc(doc(db, 'locSecrets', id)); } catch {} await refresh('locs'); } }
+      if (act === 'showQr') { const x = S.locs.find(y => y.id === id); if (x) return showQrBoard(x); }
       if (act === 'mapLoc') return locEditor(null);
       if (act === 'editLoc') { const x = S.locs.find(y => y.id === id); if (x) return locEditor(x); }
       if (act === 'runSave') return runSave();
@@ -437,6 +394,7 @@
         await refresh('admins'); toast(note, 'good');
       }
       if (act === 'delAdmin') { if (await mqConfirm('إزالة صلاحيات هذا المشرف؟')) { await deleteDoc(doc(db, 'admins', id)); await refresh('admins'); } }
+      if (act === 'idxHide') { try { localStorage.setItem(b.dataset.k, '1'); } catch {} return render(); }
       if (act === 'v2Done') { localStorage.setItem('att_rules_v5', '1'); return render(); }
       if (act === 'appr' || act === 'rej') {
         const empId = b.dataset.e;

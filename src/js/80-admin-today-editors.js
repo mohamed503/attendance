@@ -408,6 +408,7 @@
       h += `<div class="sec-t">${ic('payroll', 20)} البيانات المصرفية والعزل الأمني للرواتب</div><div class="g2"><div class="field"><label>اسم المصرف والفرع</label><input data-k="bankName" value="${esc(W.bankName)}" placeholder="مصرف الجمهورية — الفرع الرئيسي"></div><div class="field"><label>رقم الحساب المصرفي / IBAN</label><input data-k="iban" dir="ltr" value="${esc(W.iban)}" placeholder="LY00 0000 0000 0000 0000 0000"></div>${(isSuper() || isPay()) ? `<div class="field" style="grid-column:1/-1"><label class="chk"><input type="checkbox" data-k="finIsolated" ${W.finIsolated ? 'checked' : ''}> 🔒 عزل البيانات المالية والمصرفية في الخزينة المحمية (<code>empFinance</code>) لمنع الموارد البشرية ومديري الأقسام من قراءة الراتب والـ IBAN</label></div>` : ''}</div>`;
       h += `<div class="sec-t">${ic('device', 20)} العُهد والأصول المسلمة + رقم جهاز البصمة</div><div class="g2">
         <div class="field"><label>رقم الموظف في جهاز البصمة (ZKTeco ID)</label><input data-k="bioId" dir="ltr" value="${esc(W.bioId)}" placeholder="مثال: 101"></div>
+        <div class="field"><label>بصمة هاتف الموظف (WebAuthn)</label><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span class="badge ${e.bio ? 'b-ok' : 'b-warn'}">${e.bio ? 'مسجَّلة' : 'غير مسجَّلة'}</span>${e.bio && (isSuper() || isHr()) ? `<button type="button" class="chip" data-a="resetBio">${ic('refresh', 16)} إعادة ضبط</button>` : ''}</div></div>
         <div class="field" style="grid-column:1/-1"><label>العُهد والأصول المسلمة للموظف (سيارة، لابتوب، هاتف، مفاتيح…)</label><input data-k="assets" value="${esc(W.assets)}" placeholder="مثال: لابتوب Dell S/N:4452 — سيارة كيا لوحة 12345 — شريحة مدار 091..."></div>
       </div>`;
       if (W.payMode === 'monthly') {
@@ -419,6 +420,10 @@
     openModal({
       title: 'ملف الموظف الشامل (360°)', body, onField: (k, v) => { if (k.startsWith('locs.')) W.locs[k.slice(5)] = !!v; else if (k.startsWith('tp.')) W.tp[k.slice(3)] = v; else W[k] = v; },
       onAct: async a => {
+        if (a === 'resetBio') {
+          if (!await mqConfirm('إعادة ضبط بصمة جهاز هذا الموظف؟ سيُطلب منه تسجيل بصمة جديدة عند أول تسجيل في موقع يشترطها.')) return;
+          await updateDoc(doc(db, 'employees', e.id), { bio: null }); e.bio = null; toast('تمت إعادة ضبط بصمة الجهاز', 'good');
+        }
         if (a === 'netToGross') {
           const targetNet = parseFloat(await mqPrompt('أدخل صافي الراتب المطلوب استلامه في اليد (د.ل):'));
           if (!(targetNet > 0)) return;

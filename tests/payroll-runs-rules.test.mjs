@@ -57,6 +57,11 @@ test('صفوف المسودة: كتابة وتعديل وحذف', async () => {
   await assertSucceeds(deleteDoc(row(fs('pay'), 'e2')));
   await assertFails(setDoc(row(fs('pay'), 'e3'), { empId: 'WRONG', net: 5 }));
   await assertFails(setDoc(row(fs('pay'), 'e3'), { empId: 'e3', net: 'x' }));
+  await assertFails(setDoc(row(fs('pay'), 'e3'), { empId: 'e3', net: 5, hack: 1 }));            // حقل غير معروف
+  await assertFails(setDoc(row(fs('pay'), 'e3'), { empId: 'e3', net: -5 }));                    // صافٍ سالب
+  await assertFails(setDoc(row(fs('pay'), 'e3'), { empId: 'e3', net: 5, dedLoan: -1 }));        // قسط سلفة سالب
+  await assertFails(setDoc(row(fs('pay'), 'e3'), { empId: 'e3', net: 5, base: '100' }));        // نوع خاطئ
+  await assertSucceeds(setDoc(row(fs('pay'), 'e3'), { empId: 'e3', name: 'م', pm: 'monthly', base: 100, dedLoan: 0, net: 5, inp: { payMode: null } }));
 });
 test('حذف المسودة مسموح', async () => { await seed('draft'); await assertSucceeds(deleteDoc(run(fs('pay')))); });
 

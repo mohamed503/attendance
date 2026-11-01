@@ -265,8 +265,8 @@
       <button class="btn sec" data-act="myLoc">${ic('target', 18)} موقعي الحالي</button>
       <button class="btn" data-act="addLoc">${ic('plus', 18)} إضافة الموقع</button></div>
       <p class="muted" style="font-size:13px;margin:12px 0 0">يمكنك نسخ الإحداثيات من خرائط Google أو الضغط على «تحديد عبر الخريطة التفاعلية» لاختيار النقطة بصرياً.</p></div>
-    <div class="card">${ch('map', `المواقع المعتمدة (${S.locs.length})`)}<div class="tw"><table class="rt"><thead><tr><th>اسم الموقع</th><th>الإحداثيات</th><th>نطاق القبول</th><th>إجراءات</th></tr></thead><tbody>
-    ${S.locs.map(l => `<tr><td data-l="اسم الموقع"><b>${esc(l.name)}</b></td><td data-l="الإحداثيات"><span dir="ltr">${l.lat.toFixed(5)}, ${l.lng.toFixed(5)}</span></td><td data-l="نطاق القبول"><span class="badge b-pri">${l.radius} متر</span></td><td data-l=""><div class="acts"><a class="btn sm sec" style="text-decoration:none" href="${mapLink(l.lat, l.lng)}" target="_blank">${ic('map', 16)} Google Maps</a> <button class="btn sm sec" data-act="editLoc" data-id="${l.id}">${ic('edit', 16)} تعديل</button> <button class="btn sm bad" data-act="delLoc" data-id="${l.id}">${ic('trash', 16)} حذف</button></div></td></tr>`).join('') || '<tr><td colspan="4" class="muted center">لم تُضف مواقع بعد، وبدونها لن يستطيع أي موظف تسجيل البصمة</td></tr>'}
+    <div class="card">${ch('map', `المواقع المعتمدة (${S.locs.length})`)}<div class="tw"><table class="rt"><thead><tr><th>اسم الموقع</th><th>الإحداثيات</th><th>نطاق القبول</th><th>طرق إثبات الحضور</th><th>إجراءات</th></tr></thead><tbody>
+    ${S.locs.map(l => `<tr><td data-l="اسم الموقع"><b>${esc(l.name)}</b></td><td data-l="الإحداثيات"><span dir="ltr">${l.lat.toFixed(5)}, ${l.lng.toFixed(5)}</span></td><td data-l="نطاق القبول"><span class="badge b-pri">${l.radius} متر</span></td><td data-l="طرق إثبات الحضور"><span class="badge ${locMethods(l).length > 1 && locMode(l) === 'all' ? 'b-ok' : 'b-warn'}">${esc(methodsText(l))}</span></td><td data-l=""><div class="acts">${locMethods(l).includes('qr') ? `<button class="btn sm" data-act="showQr" data-id="${l.id}">${ic('target', 16)} عرض QR</button> ` : ''}<a class="btn sm sec" style="text-decoration:none" href="${mapLink(l.lat, l.lng)}" target="_blank">${ic('map', 16)} Google Maps</a> <button class="btn sm sec" data-act="editLoc" data-id="${l.id}">${ic('edit', 16)} تعديل</button> <button class="btn sm bad" data-act="delLoc" data-id="${l.id}">${ic('trash', 16)} حذف</button></div></td></tr>`).join('') || '<tr><td colspan="5" class="muted center">لم تُضف مواقع بعد، وبدونها لن يستطيع أي موظف تسجيل البصمة</td></tr>'}
     </tbody></table></div></div>`;
   }
 
@@ -284,7 +284,7 @@
   }
 
   function locEditor(ex) {
-    const W = ex ? { id: ex.id, name: ex.name || '', lat: +ex.lat, lng: +ex.lng, radius: +ex.radius || 100 } : { id: null, name: '', lat: 32.8872, lng: 13.1913, radius: 100 };
+    const W = ex ? { id: ex.id, name: ex.name || '', lat: +ex.lat, lng: +ex.lng, radius: +ex.radius || 100, methods: locMethods(ex), mode: locMode(ex) } : { id: null, name: '', lat: 32.8872, lng: 13.1913, radius: 100, methods: ['gps'], mode: 'all' };
     let map = null, marker = null, circle = null;
     const syncMap = () => {
       if (!map || !window.L) return;
@@ -316,13 +316,29 @@
     const body = () => `
       <div class="g2"><div class="field"><label>اسم الموقع</label><input data-k="name" value="${esc(W.name)}"></div>
       <div class="field"><label>النطاق (متر)</label><input class="num" type="number" min="10" data-k="radius" data-redraw value="${W.radius}"></div></div>
+      <div class="sec-t">${ic('lock', 20)} طرق إثبات الحضور في هذا الموقع</div>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        <label class="chk"><input type="checkbox" data-k="m_gps" data-redraw ${W.methods.includes('gps') ? 'checked' : ''}> <b>GPS</b> — التواجد داخل النطاق الجغرافي (يمكن تزويره على بعض الهواتف)</label>
+        <label class="chk"><input type="checkbox" data-k="m_qr" data-redraw ${W.methods.includes('qr') ? 'checked' : ''}> <b>QR متغيّر</b> — يمسح الموظف رمزاً يتجدد كل 30 ثانية على شاشة عند الموقع (يثبت الحضور المكاني فعلاً)</label>
+        <label class="chk"><input type="checkbox" data-k="m_bio" data-redraw ${W.methods.includes('bio') ? 'checked' : ''}> <b>بصمة الجهاز</b> — بصمة الإصبع أو الوجه على هاتف الموظف عند كل تسجيل (يمنع البصمة بالنيابة)</label>
+      </div>
+      ${W.methods.length > 1 ? `<div class="field" style="margin-top:10px"><label>عند تفعيل أكثر من طريقة</label><select data-k="mode" data-redraw><option value="all" ${W.mode === 'all' ? 'selected' : ''}>كل الطرق المفعّلة مطلوبة معاً (الأقوى — موصى به)</option><option value="any" ${W.mode === 'any' ? 'selected' : ''}>أي طريقة واحدة تكفي (أضعف: يكفي نجاح أسهلها)</option></select></div>` : ''}
+      ${W.methods.includes('qr') ? `<p class="hint">بعد الحفظ اضغط «عرض QR» في قائمة المواقع وافتحه على تابلت أو شاشة عند الباب. لا يُقرأ الرمز من بعيد لأنه يتغير كل 30 ثانية.</p>${ex ? `<button type="button" class="chip" data-a="rotQr">${ic('refresh', 16)} تدوير سر الرمز (إبطال أي رمز مسرَّب)</button>` : ''}` : ''}
+      ${W.methods.length === 1 && W.methods[0] === 'gps' ? `<p class="hint" style="color:var(--warn)">GPS وحده يمكن خداعه ببرامج الموقع الوهمي. للإثبات الحقيقي أضف QR المتغيّر وبصمة الجهاز.</p>` : ''}
       <p class="hint">اضغط على الخريطة لوضع النقطة أو اسحب العلامة. الدائرة الزرقاء هي النطاق المسموح للموظف حول الموقع.</p>
       <div id="mapBox" style="height:320px;border-radius:16px;border:1px solid var(--line);background:var(--surface)"></div>
       <div class="sc"><button type="button" class="chip" data-a="myLoc">${ic('target', 16)} موقعي الحالي</button><span class="muted" dir="ltr" id="coordTxt">${W.lat ? W.lat.toFixed(5) + ', ' + W.lng.toFixed(5) : ''}</span></div>`;
     mo = openModal({
       title: ex ? 'تعديل الموقع (خريطة تفاعلية)' : 'موقع جديد (خريطة تفاعلية)', saveText: 'حفظ الموقع', body,
-      onField: (k, v) => { if (k === 'radius') W.radius = Math.max(10, +v || 100); else W[k] = v; },
+      onField: (k, v) => {
+        if (k === 'radius') W.radius = Math.max(10, +v || 100);
+        else if (/^m_(gps|qr|bio)$/.test(k)) { const m = k.slice(2); W.methods = AM_METHODS.filter(x => x === m ? v : W.methods.includes(x)); }
+        else W[k] = v;
+      },
       onAct: async a => {
+        if (a === 'rotQr' && ex) {
+          if (await mqConfirm('تدوير السر يُبطل فوراً أي رمز QR قديم أو مصوَّر، وتحتاج لإعادة فتح شاشة العرض. متابعة؟')) { await setDoc(doc(db, 'locSecrets', ex.id), { secret: newQrSecret(), rotatedAt: serverTimestamp() }); toast('تم تدوير سر الرمز', 'good'); }
+        }
         if (a === 'myLoc') {
           toast('جاري تحديد موقعك…');
           try {
@@ -338,9 +354,13 @@
         if (!(W.name || '').trim()) return bad('اكتب اسم الموقع');
         if (typeof W.lat !== 'number' || typeof W.lng !== 'number' || isNaN(W.lat) || isNaN(W.lng)) return bad('حدد نقطة على الخريطة');
         if (!(W.radius >= 10)) return bad('النطاق 10 أمتار على الأقل');
+        if (!W.methods.length) return bad('اختر طريقة واحدة على الأقل لإثبات الحضور');
         obs.disconnect();
-        if (ex) await updateDoc(doc(db, 'locations', ex.id), { name: W.name.trim(), lat: W.lat, lng: W.lng, radius: Math.round(W.radius), ...geoK(W.lat) });
-        else await addDoc(collection(db, 'locations'), { name: W.name.trim(), lat: W.lat, lng: W.lng, radius: Math.round(W.radius), active: true, ...geoK(W.lat) });
+        const pol = { methods: W.methods, mode: W.methods.length > 1 ? W.mode : 'all' };
+        let locId = ex && ex.id;
+        if (ex) await updateDoc(doc(db, 'locations', ex.id), { name: W.name.trim(), lat: W.lat, lng: W.lng, radius: Math.round(W.radius), ...pol, ...geoK(W.lat) });
+        else locId = (await addDoc(collection(db, 'locations'), { name: W.name.trim(), lat: W.lat, lng: W.lng, radius: Math.round(W.radius), active: true, ...pol, ...geoK(W.lat) })).id;
+        if (W.methods.includes('qr') && !(await getDoc(doc(db, 'locSecrets', locId))).exists()) await setDoc(doc(db, 'locSecrets', locId), { secret: newQrSecret(), rotatedAt: serverTimestamp() });
         await refresh('locs'); toast('تم حفظ الموقع', 'good');
       }
     });

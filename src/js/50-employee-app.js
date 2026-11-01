@@ -27,7 +27,7 @@ async function employeeApp(db, auth, token) {
     const go = async () => {
       const pin = normPin($('#pinIn').value); if (pin.length < 8) { $('#pinMsg').textContent = 'الرمز مكوّن من 8 خانات.'; return; }
       const b = $('#pinGo'), msg = $('#pinMsg'); b.disabled = true; msg.textContent = '';
-      try { await setDoc(doc(db, 'employees', token, 'joins', uid), { pin, ua: (navigator.userAgent || '').slice(0, 90), at: serverTimestamp() }); }
+      try { const jb = writeBatch(db); jb.set(doc(db, 'employees', token, 'joins', uid), { pin, ua: (navigator.userAgent || '').slice(0, 90), at: serverTimestamp() }); jb.update(doc(db, 'pins', token), { usedBy: uid, usedAt: serverTimestamp() }); await jb.commit(); }
       catch { msg.textContent = 'الرمز غير صحيح أو منتهي، أو الرابط غير صالح/موقوف. اطلب من الإدارة رمزًا جديدًا.'; b.disabled = false; return; }
       try { await updateDoc(ref, { ['devices.' + myDev]: uid, lastJoinAt: serverTimestamp() }); }
       catch { msg.textContent = 'تعذر إضافة الجهاز: وصلت الحد الأقصى لأجهزتك أو الرابط قديم. اطلب من الإدارة إلغاء جهاز قديم أو إعادة الضبط.'; b.disabled = false; return; }
@@ -423,38 +423,107 @@ async function employeeApp(db, auth, token) {
   }
   window.addEventListener('online', () => { flushOfflineQueue(false); });
 
+  /* يطلب من الموظف مسح رمز QR الظاهر عند الموقع ويعيد {locId, tok} */
+  async function askQr(allowedIds) {
+    setMsg('وجّه الكاميرا إلى رمز QR المعروض عند مكان العمل…');
+    const raw = await scanQrOnce();
+    const q = parseQrPayload(raw);
+    if (!q) throw new Error('qr-format');
+    if (allowedIds && !allowedIds.includes(q.locId)) throw new Error('qr-loc');
+    return q;
+  }
+  /* يسجّل مفتاح بصمة هذا الجهاز مرة واحدة إن لم يكن مسجلاً */
+  async function ensureBio() {
+    if (emp.bio && emp.bio.cid && emp.bio.pk) return emp.bio;
+    if (!waSupported()) throw new Error('wa-unsupported');
+    if (!await mqConfirm('هذا الموقع يشترط بصمة الجهاز (البصمة أو الوجه أو قفل الشاشة). سيُسجَّل الآن مفتاح أمان على هاتفك لمرة واحدة، وبعدها يُطلب منك التحقق عند كل تسجيل. متابعة؟')) throw new Error('wa-cancel');
+    const k = await waRegister(token, emp.name);
+    await updateDoc(ref, { bio: { cid: k.cid, pk: k.pk, at: serverTimestamp() } });
+    emp.bio = { cid: k.cid, pk: k.pk };
+    return emp.bio;
+  }
+  const amErr = e => {
+    const c = String((e && (e.message || e.name)) || '');
+    if (c === 'qr-format') return 'الرمز الممسوح ليس رمز حضور صالحاً.';
+    if (c === 'qr-loc') return 'رمز QR هذا يخص موقعاً آخر غير الذي تقف فيه.';
+    if (c === 'qr-cancel') return 'أُلغي مسح رمز QR.';
+    if (c === 'qr-nocam') return 'تعذر فتح الكاميرا. اسمح للمتصفح باستخدامها ثم أعد المحاولة.';
+    if (c === 'wa-unsupported') return 'هاتفك أو متصفحك لا يدعم بصمة الجهاز، أو الصفحة ليست على رابط آمن (https).';
+    if (c === 'wa-cancel' || e.name === 'NotAllowedError') return 'لم يكتمل التحقق ببصمة الجهاز.';
+    if (c === 'wa-bad-sig') return 'فشل التحقق من بصمة الجهاز.';
+    return 'تعذر إكمال التحقق. حاول مجدداً.';
+  };
+
   async function punch(type) {
-    if (!navigator.geolocation) return setMsg('متصفحك لا يدعم تحديد الموقع.', 'err');
     if (!locs.length) return setMsg('لم تحدد الإدارة أي موقع عمل بعد.', 'err');
     try {
       const pendTs = +sessionStorage.getItem(inflightKey) || 0;
       if (Date.now() - pendTs < 25000) return setMsg('توجد عملية تسجيل قيد الإرسال حالياً — انتظر ثوانٍ ولا تُعد الضغط.', 'err');
     } catch {}
     if (last && now() - last.t < MIN_GAP_MS) return setMsg('تم تسجيلك للتو، انتظر لحظات ثم أعد المحاولة.', 'err');
+    // المواقع التي تعتمد GPS، والمواقع التي يمكن إثباتها دون GPS (QR/بصمة فقط، أو وضع «أي طريقة تكفي»)
+    const gpsLocs = locs.filter(l => locMethods(l).includes('gps'));
+    const altLocs = locs.filter(l => !locMethods(l).includes('gps') || locMode(l) === 'any');
+    if (gpsLocs.length && !navigator.geolocation && !altLocs.length) return setMsg('متصفحك لا يدعم تحديد الموقع.', 'err');
     $('#bIn').disabled = $('#bOut').disabled = true;
-    setMsg('جاري تحديد موقعك… (قد يستغرق بضع ثوانٍ)');
-    let pos;
-    try { pos = await getPos(); }
-    catch (e) {
-      setMsg(e.code === 1 ? 'تم رفض إذن الموقع. فعّل الإذن من إعدادات المتصفح ثم أعد المحاولة.' : 'تعذر تحديد موقعك. فعّل GPS وتأكد من الاتصال ثم أعد المحاولة.', 'err');
+    let pos = null, gpsMsg = '';
+    if (gpsLocs.length && navigator.geolocation) {
+      setMsg('جاري تحديد موقعك… (قد يستغرق بضع ثوانٍ)');
+      try { pos = await getPos(); }
+      catch (e) { gpsMsg = e.code === 1 ? 'تم رفض إذن الموقع. فعّل الإذن من إعدادات المتصفح ثم أعد المحاولة.' : 'تعذر تحديد موقعك. فعّل GPS وتأكد من الاتصال ثم أعد المحاولة.'; }
+      if (pos && pos.coords.accuracy > MAX_ACCURACY) { gpsMsg = `دقة الموقع ضعيفة (±${Math.round(pos.coords.accuracy)}م). فعّل GPS أو انتقل لمكان مفتوح وأعد المحاولة.`; pos = null; }
+      if (pos) {
+        // فحص كشف الموقع الوهمي (Anti-GPS Spoofing) قبل السماح بالتسجيل
+        let prevGps = null;
+        try { prevGps = JSON.parse(localStorage.getItem(GPS_PREV_KEY) || 'null'); } catch {}
+        const spoof = analyzeGpsSpoof(pos.coords, prevGps, Date.now());
+        if (spoof.blocked) { gpsMsg = `رفض النظام البصمة: تم رصد مؤشرات موقع وهمي (${spoof.reasons.join('، ')}). أوقف أي تطبيق لتغيير الموقع وتحرك خطوات في مكان مفتوح ثم أعد المحاولة.`; pos = null; }
+      }
+    }
+    if (!pos && gpsLocs.length && !altLocs.length) { setMsg(gpsMsg || 'تعذر تحديد موقعك.', 'err'); return loadHist(); }
+    // اختيار موقع الهدف
+    let best = null, gpsPassed = false, outMsg = '';
+    if (pos) {
+      const { latitude: lat, longitude: lng, accuracy } = pos.coords;
+      for (const l of gpsLocs) { const d = dist(lat, lng, l.lat, l.lng); if (!best || d < best.d) best = { l, d }; }
+      if (best.d <= best.l.radius) { gpsPassed = true; try { localStorage.setItem(GPS_PREV_KEY, JSON.stringify({ lat, lng, acc: accuracy, ms: Date.now() })); } catch {} }
+      else { outMsg = `أنت خارج نطاق العمل. تبعد حوالي ${Math.round(best.d)} متر عن «${best.l.name}» (المسموح ${best.l.radius}م). لم يتم التسجيل.`; best = null; }
+    }
+    let qr = null, wa = '';
+    try {
+      if (!best) {
+        // خارج النطاق أو بلا GPS: يُقبل فقط موقع يسمح بإثبات الحضور بغير GPS
+        if (!altLocs.length) { setMsg(outMsg || gpsMsg || 'تعذر التسجيل.', 'err'); return loadHist(); }
+        const qrAlt = altLocs.filter(l => locMethods(l).includes('qr'));
+        if (qrAlt.length) {
+          qr = await askQr(qrAlt.map(l => l.id));
+          best = { l: qrAlt.find(l => l.id === qr.locId), d: 0 };
+        } else {
+          if (altLocs.length > 1) { setMsg(outMsg || gpsMsg || 'تعذر تحديد موقع العمل.', 'err'); return loadHist(); }
+          best = { l: altLocs[0], d: 0 };
+        }
+      }
+      const plan = stepsFor(best.l, gpsPassed);
+      if (!plan.ok) { setMsg(outMsg || gpsMsg || 'هذا الموقع يشترط تأكيد موقعك بالـ GPS.', 'err'); return loadHist(); }
+      if (plan.need.includes('qr') && !qr) qr = await askQr([best.l.id]);
+      if (plan.need.includes('bio')) {
+        if (!navigator.onLine) throw new Error('offline-bio');
+        const bio = await ensureBio();
+        setMsg('تحقق ببصمتك أو وجهك على الهاتف…');
+        wa = await waAssert(bio, `${token}|${type}|${best.l.id}|${Math.floor(Date.now() / 1000)}`);
+      }
+    } catch (e) {
+      setMsg(e && e.message === 'offline-bio' ? 'التحقق ببصمة الجهاز يحتاج اتصالاً بالإنترنت.' : amErr(e), 'err');
       return loadHist();
     }
-    const { latitude: lat, longitude: lng, accuracy } = pos.coords;
-    if (accuracy > MAX_ACCURACY) { setMsg(`دقة الموقع ضعيفة (±${Math.round(accuracy)}م). فعّل GPS أو انتقل لمكان مفتوح وأعد المحاولة.`, 'err'); return loadHist(); }
-    // فحص كشف الموقع الوهمي (Anti-GPS Spoofing) قبل السماح بالتسجيل
-    let prevGps = null;
-    try { prevGps = JSON.parse(localStorage.getItem(GPS_PREV_KEY) || 'null'); } catch {}
-    const spoof = analyzeGpsSpoof(pos.coords, prevGps, Date.now());
-    if (spoof.blocked) {
-      setMsg(`رفض النظام البصمة: تم رصد مؤشرات موقع وهمي (${spoof.reasons.join('، ')}). أوقف أي تطبيق لتغيير الموقع وتحرك خطوات في مكان مفتوح ثم أعد المحاولة.`, 'err');
-      return loadHist();
-    }
-    let best = null;
-    for (const l of locs) { const d = dist(lat, lng, l.lat, l.lng); if (!best || d < best.d) best = { l, d }; }
-    if (best.d > best.l.radius) { setMsg(`أنت خارج نطاق العمل. تبعد حوالي ${Math.round(best.d)} متر عن «${best.l.name}» (المسموح ${best.l.radius}م). لم يتم التسجيل.`, 'err'); return loadHist(); }
-    try { localStorage.setItem(GPS_PREV_KEY, JSON.stringify({ lat, lng, acc: accuracy, ms: Date.now() })); } catch {}
-    // إذا كان الهاتف غير متصل بالإنترنت لحظة البصمة، نحفظ البصمة الموثّقة بالـ GPS في طابور الأوفلاين الموقّع
+    const usedGps = !!(pos && gpsPassed);
+    const used = [usedGps ? 'gps' : '', qr ? 'qr' : '', wa ? 'bio' : ''].filter(Boolean).join('+') || 'gps';
+    const rec = usedGps
+      ? { lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: Math.round(pos.coords.accuracy), distance: Math.round(best.d) }
+      : { lat: 0, lng: 0, accuracy: 0, distance: 0 };
+    // الأوفلاين مدعوم لطريقة GPS وحدها؛ QR والبصمة تتطلبان اتصالاً (رمز QR يُتحقق منه بوقت الخادم)
     if (!navigator.onLine) {
+      if (used !== 'gps') { setMsg('هذا الموقع يشترط QR أو بصمة الجهاز، وهما يحتاجان اتصالاً بالإنترنت.', 'err'); return loadHist(); }
       await queueOfflinePunch(type, pos.coords, best);
       return;
     }
@@ -464,13 +533,13 @@ async function employeeApp(db, auth, token) {
       const devToUse = emp.deviceId || myDev;
       recRef = doc(collection(db, 'employees', token, 'records'));
       const batch = writeBatch(db);
-      batch.set(recRef, { type, time: serverTimestamp(), lat, lng, accuracy: Math.round(accuracy), distance: Math.round(best.d), locationId: best.l.id, locationName: best.l.name, empName: emp.name, deviceId: devToUse });
+      batch.set(recRef, { type, time: serverTimestamp(), ...rec, locationId: best.l.id, locationName: best.l.name, empName: emp.name, deviceId: devToUse, ...(qr ? { qr: qr.tok } : {}), ...(wa ? { wa } : {}), m: used });
       batch.update(ref, { state: type, lastAt: serverTimestamp(), lastRecId: recRef.id });
       const done = batch.commit();
       const first = await Promise.race([done.then(() => 'ok'), new Promise(r => setTimeout(() => r('slow'), 15000))]);
       if (first === 'slow') {
         setMsg('الشبكة بطيئة: التسجيل قيد الإرسال. لا تُعد الضغط — سيظهر في «آخر تسجيلاتك» فور وصوله.');
-        done.then(() => { try { sessionStorage.removeItem(inflightKey); } catch {} setMsg('وصل التسجيل إلى الخادم', 'good'); histRid = recRef.id; emp.lastRecId = recRef.id; loadHist({ force: true }); }).catch(() => { try { sessionStorage.removeItem(inflightKey); } catch {} queueOfflinePunch(type, pos.coords, best); });
+        done.then(() => { try { sessionStorage.removeItem(inflightKey); } catch {} setMsg('وصل التسجيل إلى الخادم', 'good'); histRid = recRef.id; emp.lastRecId = recRef.id; loadHist({ force: true }); }).catch(() => { try { sessionStorage.removeItem(inflightKey); } catch {} if (used === 'gps') queueOfflinePunch(type, pos.coords, best); else setMsg('تعذر حفظ التسجيل. أعد المحاولة بعد عودة الاتصال.', 'err'); });
         return;
       }
       try { sessionStorage.removeItem(inflightKey); } catch {}
@@ -480,11 +549,11 @@ async function employeeApp(db, auth, token) {
       else clearEmpCheckoutReminder();
     } catch (e) {
       try { sessionStorage.removeItem(inflightKey); } catch {}
-      if (!navigator.onLine || (e && e.code === 'unavailable')) {
+      if ((!navigator.onLine || (e && e.code === 'unavailable')) && used === 'gps') {
         await queueOfflinePunch(type, pos.coords, best);
         return;
       }
-      setMsg(e.code === 'permission-denied' ? 'رفض الخادم التسجيل: تأكد أنك داخل نطاق العمل وأن آخر عملية لم تُسجَّل للتو، ثم أعد المحاولة.' : 'تعذر حفظ التسجيل. تحقق من الاتصال وحاول مجدداً.', 'err');
+      setMsg(e.code === 'permission-denied' ? 'رفض الخادم التسجيل: تأكد أنك داخل نطاق العمل (أو أن رمز QR ما زال صالحاً) وأن آخر عملية لم تُسجَّل للتو، ثم أعد المحاولة.' : 'تعذر حفظ التسجيل. تحقق من الاتصال وحاول مجدداً.', 'err');
     }
     loadHist(punched ? { add: punched } : {});
   }
@@ -764,72 +833,6 @@ async function taskWorkerApp(db, token, emp, orgName, cfgSt = null) {
   };
   load();
 }
-
-/* =====================================================================
-   نافذة تحميل ملفات النظام المحدّثة مباشرة
-   ===================================================================== */
-window.__downloadFile = async (url, filename) => {
-  try {
-    const r = await fetch(url, { cache: 'no-store' });
-    const txt = await r.text();
-    const blob = new Blob([txt], { type: 'text/plain;charset=utf-8' });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 500);
-    toast(`تم بدء تحميل ${filename}`, 'good');
-  } catch {
-    toast(`تعذر تحميل ${filename}`, 'err');
-  }
-};
-window.__openDownloadBox = () => {
-  const ov = document.createElement('div');
-  ov.className = 'ov';
-  ov.innerHTML = `<div class="modal" style="max-width:520px" role="dialog">
-    <div class="mh"><h3>${ic('download', 22)} تحميل ملفات النظام المحدّثة</h3><button class="ib dark" id="__dlClose">${ic('x', 18)}</button></div>
-    <div class="mb">
-      <p class="hint" style="margin-top:0">جميع الملفات أدناه تتضمن كافة الإصلاحات البرمجية والتصميم الجديد جاهزة للرفع مباشرة على استضافتك:</p>
-      <div style="display:flex;flex-direction:column;gap:10px;margin-top:12px">
-        <div class="sch" style="margin:0;flex-direction:row;align-items:center;border-color:var(--ok);background:var(--ok-bg)">
-          <div><b>🚀 التحديث السحابي المركزي (OTA) · الإصدار ${esc(MEQAT_CORE_VERSION)}</b><div class="muted" style="font-size:12.5px">جلب أحدث إصدار رسمي ودمج إعدادات وترخيص شركتك فيه بضغطة واحدة</div></div>
-          <button class="btn sm ok" onclick="window.__checkAndApplyOta()">${ic('refresh', 16)} فحص وتحديث</button>
-        </div>
-        <div class="sch" style="margin:0;flex-direction:row;align-items:center">
-          <div><b>index.html</b><div class="muted" style="font-size:12.5px">الملف الرئيسي الكامل للنظام (الإدارة + الموظف + المحرك)</div></div>
-          <button class="btn sm" onclick="window.__downloadFile('index.html','index.html')">${ic('download', 16)} تحميل</button>
-        </div>
-        <div class="sch" style="margin:0;flex-direction:row;align-items:center">
-          <div><b>sw.js</b><div class="muted" style="font-size:12.5px">خدمة العمل دون اتصال (PWA Service Worker)</div></div>
-          <button class="btn sm" onclick="window.__downloadFile('sw.js','sw.js')">${ic('download', 16)} تحميل</button>
-        </div>
-        <div class="sch" style="margin:0;flex-direction:row;align-items:center">
-          <div><b>manifest.json</b><div class="muted" style="font-size:12.5px">ملف تعريف تثبيت التطبيق للهواتف وسطح المكتب</div></div>
-          <button class="btn sm sec" onclick="window.__downloadFile('manifest.json','manifest.json')">${ic('download', 16)} تحميل</button>
-        </div>
-        <div class="sch" style="margin:0;flex-direction:row;align-items:center">
-          <div><b>icon.svg</b><div class="muted" style="font-size:12.5px">أيقونة شعار «مِيقَاتْ» الرسمية</div></div>
-          <button class="btn sm sec" onclick="window.__downloadFile('icon.svg','icon.svg')">${ic('download', 16)} تحميل</button>
-        </div>
-      </div>
-    </div>
-    <div class="mf" style="justify-content:space-between">
-      <button class="btn ok" id="__dlAll">${ic('download', 18)} تحميل كل الملفات دفعة واحدة</button>
-      <button class="btn sec" id="__dlClose2">إغلاق</button>
-    </div>
-  </div>`;
-  document.body.appendChild(ov);
-  const close = () => ov.remove();
-  ov.querySelector('#__dlClose').onclick = close;
-  ov.querySelector('#__dlClose2').onclick = close;
-  ov.querySelector('#__dlAll').onclick = async () => {
-    await window.__downloadFile('index.html', 'index.html');
-    setTimeout(() => window.__downloadFile('sw.js', 'sw.js'), 350);
-    setTimeout(() => window.__downloadFile('manifest.json', 'manifest.json'), 700);
-    setTimeout(() => window.__downloadFile('icon.svg', 'icon.svg'), 1050);
-  };
-};
 
 /* =====================================================================
    تسجيل دخول الإدارة

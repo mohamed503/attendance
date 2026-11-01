@@ -1111,6 +1111,21 @@ service cloud.firestore {
       allow read: if request.auth != null;
       allow write: if isSuperAdmin() || isHrAdmin();
     }
+    // أسرار رمز QR المتغيّر: لا يقرؤها الموظفون إطلاقاً (تستعملها قاعدة إنشاء البصمة وشاشة العرض عند الإدارة فقط).
+    match /locSecrets/{id} {
+      allow read, write: if isSuperAdmin() || isHrAdmin();
+    }
+    // ---- ربط أجهزة البصمة: تعريف الأجهزة (بصمة رمز الوصول لا الرمز نفسه) وجدول (جهاز + معرّف) ⟵ موظف والأحداث المعلّقة ----
+    // Worker يكتب عبر حساب خدمة (يتجاوز القواعد)؛ المتصفح للمدير العام والموارد البشرية فقط، ولا وصول لأي موظف.
+    match /biometricDevices/{id} {
+      allow read, write: if isSuperAdmin() || isHrAdmin();
+    }
+    match /biometricMap/{id} {
+      allow read, write: if isSuperAdmin() || isHrAdmin();
+    }
+    match /biometricPending/{id} {
+      allow read, write: if isSuperAdmin() || isHrAdmin();
+    }
     match /schedules/{id} {
       allow read: if request.auth != null;
       allow write: if isSuperAdmin() || isHrAdmin();
@@ -1157,13 +1172,13 @@ service cloud.firestore {
       allow update: if isSuperAdmin()
         || (isHrAdmin() && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
           'name','phone','dept','jobTitle','contractEnd','docExpiry','bioId','assets','scheduleId','rotOffset',
-          'startDate','leaveQuota','empType','locs','active','deviceId','uid','devices','rebindProof','maxDevices'
+          'startDate','leaveQuota','empType','locs','active','deviceId','uid','devices','rebindProof','maxDevices','bio'
         ]) && validMaxDev())
         || (isPayrollAdmin() && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
           'payMode','payAmount','allowance','bonus','penalty','adjMonth','loanTotal','loanInst','lyStatutory','familyStatus',
           'nationalId','bankName','iban','taskPrices','finIsolated'
         ]))
-        || claimDevice() || migrateLegacy() || rebindLegacy() || rebindMap() || joinDevice() || punchState();
+        || claimDevice() || migrateLegacy() || rebindLegacy() || rebindMap() || joinDevice() || punchState() || bioReg();
 
       function validHrCreate() {
         let d = request.resource.data;
@@ -1226,6 +1241,17 @@ service cloud.firestore {
           && n.devices.size() <= resource.data.get('maxDevices', 2) && request.auth.uid in n.devices.values()
           && exists(/databases/$(database)/documents/employees/$(empId)/joins/$(request.auth.uid));
       }
+      // تسجيل مفتاح بصمة الجهاز (WebAuthn) مرة واحدة من صاحب الجهاز؛ إعادة الضبط من الإدارة فقط.
+      function bioReg() {
+        let a = request.resource.data;
+        return ownerOnly(empId) && resource.data.active == true
+          && resource.data.get('bio', null) == null
+          && a.diff(resource.data).affectedKeys().hasOnly(['bio'])
+          && a.bio.keys().hasOnly(['cid', 'pk', 'at'])
+          && a.bio.cid is string && a.bio.cid.size() > 0 && a.bio.cid.size() <= 512
+          && a.bio.pk is string && a.bio.pk.size() > 0 && a.bio.pk.size() <= 512
+          && a.bio.at == request.time;
+      }
       function punchState() {
         let a = request.resource.data;
         return ownerOnly(empId) && resource.data.active == true
@@ -1260,6 +1286,35 @@ service cloud.firestore {
           || managerCanReadEmployee(empId) || ownerOnly(empId);
         allow create: if isSuperAdmin() || isHrAdmin() || validRecord();
         allow update, delete: if isSuperAdmin() || isHrAdmin();
+        // ---- سياسة طرق الحضور لكل موقع: methods ⊆ [gps, qr, bio] و mode = all | any (الافتراضي gps و all) ----
+        function geoOk(d, l) {
+          let dx = (d.lng - l.lng) * l.kx;
+          let dy = (d.lat - l.lat) * l.ky;
+          return d.lat >= -90 && d.lat <= 90 && d.lng >= -180 && d.lng <= 180
+            && d.accuracy >= 0 && d.accuracy <= 250
+            && math.sqrt(dx * dx + dy * dy) <= l.radius + 10;
+        }
+        // رمز QR = sha256(سر الموقع + ':' + رقم نافذة 30 ثانية)؛ السر في locSecrets لا يقرؤه إلا المشرفون وتقرؤه القاعدة وحدها.
+        function qrOk(d) {
+          let s = get(/databases/$(database)/documents/locSecrets/$(d.locationId)).data.secret;
+          let w = math.floor(request.time.toMillis() / 30000);
+          return d.get('qr', '') is string
+            && (d.qr == hashing.sha256((s + ':' + string(w)).toUtf8()).toHexString()
+              || d.qr == hashing.sha256((s + ':' + string(w - 1)).toUtf8()).toHexString()
+              || d.qr == hashing.sha256((s + ':' + string(w + 1)).toUtf8()).toHexString());
+        }
+        // بصمة الجهاز (WebAuthn): يشترط وجود إثبات التوقيع وأن الموظف سجّل مفتاحاً. التحقق من التوقيع نفسه يجري في التطبيق ويُحفظ الإثبات للتدقيق.
+        function bioOk(d, e) {
+          return d.get('wa', '') is string && d.get('wa', '').size() >= 40 && d.get('wa', '').size() <= 1500
+            && e.get('bio', null) != null;
+        }
+        function methodsOk(d, e, l) {
+          let ms = l.get('methods', ['gps']);
+          return ms is list && ms.size() > 0
+            && (l.get('mode', 'all') == 'any'
+              ? (('gps' in ms && geoOk(d, l)) || ('qr' in ms && qrOk(d)) || ('bio' in ms && bioOk(d, e)))
+              : ((!('gps' in ms) || geoOk(d, l)) && (!('qr' in ms) || qrOk(d)) && (!('bio' in ms) || bioOk(d, e))));
+        }
         function validRecord() {
           let d = request.resource.data;
           let e = get(/databases/$(database)/documents/employees/$(empId)).data;
@@ -1269,20 +1324,18 @@ service cloud.firestore {
           let last = e.get('lastAt', null);
           // 50400000 = 14 ساعة = FORGOT_MS، وهو الحد الأدنى لمهلة نسيان الانصراف؛ مهلة الجدول (forgotMsOf) لا تقل عنه أبدًا،
           // فالقاعدة لا تمنع ما يسمح به التطبيق. يجب أن يبقى الرقمان متطابقين (يحرسه الاختبار tests/forgot-limit.test.mjs).
-          let dx = (d.lng - l.lng) * l.kx;
-          let dy = (d.lat - l.lat) * l.ky;
           return request.auth != null
-            && d.keys().hasOnly(['type','time','lat','lng','accuracy','distance','locationId','locationName','empName','deviceId'])
+            && d.keys().hasOnly(['type','time','lat','lng','accuracy','distance','locationId','locationName','empName','deviceId','qr','wa','m'])
             && d.keys().hasAll(['type','time','lat','lng','accuracy','distance','locationId','locationName','empName','deviceId'])
             && d.time == request.time && d.type in ['in', 'out']
             && d.lat is number && d.lng is number
-            && d.lat >= -90 && d.lat <= 90 && d.lng >= -180 && d.lng <= 180
             && d.accuracy is number && d.accuracy >= 0 && d.accuracy <= 250
             && d.distance is number && d.locationId is string
+            && d.get('m', '') is string && d.get('m', '').size() <= 20
             && isOwnerData(e) && e.active == true
             && d.empName == e.name && d.deviceId == e.get('deviceId', null)
             && (!('locs' in e) || e.locs.size() == 0 || d.locationId in e.locs)
-            && d.locationName == l.name && l.get('active', true) != false && math.sqrt(dx * dx + dy * dy) <= l.radius + 10
+            && d.locationName == l.name && l.get('active', true) != false && methodsOk(d, e, l)
             && a.get('lastRecId', null) == recId && a.get('state', null) == d.type
             && (last == null || request.time.toMillis() - last.toMillis() >= 20000)
             && ((d.type == 'in' && (st == null || st == 'out' || (last != null && request.time.toMillis() - last.toMillis() >= 50400000)))

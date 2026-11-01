@@ -1,7 +1,7 @@
 // تشغيل: npm run test:rules
 import { test, before, after, beforeEach } from 'node:test';
 import { initializeTestEnvironment, assertFails, assertSucceeds } from '@firebase/rules-unit-testing';
-import { doc, setDoc, updateDoc, getDoc, deleteDoc, serverTimestamp, Timestamp } from 'firebase/firestore';
+import { doc, setDoc, updateDoc, getDoc, deleteDoc, serverTimestamp, Timestamp, writeBatch } from 'firebase/firestore';
 import { loadRules } from './rules-helper.mjs';
 
 let env;
@@ -65,3 +65,22 @@ test('HR يلغي جهازًا ويحذف وثيقة انضمامه', async () =
   await assertSucceeds(deleteDoc(doc(fs('hr'), 'employees', 'e1', 'joins', 'u2')));
 });
 test('جهاز مُلغى بعد حذف انضمامه لا يعود بلا رمز', async () => { await seed({ employee: { devices: { d1: 'u1' } } }); await assertFails(addDev(anon('u2'), 'd2', 'u2')); });
+
+// ---- الرمز لمرة واحدة: يُختم باسم أول جهاز ربط بنجاح ----
+const joinAndUse = async (db, uid, pin = PIN) => { const b = writeBatch(db); b.set(doc(db, 'employees', 'e1', 'joins', uid), { pin, ua: 'test', at: serverTimestamp() }); b.update(doc(db, 'pins', 'e1'), { usedBy: uid, usedAt: serverTimestamp() }); return b.commit(); };
+test('الربط مع ختم الرمز في دفعة واحدة ينجح', async () => { await seed(); await assertSucceeds(joinAndUse(anon('u2'), 'u2')); });
+test('بعد استهلاك الرمز لا يربط به جهاز آخر', async () => { await seed(); await assertSucceeds(joinAndUse(anon('u2'), 'u2')); await assertFails(join(anon('u3'), 'u3')); await assertFails(joinAndUse(anon('u3'), 'u3')); });
+test('نفس الجهاز يعيد المحاولة بعد استهلاكه للرمز', async () => { await seed(); await assertSucceeds(joinAndUse(anon('u2'), 'u2')); await assertSucceeds(joinAndUse(anon('u2'), 'u2')); });
+test('لا يختم الرمز من لا مستند ربط له في الدفعة', async () => { await seed(); await assertFails(updateDoc(doc(anon('u9'), 'pins', 'e1'), { usedBy: 'u9', usedAt: serverTimestamp() })); });
+test('لا يختم الرمز باسم جهاز آخر ولا يعدّل الرمز نفسه', async () => {
+  await seed();
+  const db = anon('u2'), b = writeBatch(db);
+  b.set(doc(db, 'employees', 'e1', 'joins', 'u2'), { pin: PIN, ua: 'test', at: serverTimestamp() }); b.update(doc(db, 'pins', 'e1'), { usedBy: 'other', usedAt: serverTimestamp() });
+  await assertFails(b.commit());
+  await assertFails(updateDoc(doc(db, 'pins', 'e1'), { pin: 'ZZZZ9999' }));
+});
+test('المدير يعيد إصدار رمز جديد بعد الاستهلاك فيعمل لجهاز جديد', async () => {
+  await seed(); await assertSucceeds(joinAndUse(anon('u2'), 'u2'));
+  await assertSucceeds(setDoc(doc(fs('hr'), 'pins', 'e1'), { pin: 'NEWP2345', exp: hours(2), createdAt: serverTimestamp() }));
+  await assertSucceeds(joinAndUse(anon('u3'), 'u3', 'NEWP2345'));
+});

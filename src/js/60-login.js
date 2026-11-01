@@ -9,7 +9,6 @@ function loginPage(auth) {
       <div class="field"><label>البريد الإلكتروني</label><input id="em" type="email" dir="ltr" autocomplete="username" placeholder="admin@example.com"></div>
       <div class="field" style="margin-top:14px"><label>كلمة المرور</label><input id="pw" type="password" dir="ltr" autocomplete="current-password" placeholder="••••••••"></div>
       <button class="btn" id="go" style="width:100%;margin-top:20px;padding:13px">${ic('login', 22)} دخول لوحة التحكم</button>
-      <button class="btn sec" onclick="window.__openDownloadBox()" style="width:100%;margin-top:10px;padding:11px">${ic('download', 20)} تحميل ملفات النظام المحدّثة</button>
       ${LICENSE && LICENSE.status === 'demo' && LICENSE.demoCreds ? `<button class="btn ok" id="demoGo" style="width:100%;margin-top:10px;padding:11px">الدخول إلى نسخة العرض بضغطة واحدة</button>` : ''}
     </div>
   </div>`;

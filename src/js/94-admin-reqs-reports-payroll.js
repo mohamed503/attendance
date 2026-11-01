@@ -14,14 +14,15 @@
       if (r.kind === 'task') return `<b>مهمة</b> ${esc(r.taskName || '')} × <b>${+(r.qtyApproved ?? r.qty) || 0}</b> · ${fmtDate(dayStart(r.from))}${r.status === 'approved' ? ` <span class="badge b-ok">${+r.amount || 0}</span>` : ''}`;
       if (r.type === 'offline_gps') {
         const meta = parseOfflineNote(r.note);
-        return `<span class="badge b-ok">📍 بصمة أوفلاين موثّقة بالـ GPS</span> يوم ${fmtDate(dayStart(r.from))}${r.fixIn ? ` · حضور <b>${fmtHM(esc(r.fixIn))}</b>` : ''}${r.fixOut ? ` · انصراف <b>${fmtHM(esc(r.fixOut))}</b>` : ''}${r.typeName ? ` · <b>${esc(r.typeName)}</b>` : ''}${meta ? ` <span class="badge b-pri">${meta.dist}م (±${meta.acc}م)</span> <a class="btn sm sec" style="text-decoration:none;padding:2px 8px;font-size:11.5px" href="${mapLink(meta.lat, meta.lng)}" target="_blank">${ic('map', 13)} خريطة</a>` : ''}`;
+        const weak = meta && meta.acc > 100, pendOff = r.status === 'pending';
+        return `<span class="badge ${pendOff ? 'b-warn' : 'b-pri'}" title="الإحداثيات والوقت مصدرهما جهاز الموظف ولا يمكن التحقق منهما من الخادم">📍 بصمة أوفلاين${pendOff ? ' — غير موثّقة، راجعها قبل الاعتماد' : ''}</span> يوم ${fmtDate(dayStart(r.from))}${r.fixIn ? ` · حضور <b>${fmtHM(esc(r.fixIn))}</b>` : ''}${r.fixOut ? ` · انصراف <b>${fmtHM(esc(r.fixOut))}</b>` : ''}${r.typeName ? ` · <b>${esc(r.typeName)}</b>` : ''}${meta ? ` <span class="badge ${weak ? 'b-warn' : 'b-pri'}" title="${weak ? 'دقة GPS ضعيفة (أكثر من 100م)' : 'المسافة عن الموقع (دقة GPS)'}">${weak ? '⚠️ ' : ''}${meta.dist}م (±${meta.acc}م)</span> <a class="btn sm sec" style="text-decoration:none;padding:2px 8px;font-size:11.5px" href="${mapLink(meta.lat, meta.lng)}" target="_blank">${ic('map', 13)} خريطة</a>` : ''}`;
       }
       return `<b>تصحيح</b> يوم ${fmtDate(dayStart(r.from))}${r.fixIn ? ` · حضور <b>${fmtHM(esc(r.fixIn))}</b>` : ''}${r.fixOut ? ` · انصراف <b>${fmtHM(esc(r.fixOut))}</b>` : ''}`;
     };
     const fmtReqNote = r => {
       if (r.type === 'offline_gps') {
         const meta = parseOfflineNote(r.note);
-        return meta ? (meta.extraNote ? esc(meta.extraNote) : `<small class="muted" dir="ltr">بصمة موقّعة: ${esc(meta.sig || '')}</small>`) : esc(r.note || '—');
+        return meta ? (meta.extraNote ? esc(meta.extraNote) : `<small class="muted">مصدرها جهاز الموظف دون تحقق من الخادم</small>`) : esc(r.note || '—');
       }
       return esc(r.note || '—');
     };
@@ -562,8 +563,7 @@
     el.innerHTML = `<div class="card">
       ${ch('filter', 'فترة التقرير والتصدير', `<div class="acts">
         <button class="btn sm sec" data-act="xlsx">${ic('download', 18)} تصدير Excel</button>
-        <button class="btn sm sec" data-act="impBio">${ic('plus', 18)} استيراد بصمات جهاز (ZKTeco/CSV)</button>
-        <input type="file" id="bioFileInp" accept=".dat,.txt,.csv,.tsv" style="display:none">
+        <button class="btn sm sec" data-act="impBio">${ic('plus', 18)} استيراد من جهاز البصمة</button>
         <button class="btn sm sec" data-act="csv">${ic('download', 18)} تصدير CSV</button>
         <button class="btn sm sec" data-act="print">${ic('print', 20)} طباعة كشف A4</button>
       </div>`)}
@@ -602,7 +602,7 @@
       return `<div class="card">${ch('pin', `سجل عمليات البصمة التفصيلي (${raw.length})`)}${anom.size ? `<div class="warnbox" style="margin-bottom:10px"><b>تنبيه رقابي (${anom.size}):</b> رصد محرك فحص الإحداثيات بصمات تحمل مؤشرات غير طبيعية (تطابق عشري مطلق أو سرعة انتقال غير منطقية)؛ مرّر المؤشر على شارة التحذير بجانب البصمة للتفاصيل.</div>` : ''}<div class="tw"><table><thead><tr><th>الموظف</th><th>العملية</th><th>التاريخ</th><th>الوقت</th><th>الموقع</th><th>البعد</th><th>الخريطة</th></tr></thead><tbody>
       ${raw.map(r => {
         const issues = anom.get(r.empId + '/' + r.id);
-        const flagHtml = issues ? ` <span class="badge b-warn" title="${esc(issues.join(' · '))}">⚠️ اشتباه GPS</span>` : (r.deviceId === 'offline-gps-verified' ? ' <span class="badge b-pri" title="بصمة أوفلاين موثّقة بالـ GPS">📍 أوفلاين</span>' : '');
+        const flagHtml = issues ? ` <span class="badge b-warn" title="${esc(issues.join(' · '))}">⚠️ اشتباه GPS</span>` : (r.deviceId === 'offline-gps-verified' ? ' <span class="badge b-pri" title="بصمة أوفلاين اعتُمدت يدوياً من الإدارة">📍 أوفلاين</span>' : '');
         return `<tr><td><b>${esc(r.empName)}</b>${flagHtml}</td><td><span class="badge ${r.type === 'in' ? 'b-ok' : 'b-bad'}">${r.type === 'in' ? 'حضور' : 'انصراف'}</span></td><td>${fmtDate(r.t)}</td><td>${fmtTime(r.t, true)}</td><td>${esc(r.locationName)}</td><td>${r.distance} م</td><td><a class="btn sm sec" style="text-decoration:none" href="${mapLink(r.lat, r.lng)}" target="_blank">${ic('map', 15)} عرض</a></td></tr>`;
       }).join('') || '<tr><td colspan="7" class="muted center">لا توجد بيانات في هذه الفترة</td></tr>'}
       </tbody></table></div></div>`;

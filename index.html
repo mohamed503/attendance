@@ -1849,6 +1849,20 @@ service cloud.firestore {
         && n.diff(resource.data).affectedKeys().hasOnly(['status', 'paidBy', 'paidAt', 'payNote'])
         && n.paidBy.uid == request.auth.uid && n.paidAt == request.time;
     }
+    // صفّ مسيّر الرواتب: قائمة حقول مغلقة + أنواع رقمية وعدم سالبية للمبالغ التي يعتمد عليها دفتر السلف والإجماليات.
+    function validRunRow(empId) {
+      let d = request.resource.data;
+      return d.keys().hasOnly([
+        'empId','name','dept','jobTitle','nationalId','bankName','iban','pm','amt','paidH','otEq','base','otPay','allowBonus',
+        'dedLate','dedEarly','dedAbs','dedForgot','dedLoan','dedPen','statDed','statDetail','net','absent','unpaidDays','payDays',
+        'lateMin','earlyMin','forgotDays','taskQty','inp'
+      ]) && d.empId == empId && d.net is number && d.net >= 0
+        && d.get('dedLoan', 0) is number && d.get('dedLoan', 0) >= 0
+        && d.get('base', 0) is number && d.get('otPay', 0) is number && d.get('allowBonus', 0) is number
+        && d.get('dedLate', 0) is number && d.get('dedEarly', 0) is number && d.get('dedAbs', 0) is number
+        && d.get('dedForgot', 0) is number && d.get('dedPen', 0) is number && d.get('statDed', 0) is number
+        && d.get('name', '') is string && d.get('pm', '') is string;
+    }
     function runStatus(rid) {
       return get(/databases/$(database)/documents/payrollRuns/$(rid)).data.status;
     }
@@ -1915,6 +1929,12 @@ service cloud.firestore {
     match /pins/{id} {
       allow read, delete: if isSuperAdmin() || isHrAdmin();
       allow create, update: if (isSuperAdmin() || isHrAdmin()) && validPin();
+      // استهلاك الرمز: الجهاز الذي ربط بنجاح يختم الرمز باسمه (دفعة واحدة مع مستند joins) فلا يصلح لجهاز آخر.
+      allow update: if request.auth != null
+        && resource.data.get('usedBy', request.auth.uid) == request.auth.uid
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['usedBy', 'usedAt'])
+        && request.resource.data.usedBy == request.auth.uid && request.resource.data.usedAt == request.time
+        && existsAfter(/databases/$(database)/documents/employees/$(id)/joins/$(request.auth.uid));
     }
     match /payrollRuns/{rid} {
       allow read: if isSuperAdmin() || isPayrollAdmin();
@@ -1925,13 +1945,28 @@ service cloud.firestore {
       match /rows/{empId} {
         allow read: if isSuperAdmin() || isPayrollAdmin();
         allow create, update: if (isSuperAdmin() || isPayrollAdmin()) && runStatus(rid) == 'draft'
-          && request.resource.data.empId == empId && request.resource.data.net is number;
+          && validRunRow(empId);
         allow delete: if (isSuperAdmin() || isPayrollAdmin()) && runStatus(rid) == 'draft';
       }
     }
     match /locations/{id} {
       allow read: if request.auth != null;
       allow write: if isSuperAdmin() || isHrAdmin();
+    }
+    // أسرار رمز QR المتغيّر: لا يقرؤها الموظفون إطلاقاً (تستعملها قاعدة إنشاء البصمة وشاشة العرض عند الإدارة فقط).
+    match /locSecrets/{id} {
+      allow read, write: if isSuperAdmin() || isHrAdmin();
+    }
+    // ---- ربط أجهزة البصمة: تعريف الأجهزة (بصمة رمز الوصول لا الرمز نفسه) وجدول (جهاز + معرّف) ⟵ موظف والأحداث المعلّقة ----
+    // Worker يكتب عبر حساب خدمة (يتجاوز القواعد)؛ المتصفح للمدير العام والموارد البشرية فقط، ولا وصول لأي موظف.
+    match /biometricDevices/{id} {
+      allow read, write: if isSuperAdmin() || isHrAdmin();
+    }
+    match /biometricMap/{id} {
+      allow read, write: if isSuperAdmin() || isHrAdmin();
+    }
+    match /biometricPending/{id} {
+      allow read, write: if isSuperAdmin() || isHrAdmin();
     }
     match /schedules/{id} {
       allow read: if request.auth != null;
@@ -1979,13 +2014,13 @@ service cloud.firestore {
       allow update: if isSuperAdmin()
         || (isHrAdmin() && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
           'name','phone','dept','jobTitle','contractEnd','docExpiry','bioId','assets','scheduleId','rotOffset',
-          'startDate','leaveQuota','empType','locs','active','deviceId','uid','devices','rebindProof','maxDevices'
+          'startDate','leaveQuota','empType','locs','active','deviceId','uid','devices','rebindProof','maxDevices','bio'
         ]) && validMaxDev())
         || (isPayrollAdmin() && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
           'payMode','payAmount','allowance','bonus','penalty','adjMonth','loanTotal','loanInst','lyStatutory','familyStatus',
           'nationalId','bankName','iban','taskPrices','finIsolated'
         ]))
-        || claimDevice() || migrateLegacy() || rebindLegacy() || rebindMap() || joinDevice() || punchState();
+        || claimDevice() || migrateLegacy() || rebindLegacy() || rebindMap() || joinDevice() || punchState() || bioReg();
 
       function validHrCreate() {
         let d = request.resource.data;
@@ -2048,6 +2083,17 @@ service cloud.firestore {
           && n.devices.size() <= resource.data.get('maxDevices', 2) && request.auth.uid in n.devices.values()
           && exists(/databases/$(database)/documents/employees/$(empId)/joins/$(request.auth.uid));
       }
+      // تسجيل مفتاح بصمة الجهاز (WebAuthn) مرة واحدة من صاحب الجهاز؛ إعادة الضبط من الإدارة فقط.
+      function bioReg() {
+        let a = request.resource.data;
+        return ownerOnly(empId) && resource.data.active == true
+          && resource.data.get('bio', null) == null
+          && a.diff(resource.data).affectedKeys().hasOnly(['bio'])
+          && a.bio.keys().hasOnly(['cid', 'pk', 'at'])
+          && a.bio.cid is string && a.bio.cid.size() > 0 && a.bio.cid.size() <= 512
+          && a.bio.pk is string && a.bio.pk.size() > 0 && a.bio.pk.size() <= 512
+          && a.bio.at == request.time;
+      }
       function punchState() {
         let a = request.resource.data;
         return ownerOnly(empId) && resource.data.active == true
@@ -2072,6 +2118,7 @@ service cloud.firestore {
             && d.keys().hasOnly(['pin', 'ua', 'at'])
             && d.pin is string && d.at == request.time
             && d.pin == p.pin
+            && p.get('usedBy', request.auth.uid) == request.auth.uid
             && p.get('exp', null) != null
             && request.time < p.get('exp', request.time);
         }
@@ -2081,6 +2128,35 @@ service cloud.firestore {
           || managerCanReadEmployee(empId) || ownerOnly(empId);
         allow create: if isSuperAdmin() || isHrAdmin() || validRecord();
         allow update, delete: if isSuperAdmin() || isHrAdmin();
+        // ---- سياسة طرق الحضور لكل موقع: methods ⊆ [gps, qr, bio] و mode = all | any (الافتراضي gps و all) ----
+        function geoOk(d, l) {
+          let dx = (d.lng - l.lng) * l.kx;
+          let dy = (d.lat - l.lat) * l.ky;
+          return d.lat >= -90 && d.lat <= 90 && d.lng >= -180 && d.lng <= 180
+            && d.accuracy >= 0 && d.accuracy <= 250
+            && math.sqrt(dx * dx + dy * dy) <= l.radius + 10;
+        }
+        // رمز QR = sha256(سر الموقع + ':' + رقم نافذة 30 ثانية)؛ السر في locSecrets لا يقرؤه إلا المشرفون وتقرؤه القاعدة وحدها.
+        function qrOk(d) {
+          let s = get(/databases/$(database)/documents/locSecrets/$(d.locationId)).data.secret;
+          let w = math.floor(request.time.toMillis() / 30000);
+          return d.get('qr', '') is string
+            && (d.qr == hashing.sha256((s + ':' + string(w)).toUtf8()).toHexString()
+              || d.qr == hashing.sha256((s + ':' + string(w - 1)).toUtf8()).toHexString()
+              || d.qr == hashing.sha256((s + ':' + string(w + 1)).toUtf8()).toHexString());
+        }
+        // بصمة الجهاز (WebAuthn): يشترط وجود إثبات التوقيع وأن الموظف سجّل مفتاحاً. التحقق من التوقيع نفسه يجري في التطبيق ويُحفظ الإثبات للتدقيق.
+        function bioOk(d, e) {
+          return d.get('wa', '') is string && d.get('wa', '').size() >= 40 && d.get('wa', '').size() <= 1500
+            && e.get('bio', null) != null;
+        }
+        function methodsOk(d, e, l) {
+          let ms = l.get('methods', ['gps']);
+          return ms is list && ms.size() > 0
+            && (l.get('mode', 'all') == 'any'
+              ? (('gps' in ms && geoOk(d, l)) || ('qr' in ms && qrOk(d)) || ('bio' in ms && bioOk(d, e)))
+              : ((!('gps' in ms) || geoOk(d, l)) && (!('qr' in ms) || qrOk(d)) && (!('bio' in ms) || bioOk(d, e))));
+        }
         function validRecord() {
           let d = request.resource.data;
           let e = get(/databases/$(database)/documents/employees/$(empId)).data;
@@ -2090,20 +2166,18 @@ service cloud.firestore {
           let last = e.get('lastAt', null);
           // 50400000 = 14 ساعة = FORGOT_MS، وهو الحد الأدنى لمهلة نسيان الانصراف؛ مهلة الجدول (forgotMsOf) لا تقل عنه أبدًا،
           // فالقاعدة لا تمنع ما يسمح به التطبيق. يجب أن يبقى الرقمان متطابقين (يحرسه الاختبار tests/forgot-limit.test.mjs).
-          let dx = (d.lng - l.lng) * l.kx;
-          let dy = (d.lat - l.lat) * l.ky;
           return request.auth != null
-            && d.keys().hasOnly(['type','time','lat','lng','accuracy','distance','locationId','locationName','empName','deviceId'])
+            && d.keys().hasOnly(['type','time','lat','lng','accuracy','distance','locationId','locationName','empName','deviceId','qr','wa','m'])
             && d.keys().hasAll(['type','time','lat','lng','accuracy','distance','locationId','locationName','empName','deviceId'])
             && d.time == request.time && d.type in ['in', 'out']
             && d.lat is number && d.lng is number
-            && d.lat >= -90 && d.lat <= 90 && d.lng >= -180 && d.lng <= 180
             && d.accuracy is number && d.accuracy >= 0 && d.accuracy <= 250
             && d.distance is number && d.locationId is string
+            && d.get('m', '') is string && d.get('m', '').size() <= 20
             && isOwnerData(e) && e.active == true
             && d.empName == e.name && d.deviceId == e.get('deviceId', null)
             && (!('locs' in e) || e.locs.size() == 0 || d.locationId in e.locs)
-            && d.locationName == l.name && l.get('active', true) != false && math.sqrt(dx * dx + dy * dy) <= l.radius + 10
+            && d.locationName == l.name && l.get('active', true) != false && methodsOk(d, e, l)
             && a.get('lastRecId', null) == recId && a.get('state', null) == d.type
             && (last == null || request.time.toMillis() - last.toMillis() >= 20000)
             && ((d.type == 'in' && (st == null || st == 'out' || (last != null && request.time.toMillis() - last.toMillis() >= 50400000)))
@@ -2217,6 +2291,259 @@ else {
 /* =====================================================================
    واجهة الموظف المطوّرة
    ===================================================================== */
+/*AM-START*/
+/* =====================================================================
+   طرق إثبات الحضور: GPS + رمز QR متغيّر + بصمة الجهاز (WebAuthn) + استيراد سجلات أجهزة البصمة.
+   دوال نقية قدر الإمكان (تُختبر في tests/attendance-methods.test.mjs وتُقتطع من index.html بين AM-START وAM-END).
+   ===================================================================== */
+const AM_METHODS = ['gps', 'qr', 'bio'];
+const AM_LABEL = { gps: 'GPS', qr: 'QR متغيّر', bio: 'بصمة الجهاز' };
+/* سياسة الموقع: methods ⊆ [gps,qr,bio] (الافتراضي gps) و mode = all (كل الطرق معاً) | any (أي طريقة تكفي). يطابق قواعد Firestore. */
+const locMethods = l => { const m = Array.isArray(l && l.methods) ? AM_METHODS.filter(x => l.methods.includes(x)) : []; return m.length ? m : ['gps']; };
+const locMode = l => (l && l.mode === 'any') ? 'any' : 'all';
+const methodsText = l => locMethods(l).map(m => AM_LABEL[m]).join(locMode(l) === 'any' ? ' أو ' : ' + ');
+/* الخطوات الإضافية المطلوبة من الموظف بعد نتيجة الـ GPS */
+function stepsFor(l, gpsPassed) {
+  const ms = locMethods(l);
+  if (locMode(l) === 'any') {
+    if (ms.includes('gps') && gpsPassed) return { ok: true, need: [] };
+    const need = ms.includes('qr') ? ['qr'] : ms.includes('bio') ? ['bio'] : [];
+    return need.length ? { ok: true, need } : { ok: false, need: [], reason: 'gps' };
+  }
+  if (ms.includes('gps') && !gpsPassed) return { ok: false, need: [], reason: 'gps' };
+  return { ok: true, need: ms.filter(m => m !== 'gps') };
+}
+
+/* ---------- رمز QR المتغيّر: sha256(سر الموقع + ':' + رقم نافذة 30 ثانية) ---------- */
+const QR_WIN_MS = 30000;
+const qrWindow = ms => Math.floor(ms / QR_WIN_MS);
+const qrToken = (secret, ms) => sha256Hex(secret + ':' + qrWindow(ms));
+const qrPayload = (locId, tok) => 'MQ1.' + locId + '.' + tok;
+function parseQrPayload(s) { const m = /^MQ1\.([A-Za-z0-9_-]{1,64})\.([0-9a-f]{64})$/.exec(String(s || '').trim()); return m ? { locId: m[1], tok: m[2] } : null; }
+const newQrSecret = () => Array.from(crypto.getRandomValues(new Uint8Array(24)), b => b.toString(16).padStart(2, '0')).join('');
+
+/* ---------- بصمة الجهاز (WebAuthn / Passkey) ---------- */
+const b64u = {
+  enc: buf => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''),
+  dec: s => Uint8Array.from(atob(String(s).replace(/-/g, '+').replace(/_/g, '/') + '='.repeat((4 - String(s).length % 4) % 4)), c => c.charCodeAt(0))
+};
+const waSupported = () => !!(window.PublicKeyCredential && navigator.credentials && window.isSecureContext);
+async function waRegister(empId, empName) {
+  const cred = await navigator.credentials.create({ publicKey: {
+    challenge: crypto.getRandomValues(new Uint8Array(32)),
+    rp: { name: 'Meqat', id: location.hostname },
+    user: { id: new TextEncoder().encode(String(empId)).slice(0, 64), name: String(empName || empId), displayName: String(empName || empId) },
+    pubKeyCredParams: [{ type: 'public-key', alg: -7 }],
+    authenticatorSelection: { authenticatorAttachment: 'platform', userVerification: 'required', residentKey: 'discouraged' },
+    timeout: 60000, attestation: 'none'
+  } });
+  const r = cred && cred.response;
+  const pk = r && r.getPublicKey ? r.getPublicKey() : null;
+  if (!pk || (r.getPublicKeyAlgorithm && r.getPublicKeyAlgorithm() !== -7)) throw new Error('wa-unsupported');
+  return { cid: b64u.enc(cred.rawId), pk: b64u.enc(pk) };
+}
+/* توقيع ASN.1 DER ⟵ r||s (64 بايت) كما تتوقعه WebCrypto */
+function derToRaw(sig) {
+  let p = 2; if (sig[1] & 0x80) p = 2 + (sig[1] & 0x7f);
+  const out = new Uint8Array(64);
+  for (let k = 0; k < 2; k++) {
+    if (sig[p] !== 0x02) throw new Error('der');
+    const len = sig[p + 1]; let v = sig.slice(p + 2, p + 2 + len); p += 2 + len;
+    while (v.length > 32 && v[0] === 0) v = v.slice(1);
+    if (v.length > 32) throw new Error('der');
+    out.set(v, 32 * k + 32 - v.length);
+  }
+  return out;
+}
+/* يتحقق من تحدّي العملية ومن علَمَي «حضور المستخدم + التحقق البيومتري» ومن نطاق الموقع ومن التوقيع بالمفتاح المسجَّل */
+async function waVerify(pkB64, resp, chBytes, rpId) {
+  const cd = JSON.parse(new TextDecoder().decode(resp.clientDataJSON));
+  if (cd.type !== 'webauthn.get' || cd.challenge !== b64u.enc(chBytes)) return false;
+  const ad = new Uint8Array(resp.authenticatorData);
+  if (!(ad[32] & 1) || !(ad[32] & 4)) return false;
+  const rp = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(rpId)));
+  for (let i = 0; i < 32; i++) if (ad[i] !== rp[i]) return false;
+  const cdh = new Uint8Array(await crypto.subtle.digest('SHA-256', resp.clientDataJSON));
+  const data = new Uint8Array(ad.length + 32); data.set(ad); data.set(cdh, ad.length);
+  const key = await crypto.subtle.importKey('spki', b64u.dec(pkB64), { name: 'ECDSA', namedCurve: 'P-256' }, false, ['verify']);
+  return crypto.subtle.verify({ name: 'ECDSA', hash: 'SHA-256' }, key, derToRaw(new Uint8Array(resp.signature)), data);
+}
+/* يطلب بصمة الجهاز ويعيد إثباتاً مضغوطاً (clientData.authData.signature) يُحفظ مع السجل للتدقيق */
+async function waAssert(bio, challengeStr) {
+  const ch = new TextEncoder().encode(challengeStr);
+  const a = await navigator.credentials.get({ publicKey: {
+    challenge: ch, rpId: location.hostname,
+    allowCredentials: [{ type: 'public-key', id: b64u.dec(bio.cid), transports: ['internal', 'hybrid'] }],
+    userVerification: 'required', timeout: 60000
+  } });
+  const r = a.response;
+  if (!await waVerify(bio.pk, r, ch, location.hostname)) throw new Error('wa-bad-sig');
+  return b64u.enc(r.clientDataJSON) + '.' + b64u.enc(r.authenticatorData) + '.' + b64u.enc(r.signature);
+}
+
+/* ---------- استيراد سجلات أجهزة البصمة (ZKTeco / Hikvision / Suprema / Anviz / Excel / CSV / DAT …) ---------- */
+const devDigits = s => String(s ?? '').replace(/[٠-٩]/g, c => c.charCodeAt(0) - 1632).replace(/[۰-۹]/g, c => c.charCodeAt(0) - 1776);
+const DEV_AP = '([AaPp][Mm]|ص|م)';
+const DEV_YMD = new RegExp('^(\\d{4})[-/.](\\d{1,2})[-/.](\\d{1,2})(?:[ T]+(\\d{1,2}):(\\d{2})(?::(\\d{2}))?(?:\\.\\d+)?\\s*' + DEV_AP + '?)?$');
+const DEV_DMY = new RegExp('^(\\d{1,2})[-/.](\\d{1,2})[-/.](\\d{4})(?:[ T]+(\\d{1,2}):(\\d{2})(?::(\\d{2}))?\\s*' + DEV_AP + '?)?$');
+const DEV_COMPACT = /^(\d{4})(\d{2})(\d{2})[ T]?(\d{2})(\d{2})(\d{2})?$/;
+const DEV_TIME = new RegExp('^(\\d{1,2}):(\\d{2})(?::(\\d{2}))?\\s*' + DEV_AP + '?$');
+const devHour = (h, ap) => { h = +h; if (ap) { const pm = /^[Pp]|م/.test(ap); if (pm && h < 12) h += 12; else if (!pm && h === 12) h = 0; } return h; };
+/* يحلّل خلية تاريخ/وقت إلى {y,m,d,h,mi,s} (الوقت كما هو معروض على الجهاز). order: 'dmy' | 'mdy' للتواريخ ذات الصيغة المبهمة */
+function devParseDT(cell, order = 'dmy') {
+  let s = devDigits(cell).trim(); if (!s) return null;
+  if (/^\d{5}(\.\d+)?$/.test(s) && +s > 20000 && +s < 80000) {            // رقم تسلسلي من Excel
+    const t = new Date(Math.round((+s - 25569) * 86400) * 1000);
+    return { y: t.getUTCFullYear(), m: t.getUTCMonth() + 1, d: t.getUTCDate(), h: t.getUTCHours(), mi: t.getUTCMinutes(), s: t.getUTCSeconds() };
+  }
+  let m = DEV_YMD.exec(s);
+  if (m) return { y: +m[1], m: +m[2], d: +m[3], h: m[4] == null ? 0 : devHour(m[4], m[7]), mi: +(m[5] || 0), s: +(m[6] || 0), hasTime: m[4] != null };
+  m = DEV_DMY.exec(s);
+  if (m) { const a = +m[1], b = +m[2]; const dm = order === 'mdy' ? { d: b, m: a } : { d: a, m: b }; return { y: +m[3], ...dm, h: m[4] == null ? 0 : devHour(m[4], m[7]), mi: +(m[5] || 0), s: +(m[6] || 0), hasTime: m[4] != null, ambiguous: [a, b] }; }
+  m = DEV_COMPACT.exec(s);
+  if (m) return { y: +m[1], m: +m[2], d: +m[3], h: +m[4], mi: +m[5], s: +(m[6] || 0), hasTime: true };
+  return null;
+}
+const devParseTime = cell => { const m = DEV_TIME.exec(devDigits(cell).trim()); return m ? { h: devHour(m[1], m[4]), mi: +m[2], s: +(m[3] || 0) } : null; };
+const devValid = t => t && t.y >= 2000 && t.y <= 2100 && t.m >= 1 && t.m <= 12 && t.d >= 1 && t.d <= 31 && t.h <= 23 && t.mi <= 59 && t.s <= 59;
+
+/* تقسيم سطر نصي إلى خلايا: Tab ثم ; | , ثم المسافات */
+function devCells(line) {
+  const d = line.includes('\t') ? '\t' : [';', '|', ','].find(c => line.includes(c));
+  const cells = d ? line.split(d) : line.trim().split(/\s+/);
+  return cells.map(s => devDigits(s).trim().replace(/^"|"$/g, '').trim());
+}
+const devRowsFromText = text => String(text || '').replace(/^﻿/, '').split(/\r?\n/).filter(l => l.trim()).map(devCells)
+  .map(r => { // ملفات المسافات (ATTLOG): نضمّ التاريخ والوقت المنفصلين في خلية واحدة
+    for (let i = 0; i + 1 < r.length; i++) if (devParseDT(r[i]) && !devParseDT(r[i]).hasTime && devParseTime(r[i + 1])) { r.splice(i, 2, r[i] + ' ' + r[i + 1]); break; }
+    return r;
+  });
+
+/* كشف تلقائي لأعمدة: المعرّف، التاريخ والوقت (أو تاريخ + وقت منفصلان)، الحالة، وترتيب اليوم/الشهر */
+function devDetect(rows) {
+  const sample = rows.slice(0, 300), ncol = Math.max(0, ...sample.map(r => r.length));
+  const col = i => sample.map(r => r[i] ?? '').filter(x => x !== '');
+  let best = { i: -1, n: 0 }, dateOnly = { i: -1, n: 0 }, timeOnly = { i: -1, n: 0 };
+  for (let i = 0; i < ncol; i++) {
+    const v = col(i); if (!v.length) continue;
+    const full = v.filter(x => { const t = devParseDT(x); return t && t.hasTime !== false && (t.hasTime || /\d{2}:\d{2}/.test(x) || /^\d{5}/.test(x)); }).length;
+    const dOnly = v.filter(x => { const t = devParseDT(x); return t && t.hasTime === false; }).length;
+    const tOnly = v.filter(x => devParseTime(x)).length;
+    if (full / v.length >= .6 && full > best.n) best = { i, n: full };
+    if (dOnly / v.length >= .6 && dOnly > dateOnly.n) dateOnly = { i, n: dOnly };
+    if (tOnly / v.length >= .6 && tOnly > timeOnly.n) timeOnly = { i, n: tOnly };
+  }
+  const d = { dtCol: best.i, dateCol: -1, timeCol: -1, idCol: -1, stCol: -1, order: 'dmy', header: false };
+  if (best.i < 0 && dateOnly.i >= 0 && timeOnly.i >= 0) { d.dateCol = dateOnly.i; d.timeCol = timeOnly.i; }
+  const used = new Set([d.dtCol, d.dateCol, d.timeCol]);
+  // ترتيب اليوم/الشهر من البيانات: أي قيمة أولى > 12 ⟵ يوم أولاً، أي قيمة ثانية > 12 ⟵ شهر أولاً
+  const dc = d.dtCol >= 0 ? d.dtCol : d.dateCol;
+  if (dc >= 0) for (const r of sample) { const t = devParseDT(r[dc]); if (t && t.ambiguous) { if (t.ambiguous[0] > 12) { d.order = 'dmy'; break; } if (t.ambiguous[1] > 12) { d.order = 'mdy'; break; } } }
+  for (let i = 0; i < ncol && d.idCol < 0; i++) {
+    if (used.has(i)) continue; const v = col(i);
+    if (v.length && v.filter(x => /^[0-9A-Za-z_-]{1,16}$/.test(x)).length / v.length >= .7) d.idCol = i;
+  }
+  const first = rows[0] || [];
+  d.header = dc >= 0 && !devParseDT(first[dc]) && !devParseTime(first[dc]);
+  // عمود الحالة: من العنوان إن وُجد، وإلا أول عمود بعد الوقت قيمه ضمن 0..5 وفيه قيمتان مختلفتان على الأقل (نمط ATTLOG)
+  if (d.header) { const k = first.findIndex(h => /status|state|inout|in\/out|punch|type|حالة|نوع/i.test(h)); if (k >= 0 && !used.has(k) && k !== d.idCol) d.stCol = k; }
+  if (d.stCol < 0 && dc >= 0) {
+    for (let i = Math.max(dc, d.timeCol) + 1; i < ncol; i++) {
+      if (i === d.idCol) continue; const v = col(i); const set = new Set(v);
+      if (v.length && set.size >= 2 && [...set].every(x => /^[0-5]$/.test(x))) { d.stCol = i; break; }
+    }
+  }
+  return d;
+}
+/* معرّف وثيقة ربط (جهاز + معرّف مستخدم): يطابق mapId في workers/biometric-ingest/src/normalize.js */
+const bioMapId = (deviceId, rawId) => `${deviceId}__${devIdKey(rawId).replace(/[^a-z0-9_-]/g, '_')}`.slice(0, 300);
+const devType = s => { const x = devDigits(s).trim().toLowerCase(); if (['0', '3', '4', 'i', 'in', 'check-in', 'checkin', 'c/in', 'دخول', 'حضور'].includes(x)) return 'in'; if (['1', '2', '5', 'o', 'out', 'check-out', 'checkout', 'c/out', 'خروج', 'انصراف'].includes(x)) return 'out'; return null; };
+const devIdKey = s => { const x = devDigits(s).trim(); return /^\d+$/.test(x) ? String(+x) : x.toLowerCase(); };
+
+/* rows: مصفوفة صفوف من الخلايا. byId: Map(مفتاح موحَّد ⟵ كائن موظف). tzoff: إزاحة توقيت المنشأة بالدقائق. cfg: نتيجة devDetect (أو معدّلة يدوياً) */
+function devParse(rows, byId, tzoff, cfg) {
+  const raw = [], unmatched = new Map(); let bad = 0, total = 0;
+  const startAt = cfg.header ? 1 : 0;
+  for (let i = startAt; i < rows.length; i++) {
+    const r = rows[i]; total++;
+    let t, tm;
+    if (cfg.dtCol >= 0) t = devParseDT(r[cfg.dtCol], cfg.order);
+    else if (cfg.dateCol >= 0 && cfg.timeCol >= 0) { t = devParseDT(r[cfg.dateCol], cfg.order); tm = devParseTime(r[cfg.timeCol]); if (t && tm) t = { ...t, ...tm }; else t = null; }
+    if (!devValid(t) || cfg.idCol < 0 || !r[cfg.idCol]) { bad++; continue; }
+    const key = devIdKey(r[cfg.idCol]), emp = byId.get(key);
+    if (!emp) { unmatched.set(key, (unmatched.get(key) || 0) + 1); continue; }
+    const ms = Date.UTC(t.y, t.m - 1, t.d, t.h, t.mi, t.s) - tzoff * 60000;
+    raw.push({ emp, ms, type: cfg.stCol >= 0 ? devType(r[cfg.stCol]) : null });
+  }
+  return { recs: devBuild(raw, tzoff), unmatched, bad, total };
+}
+/* ترتيب + حذف التكرار القريب (<60 ثانية) + تحديد حضور/انصراف: من عمود الحالة إن كان فعلاً يميّز النوعين وإلا بالتناوب داخل اليوم */
+function devBuild(raw, tzoff) {
+  const useSt = (() => { const n = raw.filter(r => r.type).length; if (n < raw.length * .9) return false; const ins = raw.filter(r => r.type === 'in').length; return ins >= raw.length * .1 && ins <= raw.length * .9; })();
+  raw.sort((x, y) => x.emp.id.localeCompare(y.emp.id) || x.ms - y.ms);
+  const recs = []; let lastE = '', lastMs = 0, dayId = '', n = 0;
+  for (const r of raw) {
+    if (r.emp.id === lastE && r.ms - lastMs < 60000) continue;
+    const dk = r.emp.id + '|' + Math.floor((r.ms + tzoff * 60000) / 86400000);
+    if (dk !== dayId) { dayId = dk; n = 0; }
+    recs.push({ emp: r.emp, ms: r.ms, type: (useSt && r.type) || (n % 2 === 0 ? 'in' : 'out') });
+    n++; lastE = r.emp.id; lastMs = r.ms;
+  }
+  return recs;
+}
+/*AM-END*/
+
+/* ---------- كاميرا مسح QR (للموظف) ومولّد QR (لشاشة العرض عند الإدارة) ---------- */
+let _jsQR = null, _qrGen = null;
+async function loadEsm(urls, pick) {
+  for (const u of urls) { try { const m = await import(u); const v = pick(m); if (v) return v; } catch (e) { console.warn('esm load failed:', u, e); } }
+  throw new Error('esm-load');
+}
+const loadJsQR = () => _jsQR || (_jsQR = loadEsm(['https://cdn.jsdelivr.net/npm/jsqr@1.4.0/+esm', 'https://esm.sh/jsqr@1.4.0'], m => m.default || m.jsQR).catch(e => { _jsQR = null; throw e; }));
+const loadQrGen = () => _qrGen || (_qrGen = loadEsm(['https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/+esm', 'https://esm.sh/qrcode-generator@1.4.4'], m => m.default || m.qrcode).catch(e => { _qrGen = null; throw e; }));
+async function qrSvg(text) {
+  const qrcode = await loadQrGen();
+  const q = qrcode(0, 'M'); q.addData(text); q.make();
+  return q.createSvgTag({ cellSize: 8, margin: 2, scalable: true });
+}
+/* يفتح الكاميرا الخلفية ويعيد نص أول رمز QR يقرؤه، أو يرفض بـ qr-cancel / qr-nocam */
+function scanQrOnce() {
+  return new Promise(async (resolve, reject) => {
+    let stream = null, stop = false;
+    const ov = document.createElement('div'); ov.className = 'ov';
+    ov.innerHTML = `<div class="modal" style="max-width:440px" role="dialog"><div class="mh"><h3>${ic('target', 22)} امسح رمز الحضور</h3><button class="ib dark" id="qrX" aria-label="إغلاق">${ic('x', 18)}</button></div>
+      <div class="mb"><video id="qrV" playsinline muted style="width:100%;border-radius:16px;background:#000;aspect-ratio:1/1;object-fit:cover"></video>
+      <p class="hint" style="text-align:center">ضع رمز QR المعروض عند مكان العمل داخل الإطار. يتجدد الرمز كل نصف دقيقة، فلا تستخدم صورة قديمة.</p></div></div>`;
+    document.body.appendChild(ov);
+    const done = (fn, v) => { stop = true; try { stream && stream.getTracks().forEach(t => t.stop()); } catch {} ov.remove(); fn(v); };
+    ov.querySelector('#qrX').onclick = () => done(reject, new Error('qr-cancel'));
+    const v = ov.querySelector('#qrV');
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 } }, audio: false });
+      v.srcObject = stream; await v.play();
+    } catch { return done(reject, new Error('qr-nocam')); }
+    let det = null;
+    if ('BarcodeDetector' in window) { try { det = new BarcodeDetector({ formats: ['qr_code'] }); } catch { det = null; } }
+    let jsqr = null; if (!det) { try { jsqr = await loadJsQR(); } catch { return done(reject, new Error('qr-nocam')); } }
+    const cv = document.createElement('canvas'), cx = cv.getContext('2d', { willReadFrequently: true });
+    const tick = async () => {
+      if (stop) return;
+      try {
+        if (v.readyState >= 2 && v.videoWidth) {
+          if (det) { const r = await det.detect(v); if (r && r[0] && r[0].rawValue) return done(resolve, r[0].rawValue); }
+          else {
+            const w = Math.min(640, v.videoWidth), h = Math.round(w * v.videoHeight / v.videoWidth);
+            cv.width = w; cv.height = h; cx.drawImage(v, 0, 0, w, h);
+            const r = jsqr(cx.getImageData(0, 0, w, h).data, w, h);
+            if (r && r.data) return done(resolve, r.data);
+          }
+        }
+      } catch {}
+      setTimeout(tick, 200);
+    };
+    tick();
+  });
+}
 async function employeeApp(db, auth, token) {
   const showErr = m => { root.innerHTML = `<div class="emp-bg"><div class="emp-wrap"><div class="card center" style="margin-top:60px"><div class="st-ic" style="margin:0 auto 14px">${ic('alert', 32)}</div><p style="margin:0;font-weight:700">${esc(m)}</p></div></div></div>`; };
   root.innerHTML = `<div class="emp-bg"><div class="emp-wrap"><div class="card center" style="margin-top:60px">جاري التحميل…</div></div></div>`;
@@ -2246,7 +2573,7 @@ async function employeeApp(db, auth, token) {
     const go = async () => {
       const pin = normPin($('#pinIn').value); if (pin.length < 8) { $('#pinMsg').textContent = 'الرمز مكوّن من 8 خانات.'; return; }
       const b = $('#pinGo'), msg = $('#pinMsg'); b.disabled = true; msg.textContent = '';
-      try { await setDoc(doc(db, 'employees', token, 'joins', uid), { pin, ua: (navigator.userAgent || '').slice(0, 90), at: serverTimestamp() }); }
+      try { const jb = writeBatch(db); jb.set(doc(db, 'employees', token, 'joins', uid), { pin, ua: (navigator.userAgent || '').slice(0, 90), at: serverTimestamp() }); jb.update(doc(db, 'pins', token), { usedBy: uid, usedAt: serverTimestamp() }); await jb.commit(); }
       catch { msg.textContent = 'الرمز غير صحيح أو منتهي، أو الرابط غير صالح/موقوف. اطلب من الإدارة رمزًا جديدًا.'; b.disabled = false; return; }
       try { await updateDoc(ref, { ['devices.' + myDev]: uid, lastJoinAt: serverTimestamp() }); }
       catch { msg.textContent = 'تعذر إضافة الجهاز: وصلت الحد الأقصى لأجهزتك أو الرابط قديم. اطلب من الإدارة إلغاء جهاز قديم أو إعادة الضبط.'; b.disabled = false; return; }
@@ -2642,38 +2969,107 @@ async function employeeApp(db, auth, token) {
   }
   window.addEventListener('online', () => { flushOfflineQueue(false); });
 
+  /* يطلب من الموظف مسح رمز QR الظاهر عند الموقع ويعيد {locId, tok} */
+  async function askQr(allowedIds) {
+    setMsg('وجّه الكاميرا إلى رمز QR المعروض عند مكان العمل…');
+    const raw = await scanQrOnce();
+    const q = parseQrPayload(raw);
+    if (!q) throw new Error('qr-format');
+    if (allowedIds && !allowedIds.includes(q.locId)) throw new Error('qr-loc');
+    return q;
+  }
+  /* يسجّل مفتاح بصمة هذا الجهاز مرة واحدة إن لم يكن مسجلاً */
+  async function ensureBio() {
+    if (emp.bio && emp.bio.cid && emp.bio.pk) return emp.bio;
+    if (!waSupported()) throw new Error('wa-unsupported');
+    if (!await mqConfirm('هذا الموقع يشترط بصمة الجهاز (البصمة أو الوجه أو قفل الشاشة). سيُسجَّل الآن مفتاح أمان على هاتفك لمرة واحدة، وبعدها يُطلب منك التحقق عند كل تسجيل. متابعة؟')) throw new Error('wa-cancel');
+    const k = await waRegister(token, emp.name);
+    await updateDoc(ref, { bio: { cid: k.cid, pk: k.pk, at: serverTimestamp() } });
+    emp.bio = { cid: k.cid, pk: k.pk };
+    return emp.bio;
+  }
+  const amErr = e => {
+    const c = String((e && (e.message || e.name)) || '');
+    if (c === 'qr-format') return 'الرمز الممسوح ليس رمز حضور صالحاً.';
+    if (c === 'qr-loc') return 'رمز QR هذا يخص موقعاً آخر غير الذي تقف فيه.';
+    if (c === 'qr-cancel') return 'أُلغي مسح رمز QR.';
+    if (c === 'qr-nocam') return 'تعذر فتح الكاميرا. اسمح للمتصفح باستخدامها ثم أعد المحاولة.';
+    if (c === 'wa-unsupported') return 'هاتفك أو متصفحك لا يدعم بصمة الجهاز، أو الصفحة ليست على رابط آمن (https).';
+    if (c === 'wa-cancel' || e.name === 'NotAllowedError') return 'لم يكتمل التحقق ببصمة الجهاز.';
+    if (c === 'wa-bad-sig') return 'فشل التحقق من بصمة الجهاز.';
+    return 'تعذر إكمال التحقق. حاول مجدداً.';
+  };
+
   async function punch(type) {
-    if (!navigator.geolocation) return setMsg('متصفحك لا يدعم تحديد الموقع.', 'err');
     if (!locs.length) return setMsg('لم تحدد الإدارة أي موقع عمل بعد.', 'err');
     try {
       const pendTs = +sessionStorage.getItem(inflightKey) || 0;
       if (Date.now() - pendTs < 25000) return setMsg('توجد عملية تسجيل قيد الإرسال حالياً — انتظر ثوانٍ ولا تُعد الضغط.', 'err');
     } catch {}
     if (last && now() - last.t < MIN_GAP_MS) return setMsg('تم تسجيلك للتو، انتظر لحظات ثم أعد المحاولة.', 'err');
+    // المواقع التي تعتمد GPS، والمواقع التي يمكن إثباتها دون GPS (QR/بصمة فقط، أو وضع «أي طريقة تكفي»)
+    const gpsLocs = locs.filter(l => locMethods(l).includes('gps'));
+    const altLocs = locs.filter(l => !locMethods(l).includes('gps') || locMode(l) === 'any');
+    if (gpsLocs.length && !navigator.geolocation && !altLocs.length) return setMsg('متصفحك لا يدعم تحديد الموقع.', 'err');
     $('#bIn').disabled = $('#bOut').disabled = true;
-    setMsg('جاري تحديد موقعك… (قد يستغرق بضع ثوانٍ)');
-    let pos;
-    try { pos = await getPos(); }
-    catch (e) {
-      setMsg(e.code === 1 ? 'تم رفض إذن الموقع. فعّل الإذن من إعدادات المتصفح ثم أعد المحاولة.' : 'تعذر تحديد موقعك. فعّل GPS وتأكد من الاتصال ثم أعد المحاولة.', 'err');
+    let pos = null, gpsMsg = '';
+    if (gpsLocs.length && navigator.geolocation) {
+      setMsg('جاري تحديد موقعك… (قد يستغرق بضع ثوانٍ)');
+      try { pos = await getPos(); }
+      catch (e) { gpsMsg = e.code === 1 ? 'تم رفض إذن الموقع. فعّل الإذن من إعدادات المتصفح ثم أعد المحاولة.' : 'تعذر تحديد موقعك. فعّل GPS وتأكد من الاتصال ثم أعد المحاولة.'; }
+      if (pos && pos.coords.accuracy > MAX_ACCURACY) { gpsMsg = `دقة الموقع ضعيفة (±${Math.round(pos.coords.accuracy)}م). فعّل GPS أو انتقل لمكان مفتوح وأعد المحاولة.`; pos = null; }
+      if (pos) {
+        // فحص كشف الموقع الوهمي (Anti-GPS Spoofing) قبل السماح بالتسجيل
+        let prevGps = null;
+        try { prevGps = JSON.parse(localStorage.getItem(GPS_PREV_KEY) || 'null'); } catch {}
+        const spoof = analyzeGpsSpoof(pos.coords, prevGps, Date.now());
+        if (spoof.blocked) { gpsMsg = `رفض النظام البصمة: تم رصد مؤشرات موقع وهمي (${spoof.reasons.join('، ')}). أوقف أي تطبيق لتغيير الموقع وتحرك خطوات في مكان مفتوح ثم أعد المحاولة.`; pos = null; }
+      }
+    }
+    if (!pos && gpsLocs.length && !altLocs.length) { setMsg(gpsMsg || 'تعذر تحديد موقعك.', 'err'); return loadHist(); }
+    // اختيار موقع الهدف
+    let best = null, gpsPassed = false, outMsg = '';
+    if (pos) {
+      const { latitude: lat, longitude: lng, accuracy } = pos.coords;
+      for (const l of gpsLocs) { const d = dist(lat, lng, l.lat, l.lng); if (!best || d < best.d) best = { l, d }; }
+      if (best.d <= best.l.radius) { gpsPassed = true; try { localStorage.setItem(GPS_PREV_KEY, JSON.stringify({ lat, lng, acc: accuracy, ms: Date.now() })); } catch {} }
+      else { outMsg = `أنت خارج نطاق العمل. تبعد حوالي ${Math.round(best.d)} متر عن «${best.l.name}» (المسموح ${best.l.radius}م). لم يتم التسجيل.`; best = null; }
+    }
+    let qr = null, wa = '';
+    try {
+      if (!best) {
+        // خارج النطاق أو بلا GPS: يُقبل فقط موقع يسمح بإثبات الحضور بغير GPS
+        if (!altLocs.length) { setMsg(outMsg || gpsMsg || 'تعذر التسجيل.', 'err'); return loadHist(); }
+        const qrAlt = altLocs.filter(l => locMethods(l).includes('qr'));
+        if (qrAlt.length) {
+          qr = await askQr(qrAlt.map(l => l.id));
+          best = { l: qrAlt.find(l => l.id === qr.locId), d: 0 };
+        } else {
+          if (altLocs.length > 1) { setMsg(outMsg || gpsMsg || 'تعذر تحديد موقع العمل.', 'err'); return loadHist(); }
+          best = { l: altLocs[0], d: 0 };
+        }
+      }
+      const plan = stepsFor(best.l, gpsPassed);
+      if (!plan.ok) { setMsg(outMsg || gpsMsg || 'هذا الموقع يشترط تأكيد موقعك بالـ GPS.', 'err'); return loadHist(); }
+      if (plan.need.includes('qr') && !qr) qr = await askQr([best.l.id]);
+      if (plan.need.includes('bio')) {
+        if (!navigator.onLine) throw new Error('offline-bio');
+        const bio = await ensureBio();
+        setMsg('تحقق ببصمتك أو وجهك على الهاتف…');
+        wa = await waAssert(bio, `${token}|${type}|${best.l.id}|${Math.floor(Date.now() / 1000)}`);
+      }
+    } catch (e) {
+      setMsg(e && e.message === 'offline-bio' ? 'التحقق ببصمة الجهاز يحتاج اتصالاً بالإنترنت.' : amErr(e), 'err');
       return loadHist();
     }
-    const { latitude: lat, longitude: lng, accuracy } = pos.coords;
-    if (accuracy > MAX_ACCURACY) { setMsg(`دقة الموقع ضعيفة (±${Math.round(accuracy)}م). فعّل GPS أو انتقل لمكان مفتوح وأعد المحاولة.`, 'err'); return loadHist(); }
-    // فحص كشف الموقع الوهمي (Anti-GPS Spoofing) قبل السماح بالتسجيل
-    let prevGps = null;
-    try { prevGps = JSON.parse(localStorage.getItem(GPS_PREV_KEY) || 'null'); } catch {}
-    const spoof = analyzeGpsSpoof(pos.coords, prevGps, Date.now());
-    if (spoof.blocked) {
-      setMsg(`رفض النظام البصمة: تم رصد مؤشرات موقع وهمي (${spoof.reasons.join('، ')}). أوقف أي تطبيق لتغيير الموقع وتحرك خطوات في مكان مفتوح ثم أعد المحاولة.`, 'err');
-      return loadHist();
-    }
-    let best = null;
-    for (const l of locs) { const d = dist(lat, lng, l.lat, l.lng); if (!best || d < best.d) best = { l, d }; }
-    if (best.d > best.l.radius) { setMsg(`أنت خارج نطاق العمل. تبعد حوالي ${Math.round(best.d)} متر عن «${best.l.name}» (المسموح ${best.l.radius}م). لم يتم التسجيل.`, 'err'); return loadHist(); }
-    try { localStorage.setItem(GPS_PREV_KEY, JSON.stringify({ lat, lng, acc: accuracy, ms: Date.now() })); } catch {}
-    // إذا كان الهاتف غير متصل بالإنترنت لحظة البصمة، نحفظ البصمة الموثّقة بالـ GPS في طابور الأوفلاين الموقّع
+    const usedGps = !!(pos && gpsPassed);
+    const used = [usedGps ? 'gps' : '', qr ? 'qr' : '', wa ? 'bio' : ''].filter(Boolean).join('+') || 'gps';
+    const rec = usedGps
+      ? { lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: Math.round(pos.coords.accuracy), distance: Math.round(best.d) }
+      : { lat: 0, lng: 0, accuracy: 0, distance: 0 };
+    // الأوفلاين مدعوم لطريقة GPS وحدها؛ QR والبصمة تتطلبان اتصالاً (رمز QR يُتحقق منه بوقت الخادم)
     if (!navigator.onLine) {
+      if (used !== 'gps') { setMsg('هذا الموقع يشترط QR أو بصمة الجهاز، وهما يحتاجان اتصالاً بالإنترنت.', 'err'); return loadHist(); }
       await queueOfflinePunch(type, pos.coords, best);
       return;
     }
@@ -2683,13 +3079,13 @@ async function employeeApp(db, auth, token) {
       const devToUse = emp.deviceId || myDev;
       recRef = doc(collection(db, 'employees', token, 'records'));
       const batch = writeBatch(db);
-      batch.set(recRef, { type, time: serverTimestamp(), lat, lng, accuracy: Math.round(accuracy), distance: Math.round(best.d), locationId: best.l.id, locationName: best.l.name, empName: emp.name, deviceId: devToUse });
+      batch.set(recRef, { type, time: serverTimestamp(), ...rec, locationId: best.l.id, locationName: best.l.name, empName: emp.name, deviceId: devToUse, ...(qr ? { qr: qr.tok } : {}), ...(wa ? { wa } : {}), m: used });
       batch.update(ref, { state: type, lastAt: serverTimestamp(), lastRecId: recRef.id });
       const done = batch.commit();
       const first = await Promise.race([done.then(() => 'ok'), new Promise(r => setTimeout(() => r('slow'), 15000))]);
       if (first === 'slow') {
         setMsg('الشبكة بطيئة: التسجيل قيد الإرسال. لا تُعد الضغط — سيظهر في «آخر تسجيلاتك» فور وصوله.');
-        done.then(() => { try { sessionStorage.removeItem(inflightKey); } catch {} setMsg('وصل التسجيل إلى الخادم', 'good'); histRid = recRef.id; emp.lastRecId = recRef.id; loadHist({ force: true }); }).catch(() => { try { sessionStorage.removeItem(inflightKey); } catch {} queueOfflinePunch(type, pos.coords, best); });
+        done.then(() => { try { sessionStorage.removeItem(inflightKey); } catch {} setMsg('وصل التسجيل إلى الخادم', 'good'); histRid = recRef.id; emp.lastRecId = recRef.id; loadHist({ force: true }); }).catch(() => { try { sessionStorage.removeItem(inflightKey); } catch {} if (used === 'gps') queueOfflinePunch(type, pos.coords, best); else setMsg('تعذر حفظ التسجيل. أعد المحاولة بعد عودة الاتصال.', 'err'); });
         return;
       }
       try { sessionStorage.removeItem(inflightKey); } catch {}
@@ -2699,11 +3095,11 @@ async function employeeApp(db, auth, token) {
       else clearEmpCheckoutReminder();
     } catch (e) {
       try { sessionStorage.removeItem(inflightKey); } catch {}
-      if (!navigator.onLine || (e && e.code === 'unavailable')) {
+      if ((!navigator.onLine || (e && e.code === 'unavailable')) && used === 'gps') {
         await queueOfflinePunch(type, pos.coords, best);
         return;
       }
-      setMsg(e.code === 'permission-denied' ? 'رفض الخادم التسجيل: تأكد أنك داخل نطاق العمل وأن آخر عملية لم تُسجَّل للتو، ثم أعد المحاولة.' : 'تعذر حفظ التسجيل. تحقق من الاتصال وحاول مجدداً.', 'err');
+      setMsg(e.code === 'permission-denied' ? 'رفض الخادم التسجيل: تأكد أنك داخل نطاق العمل (أو أن رمز QR ما زال صالحاً) وأن آخر عملية لم تُسجَّل للتو، ثم أعد المحاولة.' : 'تعذر حفظ التسجيل. تحقق من الاتصال وحاول مجدداً.', 'err');
     }
     loadHist(punched ? { add: punched } : {});
   }
@@ -2985,72 +3381,6 @@ async function taskWorkerApp(db, token, emp, orgName, cfgSt = null) {
 }
 
 /* =====================================================================
-   نافذة تحميل ملفات النظام المحدّثة مباشرة
-   ===================================================================== */
-window.__downloadFile = async (url, filename) => {
-  try {
-    const r = await fetch(url, { cache: 'no-store' });
-    const txt = await r.text();
-    const blob = new Blob([txt], { type: 'text/plain;charset=utf-8' });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = filename;
-    document.body.appendChild(a);
-    a.click();
-    setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 500);
-    toast(`تم بدء تحميل ${filename}`, 'good');
-  } catch {
-    toast(`تعذر تحميل ${filename}`, 'err');
-  }
-};
-window.__openDownloadBox = () => {
-  const ov = document.createElement('div');
-  ov.className = 'ov';
-  ov.innerHTML = `<div class="modal" style="max-width:520px" role="dialog">
-    <div class="mh"><h3>${ic('download', 22)} تحميل ملفات النظام المحدّثة</h3><button class="ib dark" id="__dlClose">${ic('x', 18)}</button></div>
-    <div class="mb">
-      <p class="hint" style="margin-top:0">جميع الملفات أدناه تتضمن كافة الإصلاحات البرمجية والتصميم الجديد جاهزة للرفع مباشرة على استضافتك:</p>
-      <div style="display:flex;flex-direction:column;gap:10px;margin-top:12px">
-        <div class="sch" style="margin:0;flex-direction:row;align-items:center;border-color:var(--ok);background:var(--ok-bg)">
-          <div><b>🚀 التحديث السحابي المركزي (OTA) · الإصدار ${esc(MEQAT_CORE_VERSION)}</b><div class="muted" style="font-size:12.5px">جلب أحدث إصدار رسمي ودمج إعدادات وترخيص شركتك فيه بضغطة واحدة</div></div>
-          <button class="btn sm ok" onclick="window.__checkAndApplyOta()">${ic('refresh', 16)} فحص وتحديث</button>
-        </div>
-        <div class="sch" style="margin:0;flex-direction:row;align-items:center">
-          <div><b>index.html</b><div class="muted" style="font-size:12.5px">الملف الرئيسي الكامل للنظام (الإدارة + الموظف + المحرك)</div></div>
-          <button class="btn sm" onclick="window.__downloadFile('index.html','index.html')">${ic('download', 16)} تحميل</button>
-        </div>
-        <div class="sch" style="margin:0;flex-direction:row;align-items:center">
-          <div><b>sw.js</b><div class="muted" style="font-size:12.5px">خدمة العمل دون اتصال (PWA Service Worker)</div></div>
-          <button class="btn sm" onclick="window.__downloadFile('sw.js','sw.js')">${ic('download', 16)} تحميل</button>
-        </div>
-        <div class="sch" style="margin:0;flex-direction:row;align-items:center">
-          <div><b>manifest.json</b><div class="muted" style="font-size:12.5px">ملف تعريف تثبيت التطبيق للهواتف وسطح المكتب</div></div>
-          <button class="btn sm sec" onclick="window.__downloadFile('manifest.json','manifest.json')">${ic('download', 16)} تحميل</button>
-        </div>
-        <div class="sch" style="margin:0;flex-direction:row;align-items:center">
-          <div><b>icon.svg</b><div class="muted" style="font-size:12.5px">أيقونة شعار «مِيقَاتْ» الرسمية</div></div>
-          <button class="btn sm sec" onclick="window.__downloadFile('icon.svg','icon.svg')">${ic('download', 16)} تحميل</button>
-        </div>
-      </div>
-    </div>
-    <div class="mf" style="justify-content:space-between">
-      <button class="btn ok" id="__dlAll">${ic('download', 18)} تحميل كل الملفات دفعة واحدة</button>
-      <button class="btn sec" id="__dlClose2">إغلاق</button>
-    </div>
-  </div>`;
-  document.body.appendChild(ov);
-  const close = () => ov.remove();
-  ov.querySelector('#__dlClose').onclick = close;
-  ov.querySelector('#__dlClose2').onclick = close;
-  ov.querySelector('#__dlAll').onclick = async () => {
-    await window.__downloadFile('index.html', 'index.html');
-    setTimeout(() => window.__downloadFile('sw.js', 'sw.js'), 350);
-    setTimeout(() => window.__downloadFile('manifest.json', 'manifest.json'), 700);
-    setTimeout(() => window.__downloadFile('icon.svg', 'icon.svg'), 1050);
-  };
-};
-
-/* =====================================================================
    تسجيل دخول الإدارة
    ===================================================================== */
 function loginPage(auth) {
@@ -3064,7 +3394,6 @@ function loginPage(auth) {
       <div class="field"><label>البريد الإلكتروني</label><input id="em" type="email" dir="ltr" autocomplete="username" placeholder="admin@example.com"></div>
       <div class="field" style="margin-top:14px"><label>كلمة المرور</label><input id="pw" type="password" dir="ltr" autocomplete="current-password" placeholder="••••••••"></div>
       <button class="btn" id="go" style="width:100%;margin-top:20px;padding:13px">${ic('login', 22)} دخول لوحة التحكم</button>
-      <button class="btn sec" onclick="window.__openDownloadBox()" style="width:100%;margin-top:10px;padding:11px">${ic('download', 20)} تحميل ملفات النظام المحدّثة</button>
       ${LICENSE && LICENSE.status === 'demo' && LICENSE.demoCreds ? `<button class="btn ok" id="demoGo" style="width:100%;margin-top:10px;padding:11px">الدخول إلى نسخة العرض بضغطة واحدة</button>` : ''}
     </div>
   </div>`;
@@ -3142,7 +3471,7 @@ function adminApp(db, auth) {
   const isPay = () => S.role === 'payroll_admin';
   const isAud = () => S.role === 'auditor';
   // يطابق قيود قواعد Firestore: الموارد البشرية لا تكتب الحقول المالية، والرواتب لا تكتب حقول الموظف/الدوام.
-  const HR_EMP_KEYS = new Set(['name','phone','dept','jobTitle','contractEnd','docExpiry','bioId','assets','scheduleId','rotOffset','startDate','leaveQuota','empType','locs','active']);
+  const HR_EMP_KEYS = new Set(['name','phone','dept','jobTitle','contractEnd','docExpiry','bioId','assets','scheduleId','rotOffset','startDate','leaveQuota','empType','locs','active','bio']);
   const PAY_EMP_KEYS = new Set(['payMode','payAmount','allowance','bonus','penalty','adjMonth','loanTotal','loanInst','lyStatutory','familyStatus','nationalId','bankName','iban','taskPrices','finIsolated']);
   const AUDIT_LABELS = {
     emp_create: ['b-ok', 'إضافة موظف'],
@@ -3163,7 +3492,10 @@ function adminApp(db, auth) {
     month_archive: ['b-warn', 'أرشفة وتفريغ بصمات شهر'],
     month_restore: ['b-pri', 'استعادة أرشيف بصمات شهر'],
     fin_isolate: ['b-ok', 'عزل البيانات المالية في الخزينة'],
-    sched_override: ['b-pri', 'إدارة استثناء دوام / تبديل وردية']
+    sched_override: ['b-pri', 'إدارة استثناء دوام / تبديل وردية'],
+    bio_device: ['b-pri', 'إدارة جهاز بصمة / رمزه'],
+    bio_map: ['b-pri', 'ربط معرّف جهاز بموظف'],
+    bio_pending: ['b-warn', 'معالجة حركات أجهزة معلّقة']
   };
   function logAudit(action, target, detail) {
     if (!['super_admin', 'hr_admin', 'payroll_admin'].includes(S.role)) return;
@@ -3626,9 +3958,9 @@ function adminApp(db, auth) {
     const pend = S.reqs.filter(r => r.status === 'pending').length;
     const LF = licFeatures();
     const fgN = forgotAlerts().length;
-    const tabs = [['today', 'اليوم', 'today'], ['emps', 'الموظفون', 'users'], ['sched', 'الدوام والإعدادات', 'sched'], ['locs', 'المواقع', 'pin'], ['reqs', `الطلبات${pend ? ' (' + pend + ')' : ''}`, 'send'], ...(LF.tasks === false ? [] : [['tasks', 'المهام', 'task']]), ['recs', `التقارير والرواتب${fgN ? ' (' + fgN + ')' : ''}`, 'report']];
-    const TT = { today: 'اليوم', emps: 'الموظفون', sched: 'الدوام والإعدادات', locs: 'المواقع', reqs: 'الطلبات', tasks: 'المهام', recs: 'التقارير والرواتب' };
- const SH = { today: 'اليوم', emps: 'الموظفون', sched: 'الدوام', locs: 'المواقع', reqs: 'الطلبات', tasks: 'المهام', recs: 'التقارير' };
+    const tabs = [['today', 'اليوم', 'today'], ['emps', 'الموظفون', 'users'], ['sched', 'الدوام والإعدادات', 'sched'], ['locs', 'المواقع', 'pin'], ...(isSuper() || isHr() ? [['bio', 'أجهزة البصمة', 'device']] : []), ['reqs', `الطلبات${pend ? ' (' + pend + ')' : ''}`, 'send'], ...(LF.tasks === false ? [] : [['tasks', 'المهام', 'task']]), ['recs', `التقارير والرواتب${fgN ? ' (' + fgN + ')' : ''}`, 'report']];
+    const TT = { today: 'اليوم', emps: 'الموظفون', sched: 'الدوام والإعدادات', locs: 'المواقع', bio: 'أجهزة البصمة', reqs: 'الطلبات', tasks: 'المهام', recs: 'التقارير والرواتب' };
+ const SH = { today: 'اليوم', emps: 'الموظفون', sched: 'الدوام', locs: 'المواقع', bio: 'الأجهزة', reqs: 'الطلبات', tasks: 'المهام', recs: 'التقارير' };
  const CNT = { reqs: pend || 0, recs: fgN || 0 };
  root.innerHTML = `<div class="shell"><aside class="rail"><nav class="rail-nav" id="adminNav" aria-label="تبويبات لوحة الإدارة"><div class="rail-head"><div class="lg" aria-hidden="true">${logoMark(28)}</div><div class="rail-brand"><b>${BRAND}</b><small>${esc(brandName())}</small></div></div>
  ${tabs.map(([k, n, i]) => `<button class="tab ${S.tab === k ? 'on' : ''}" data-tab="${k}" title="${TT[k]}" aria-label="${TT[k]}"${S.tab === k ? ' aria-current="page"' : ''}>${ic(i, 22)}<span class="tl">${SH[k]}</span>${CNT[k] ? `<em>${CNT[k]}</em>` : ''}</button>`).join('')}<span class="rail-sp"></span>${(() => { const em = (auth.currentUser && auth.currentUser.email) || ''; const nm = (em.split('@')[0] || 'مشرف'); const RLN = { super_admin: 'مدير عام', hr_admin: 'موارد بشرية', payroll_admin: 'محاسب رواتب', manager: 'مدير قسم', auditor: 'مدقق' }; return `<div class="rail-me" title="${esc(em)}"><span class="av">${ini(nm)}</span><div class="rail-mt"><b>${esc(nm)}</b><small>${RLN[S.role] || ''}</small></div></div>`; })()}</nav></aside>
@@ -3642,8 +3974,8 @@ function adminApp(db, auth) {
  <button class="ib" data-act="logout" title="تسجيل الخروج" aria-label="تسجيل الخروج">${ic('power', 22)}</button>
  </div></header>
  ${licBannerHtml()}
-      ${S.idxUrl ? `<div class="notice"><b>خطوة لمرة واحدة:</b> يلزم إنشاء فهرس لتسريع التقارير. <a href="${esc(S.idxUrl)}" target="_blank">اضغط هنا لإنشائه</a> وانتظر دقيقة ثم اضغط «تحديث». حتى ذلك الحين تُحمَّل السجلات بالطريقة البديلة الآمنة.</div>` : ''}
-      ${S.idxUrlReq ? `<div class="notice"><b>خطوة لمرة واحدة (لتوفير القراءات):</b> يلزم إنشاء فهرس لطلبات الموظفين. <a href="${esc(S.idxUrlReq)}" target="_blank">اضغط هنا لإنشائه</a> وانتظر دقيقة ثم اضغط «تحديث». قد يظهر رابط ثانٍ بعد الأول، أنشئه أيضاً. حتى ذلك الحين تُقرأ كل الطلبات بالطريقة القديمة.</div>` : ''}
+      ${S.idxUrl && !(()=>{try{return localStorage.getItem('att_idx_hide')}catch{return ''}})() ? `<div class="notice"><b>خطوة لمرة واحدة:</b> يلزم إنشاء فهرس لتسريع التقارير. <a href="${esc(S.idxUrl)}" target="_blank">اضغط هنا لإنشائه</a> وانتظر دقيقة ثم اضغط «تحديث». حتى ذلك الحين تُحمَّل السجلات بالطريقة البديلة الآمنة.<div style="margin-top:10px"><button class="btn sm sec" data-act="idxHide" data-k="att_idx_hide">${ic('check', 16)} أنشأته، لا تُظهر هذا التنبيه مجدداً</button></div></div>` : ''}
+      ${S.idxUrlReq && !(()=>{try{return localStorage.getItem('att_idxreq_hide')}catch{return ''}})() ? `<div class="notice"><b>خطوة لمرة واحدة (لتوفير القراءات):</b> يلزم إنشاء فهرس لطلبات الموظفين. <a href="${esc(S.idxUrlReq)}" target="_blank">اضغط هنا لإنشائه</a> وانتظر دقيقة ثم اضغط «تحديث». قد يظهر رابط ثانٍ بعد الأول، أنشئه أيضاً. حتى ذلك الحين تُقرأ كل الطلبات بالطريقة القديمة.<div style="margin-top:10px"><button class="btn sm sec" data-act="idxHide" data-k="att_idxreq_hide">${ic('check', 16)} أنشأته، لا تُظهر هذا التنبيه مجدداً</button></div></div>` : ''}
       ${(S.recsFail.length || S.todayFail.length) ? `<div class="notice"><b>تحذير — بيانات ناقصة:</b> تعذّرت قراءة سجلات: ${esc([...new Set([...S.recsFail, ...S.todayFail])].join('، '))}. قد يظهرون غائبين خطأً في اليوم والتقارير والرواتب. اضغط «تحديث» قبل اعتماد أي رواتب.</div>` : ''}
       ${S.rulesOld ? `<div class="notice"><b>تحديث لمرة واحدة:</b> لحفظ جداول الدوام يلزم تحديث قواعد Firestore. اضغط الزر لنسخ القواعد الجديدة، ثم افتح Firestore › Rules، وامسح القديم والصق الجديد واضغط Publish، ثم حدّث الصفحة.<div style="margin-top:10px"><button class="btn sm" data-act="copyRules">${ic('copy', 16)} نسخ القواعد الجديدة</button></div></div>` : ''}
       ${S.reqsErr || S.adminsErr ? `<div class="notice"><b>تحديث مطلوب:</b> قواعد Firestore المنشورة حالياً لا تتيح قراءة طلبات الموظفين جماعياً أو بيانات المشرفين. انسخ القواعد الأحدث وانشرها ثم أعد التحميل.<div style="margin-top:10px"><button class="btn sm" data-act="copyRules">${ic('copy', 16)} نسخ القواعد الأحدث</button></div></div>` : ''}
@@ -3651,7 +3983,7 @@ function adminApp(db, auth) {
       <div id="content"></div></main></div>`;
     { const nv = $('#adminNav'), on = nv && nv.querySelector('.tab.on'); if (on) { const a = on.getBoundingClientRect(), b = nv.getBoundingClientRect(); nv.scrollLeft += (a.left + a.width / 2) - (b.left + b.width / 2); } }
     refreshPwaButtons();
-    ({ today: viewToday, emps: viewEmps, sched: viewSched, locs: viewLocs, reqs: viewReqs, tasks: viewTasks, recs: viewRecs })[S.tab]($('#content'));
+    ({ today: viewToday, emps: viewEmps, sched: viewSched, locs: viewLocs, bio: viewBio, reqs: viewReqs, tasks: viewTasks, recs: viewRecs })[S.tab]($('#content'));
  { const so = document.querySelector('.stab.on'); if (so && so.scrollIntoView) so.scrollIntoView({ inline: 'center', block: 'nearest' }); }
   }
 
@@ -4065,6 +4397,7 @@ function adminApp(db, auth) {
       h += `<div class="sec-t">${ic('payroll', 20)} البيانات المصرفية والعزل الأمني للرواتب</div><div class="g2"><div class="field"><label>اسم المصرف والفرع</label><input data-k="bankName" value="${esc(W.bankName)}" placeholder="مصرف الجمهورية — الفرع الرئيسي"></div><div class="field"><label>رقم الحساب المصرفي / IBAN</label><input data-k="iban" dir="ltr" value="${esc(W.iban)}" placeholder="LY00 0000 0000 0000 0000 0000"></div>${(isSuper() || isPay()) ? `<div class="field" style="grid-column:1/-1"><label class="chk"><input type="checkbox" data-k="finIsolated" ${W.finIsolated ? 'checked' : ''}> 🔒 عزل البيانات المالية والمصرفية في الخزينة المحمية (<code>empFinance</code>) لمنع الموارد البشرية ومديري الأقسام من قراءة الراتب والـ IBAN</label></div>` : ''}</div>`;
       h += `<div class="sec-t">${ic('device', 20)} العُهد والأصول المسلمة + رقم جهاز البصمة</div><div class="g2">
         <div class="field"><label>رقم الموظف في جهاز البصمة (ZKTeco ID)</label><input data-k="bioId" dir="ltr" value="${esc(W.bioId)}" placeholder="مثال: 101"></div>
+        <div class="field"><label>بصمة هاتف الموظف (WebAuthn)</label><div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap"><span class="badge ${e.bio ? 'b-ok' : 'b-warn'}">${e.bio ? 'مسجَّلة' : 'غير مسجَّلة'}</span>${e.bio && (isSuper() || isHr()) ? `<button type="button" class="chip" data-a="resetBio">${ic('refresh', 16)} إعادة ضبط</button>` : ''}</div></div>
         <div class="field" style="grid-column:1/-1"><label>العُهد والأصول المسلمة للموظف (سيارة، لابتوب، هاتف، مفاتيح…)</label><input data-k="assets" value="${esc(W.assets)}" placeholder="مثال: لابتوب Dell S/N:4452 — سيارة كيا لوحة 12345 — شريحة مدار 091..."></div>
       </div>`;
       if (W.payMode === 'monthly') {
@@ -4076,6 +4409,10 @@ function adminApp(db, auth) {
     openModal({
       title: 'ملف الموظف الشامل (360°)', body, onField: (k, v) => { if (k.startsWith('locs.')) W.locs[k.slice(5)] = !!v; else if (k.startsWith('tp.')) W.tp[k.slice(3)] = v; else W[k] = v; },
       onAct: async a => {
+        if (a === 'resetBio') {
+          if (!await mqConfirm('إعادة ضبط بصمة جهاز هذا الموظف؟ سيُطلب منه تسجيل بصمة جديدة عند أول تسجيل في موقع يشترطها.')) return;
+          await updateDoc(doc(db, 'employees', e.id), { bio: null }); e.bio = null; toast('تمت إعادة ضبط بصمة الجهاز', 'good');
+        }
         if (a === 'netToGross') {
           const targetNet = parseFloat(await mqPrompt('أدخل صافي الراتب المطلوب استلامه في اليد (د.ل):'));
           if (!(targetNet > 0)) return;
@@ -4438,8 +4775,8 @@ function adminApp(db, auth) {
       <button class="btn sec" data-act="myLoc">${ic('target', 18)} موقعي الحالي</button>
       <button class="btn" data-act="addLoc">${ic('plus', 18)} إضافة الموقع</button></div>
       <p class="muted" style="font-size:13px;margin:12px 0 0">يمكنك نسخ الإحداثيات من خرائط Google أو الضغط على «تحديد عبر الخريطة التفاعلية» لاختيار النقطة بصرياً.</p></div>
-    <div class="card">${ch('map', `المواقع المعتمدة (${S.locs.length})`)}<div class="tw"><table class="rt"><thead><tr><th>اسم الموقع</th><th>الإحداثيات</th><th>نطاق القبول</th><th>إجراءات</th></tr></thead><tbody>
-    ${S.locs.map(l => `<tr><td data-l="اسم الموقع"><b>${esc(l.name)}</b></td><td data-l="الإحداثيات"><span dir="ltr">${l.lat.toFixed(5)}, ${l.lng.toFixed(5)}</span></td><td data-l="نطاق القبول"><span class="badge b-pri">${l.radius} متر</span></td><td data-l=""><div class="acts"><a class="btn sm sec" style="text-decoration:none" href="${mapLink(l.lat, l.lng)}" target="_blank">${ic('map', 16)} Google Maps</a> <button class="btn sm sec" data-act="editLoc" data-id="${l.id}">${ic('edit', 16)} تعديل</button> <button class="btn sm bad" data-act="delLoc" data-id="${l.id}">${ic('trash', 16)} حذف</button></div></td></tr>`).join('') || '<tr><td colspan="4" class="muted center">لم تُضف مواقع بعد، وبدونها لن يستطيع أي موظف تسجيل البصمة</td></tr>'}
+    <div class="card">${ch('map', `المواقع المعتمدة (${S.locs.length})`)}<div class="tw"><table class="rt"><thead><tr><th>اسم الموقع</th><th>الإحداثيات</th><th>نطاق القبول</th><th>طرق إثبات الحضور</th><th>إجراءات</th></tr></thead><tbody>
+    ${S.locs.map(l => `<tr><td data-l="اسم الموقع"><b>${esc(l.name)}</b></td><td data-l="الإحداثيات"><span dir="ltr">${l.lat.toFixed(5)}, ${l.lng.toFixed(5)}</span></td><td data-l="نطاق القبول"><span class="badge b-pri">${l.radius} متر</span></td><td data-l="طرق إثبات الحضور"><span class="badge ${locMethods(l).length > 1 && locMode(l) === 'all' ? 'b-ok' : 'b-warn'}">${esc(methodsText(l))}</span></td><td data-l=""><div class="acts">${locMethods(l).includes('qr') ? `<button class="btn sm" data-act="showQr" data-id="${l.id}">${ic('target', 16)} عرض QR</button> ` : ''}<a class="btn sm sec" style="text-decoration:none" href="${mapLink(l.lat, l.lng)}" target="_blank">${ic('map', 16)} Google Maps</a> <button class="btn sm sec" data-act="editLoc" data-id="${l.id}">${ic('edit', 16)} تعديل</button> <button class="btn sm bad" data-act="delLoc" data-id="${l.id}">${ic('trash', 16)} حذف</button></div></td></tr>`).join('') || '<tr><td colspan="5" class="muted center">لم تُضف مواقع بعد، وبدونها لن يستطيع أي موظف تسجيل البصمة</td></tr>'}
     </tbody></table></div></div>`;
   }
 
@@ -4457,7 +4794,7 @@ function adminApp(db, auth) {
   }
 
   function locEditor(ex) {
-    const W = ex ? { id: ex.id, name: ex.name || '', lat: +ex.lat, lng: +ex.lng, radius: +ex.radius || 100 } : { id: null, name: '', lat: 32.8872, lng: 13.1913, radius: 100 };
+    const W = ex ? { id: ex.id, name: ex.name || '', lat: +ex.lat, lng: +ex.lng, radius: +ex.radius || 100, methods: locMethods(ex), mode: locMode(ex) } : { id: null, name: '', lat: 32.8872, lng: 13.1913, radius: 100, methods: ['gps'], mode: 'all' };
     let map = null, marker = null, circle = null;
     const syncMap = () => {
       if (!map || !window.L) return;
@@ -4489,13 +4826,29 @@ function adminApp(db, auth) {
     const body = () => `
       <div class="g2"><div class="field"><label>اسم الموقع</label><input data-k="name" value="${esc(W.name)}"></div>
       <div class="field"><label>النطاق (متر)</label><input class="num" type="number" min="10" data-k="radius" data-redraw value="${W.radius}"></div></div>
+      <div class="sec-t">${ic('lock', 20)} طرق إثبات الحضور في هذا الموقع</div>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        <label class="chk"><input type="checkbox" data-k="m_gps" data-redraw ${W.methods.includes('gps') ? 'checked' : ''}> <b>GPS</b> — التواجد داخل النطاق الجغرافي (يمكن تزويره على بعض الهواتف)</label>
+        <label class="chk"><input type="checkbox" data-k="m_qr" data-redraw ${W.methods.includes('qr') ? 'checked' : ''}> <b>QR متغيّر</b> — يمسح الموظف رمزاً يتجدد كل 30 ثانية على شاشة عند الموقع (يثبت الحضور المكاني فعلاً)</label>
+        <label class="chk"><input type="checkbox" data-k="m_bio" data-redraw ${W.methods.includes('bio') ? 'checked' : ''}> <b>بصمة الجهاز</b> — بصمة الإصبع أو الوجه على هاتف الموظف عند كل تسجيل (يمنع البصمة بالنيابة)</label>
+      </div>
+      ${W.methods.length > 1 ? `<div class="field" style="margin-top:10px"><label>عند تفعيل أكثر من طريقة</label><select data-k="mode" data-redraw><option value="all" ${W.mode === 'all' ? 'selected' : ''}>كل الطرق المفعّلة مطلوبة معاً (الأقوى — موصى به)</option><option value="any" ${W.mode === 'any' ? 'selected' : ''}>أي طريقة واحدة تكفي (أضعف: يكفي نجاح أسهلها)</option></select></div>` : ''}
+      ${W.methods.includes('qr') ? `<p class="hint">بعد الحفظ اضغط «عرض QR» في قائمة المواقع وافتحه على تابلت أو شاشة عند الباب. لا يُقرأ الرمز من بعيد لأنه يتغير كل 30 ثانية.</p>${ex ? `<button type="button" class="chip" data-a="rotQr">${ic('refresh', 16)} تدوير سر الرمز (إبطال أي رمز مسرَّب)</button>` : ''}` : ''}
+      ${W.methods.length === 1 && W.methods[0] === 'gps' ? `<p class="hint" style="color:var(--warn)">GPS وحده يمكن خداعه ببرامج الموقع الوهمي. للإثبات الحقيقي أضف QR المتغيّر وبصمة الجهاز.</p>` : ''}
       <p class="hint">اضغط على الخريطة لوضع النقطة أو اسحب العلامة. الدائرة الزرقاء هي النطاق المسموح للموظف حول الموقع.</p>
       <div id="mapBox" style="height:320px;border-radius:16px;border:1px solid var(--line);background:var(--surface)"></div>
       <div class="sc"><button type="button" class="chip" data-a="myLoc">${ic('target', 16)} موقعي الحالي</button><span class="muted" dir="ltr" id="coordTxt">${W.lat ? W.lat.toFixed(5) + ', ' + W.lng.toFixed(5) : ''}</span></div>`;
     mo = openModal({
       title: ex ? 'تعديل الموقع (خريطة تفاعلية)' : 'موقع جديد (خريطة تفاعلية)', saveText: 'حفظ الموقع', body,
-      onField: (k, v) => { if (k === 'radius') W.radius = Math.max(10, +v || 100); else W[k] = v; },
+      onField: (k, v) => {
+        if (k === 'radius') W.radius = Math.max(10, +v || 100);
+        else if (/^m_(gps|qr|bio)$/.test(k)) { const m = k.slice(2); W.methods = AM_METHODS.filter(x => x === m ? v : W.methods.includes(x)); }
+        else W[k] = v;
+      },
       onAct: async a => {
+        if (a === 'rotQr' && ex) {
+          if (await mqConfirm('تدوير السر يُبطل فوراً أي رمز QR قديم أو مصوَّر، وتحتاج لإعادة فتح شاشة العرض. متابعة؟')) { await setDoc(doc(db, 'locSecrets', ex.id), { secret: newQrSecret(), rotatedAt: serverTimestamp() }); toast('تم تدوير سر الرمز', 'good'); }
+        }
         if (a === 'myLoc') {
           toast('جاري تحديد موقعك…');
           try {
@@ -4511,14 +4864,147 @@ function adminApp(db, auth) {
         if (!(W.name || '').trim()) return bad('اكتب اسم الموقع');
         if (typeof W.lat !== 'number' || typeof W.lng !== 'number' || isNaN(W.lat) || isNaN(W.lng)) return bad('حدد نقطة على الخريطة');
         if (!(W.radius >= 10)) return bad('النطاق 10 أمتار على الأقل');
+        if (!W.methods.length) return bad('اختر طريقة واحدة على الأقل لإثبات الحضور');
         obs.disconnect();
-        if (ex) await updateDoc(doc(db, 'locations', ex.id), { name: W.name.trim(), lat: W.lat, lng: W.lng, radius: Math.round(W.radius), ...geoK(W.lat) });
-        else await addDoc(collection(db, 'locations'), { name: W.name.trim(), lat: W.lat, lng: W.lng, radius: Math.round(W.radius), active: true, ...geoK(W.lat) });
+        const pol = { methods: W.methods, mode: W.methods.length > 1 ? W.mode : 'all' };
+        let locId = ex && ex.id;
+        if (ex) await updateDoc(doc(db, 'locations', ex.id), { name: W.name.trim(), lat: W.lat, lng: W.lng, radius: Math.round(W.radius), ...pol, ...geoK(W.lat) });
+        else locId = (await addDoc(collection(db, 'locations'), { name: W.name.trim(), lat: W.lat, lng: W.lng, radius: Math.round(W.radius), active: true, ...pol, ...geoK(W.lat) })).id;
+        if (W.methods.includes('qr') && !(await getDoc(doc(db, 'locSecrets', locId))).exists()) await setDoc(doc(db, 'locSecrets', locId), { secret: newQrSecret(), rotatedAt: serverTimestamp() });
         await refresh('locs'); toast('تم حفظ الموقع', 'good');
       }
     });
   }
 
+  /* =====================================================================
+     لوحة الإدارة: شاشة عرض QR المتغيّر + استيراد سجلات أجهزة البصمة (كل الماركات)
+     ===================================================================== */
+  async function showQrBoard(loc) {
+    let secret = '';
+    try {
+      const sd = await getDoc(doc(db, 'locSecrets', loc.id));
+      if (sd.exists()) secret = sd.data().secret;
+      else { secret = newQrSecret(); await setDoc(doc(db, 'locSecrets', loc.id), { secret, rotatedAt: serverTimestamp() }); }
+    } catch (e) { console.warn(e); return toast('تعذر قراءة سر الرمز. حدّث قواعد Firestore (قسم locSecrets) ثم أعد المحاولة', 'err'); }
+    const ov = document.createElement('div'); ov.className = 'ov';
+    ov.style.cssText = 'align-items:center;justify-content:center;background:#fff;z-index:200';
+    ov.innerHTML = `<div style="width:min(92vw,78vh);text-align:center;color:#111">
+      <button class="ib dark" id="qbX" aria-label="إغلاق" style="position:fixed;top:14px;left:14px">${ic('x', 20)}</button>
+      <h2 style="margin:0 0 4px">${esc(brandName())}</h2>
+      <div style="font-size:18px;font-weight:700;margin-bottom:10px">${esc(loc.name)} — امسح الرمز بتطبيق الحضور</div>
+      <div id="qbImg" style="width:100%;aspect-ratio:1/1;background:#fff;display:flex;align-items:center;justify-content:center">جارٍ التحميل…</div>
+      <div style="height:8px;background:#e5e7eb;border-radius:8px;margin:12px 0 6px;overflow:hidden"><div id="qbBar" style="height:100%;background:#0E6B4D;width:100%"></div></div>
+      <div id="qbTxt" style="font-size:13px;color:#555">يتجدد الرمز كل 30 ثانية — لا تلتقط له صورة لإرسالها</div></div>`;
+    document.body.appendChild(ov);
+    let curW = -1, alive = true, wl = null, busy = false;
+    try { wl = await navigator.wakeLock?.request('screen'); } catch {}
+    const close = () => { alive = false; clearInterval(iv); try { wl && wl.release(); } catch {} ov.remove(); };
+    ov.querySelector('#qbX').onclick = close;
+    const tick = async () => {
+      if (!alive || busy) return; busy = true;
+      try {
+        const ms = Date.now(), w = qrWindow(ms);
+        if (w !== curW) {
+          const svg = await qrSvg(qrPayload(loc.id, await qrToken(secret, ms)));
+          const box = ov.querySelector('#qbImg'); if (!box) return;
+          box.innerHTML = svg; const sv = box.querySelector('svg'); if (sv) { sv.style.cssText = 'width:100%;height:100%'; }
+          curW = w;
+        }
+        const left = QR_WIN_MS - (ms % QR_WIN_MS);
+        const bar = ov.querySelector('#qbBar'); if (bar) bar.style.width = (left / QR_WIN_MS * 100) + '%';
+      } catch (e) { const box = ov.querySelector('#qbImg'); if (box) box.textContent = 'تعذر تحميل مولّد الرمز — تحقق من الاتصال'; }
+      busy = false;
+    };
+    const iv = setInterval(tick, 1000); tick();
+  }
+
+  /* ---------- استيراد ملفات أجهزة البصمة ---------- */
+  function openDeviceImport() {
+    const byId = new Map();
+    S.emps.forEach(e => { if (e.bioId) byId.set(devIdKey(e.bioId), e); });
+    if (!byId.size) return toast('اربط أرقام الموظفين في جهاز البصمة أولاً (تعديل بيانات الموظف ثم «رقم الموظف في جهاز البصمة»)', 'err');
+    const ov = document.createElement('div'); ov.className = 'ov'; document.body.appendChild(ov);
+    let rows = [], cfg = null, res = null;
+    const close = () => ov.remove();
+    const colOpt = (sel, withNone, noneTxt) => {
+      const n = Math.max(0, ...rows.slice(0, 50).map(r => r.length));
+      return (withNone ? `<option value="-1" ${sel < 0 ? 'selected' : ''}>${noneTxt}</option>` : '') + Array.from({ length: n }, (_, i) => `<option value="${i}" ${sel === i ? 'selected' : ''}>عمود ${i + 1} — ${esc(String((rows[cfg.header ? 1 : 0] || [])[i] ?? '').slice(0, 22))}</option>`).join('');
+    };
+    const compute = () => { res = devParse(rows, byId, TZOFF, cfg); };
+    const draw = () => {
+      const head = `<div class="mh"><h3>${ic('download', 22)} استيراد سجلات جهاز البصمة</h3><button class="ib dark" data-x="1" aria-label="إغلاق">${ic('x', 18)}</button></div>`;
+      if (!rows.length) {
+        ov.innerHTML = `<div class="modal" style="max-width:560px" role="dialog">${head}<div class="mb">
+          <p class="hint" style="margin-top:0">يعمل مع أي جهاز بصمة أو وجه أو كرت يصدّر سجلاته: <b>ZKTeco</b> (ATTLOG.dat / Excel)، <b>Hikvision</b>، <b>Suprema BioStar</b>، <b>Anviz</b>، <b>Virdi</b>، <b>Dahua</b>، <b>Realand</b>، <b>iClock</b>، وأي ملف <b>Excel / CSV / TXT</b>. يُكتشف شكل الملف تلقائياً ويمكنك تعديل الأعمدة قبل الاستيراد.</p>
+          <p class="hint">الربط بالموظفين عبر «رقم الموظف في جهاز البصمة». إعادة استيراد نفس الملف لا تكرّر السجلات.</p>
+          <input type="file" id="devFile" accept=".dat,.txt,.csv,.tsv,.log,.xls,.xlsx,.xlsm,.xlsb,.ods" style="width:100%"></div></div>`;
+        const inp = ov.querySelector('#devFile');
+        inp.onchange = async () => { const f = inp.files[0]; if (f) await readFile(f); };
+      } else {
+        const dtMode = cfg.dtCol >= 0;
+        const unm = [...res.unmatched.entries()].sort((a, b) => b[1] - a[1]);
+        const empN = new Set(res.recs.map(r => r.emp.id)).size;
+        ov.innerHTML = `<div class="modal" style="max-width:640px" role="dialog">${head}<div class="mb">
+          <div class="g2">
+            <div class="field"><label>عمود رقم الموظف</label><select data-c="idCol">${colOpt(cfg.idCol, true, '— غير محدد —')}</select></div>
+            ${dtMode || (cfg.dateCol < 0 && cfg.timeCol < 0)
+              ? `<div class="field"><label>عمود التاريخ والوقت</label><select data-c="dtCol">${colOpt(cfg.dtCol, true, '— غير محدد —')}</select></div>`
+              : `<div class="field"><label>عمود التاريخ</label><select data-c="dateCol">${colOpt(cfg.dateCol, true, '— غير محدد —')}</select></div><div class="field"><label>عمود الوقت</label><select data-c="timeCol">${colOpt(cfg.timeCol, true, '— غير محدد —')}</select></div>`}
+            <div class="field"><label>عمود الحالة (حضور/انصراف)</label><select data-c="stCol">${colOpt(cfg.stCol, true, 'بدون — بالتناوب حضور ثم انصراف')}</select></div>
+            <div class="field"><label>ترتيب التاريخ</label><select data-c="order"><option value="dmy" ${cfg.order === 'dmy' ? 'selected' : ''}>يوم/شهر/سنة</option><option value="mdy" ${cfg.order === 'mdy' ? 'selected' : ''}>شهر/يوم/سنة</option></select></div>
+            <div class="field" style="grid-column:1/-1"><label class="chk"><input type="checkbox" data-c="header" ${cfg.header ? 'checked' : ''}> الصف الأول عناوين أعمدة (يُتجاهل)</label></div>
+          </div>
+          <div class="notice" style="margin-top:10px"><b>${res.recs.length}</b> حركة تخص <b>${empN}</b> موظفاً${res.recs.length ? ` (من ${fmtDate(new Date(res.recs[0].ms))} إلى ${fmtDate(new Date(Math.max(...res.recs.map(r => r.ms))))})` : ''}
+            <br><span class="muted" style="font-size:12.5px">صفوف غير مفهومة: ${res.bad} من ${res.total}</span>
+            ${unm.length ? `<br><span class="muted" style="font-size:12.5px">أرقام غير مرتبطة بموظف (${unm.length}): ${esc(unm.slice(0, 12).map(([k, n]) => `${k} (${n})`).join('، '))}${unm.length > 12 ? ' …' : ''}</span>` : ''}</div>
+          <div class="tw" style="max-height:170px;overflow:auto;margin-top:8px"><table class="rt"><tbody>${rows.slice(0, 5).map(r => `<tr>${r.slice(0, 7).map(c => `<td dir="ltr" style="font-size:12px">${esc(String(c).slice(0, 24))}</td>`).join('')}</tr>`).join('')}</tbody></table></div>
+        </div><div class="mf" style="justify-content:space-between"><button class="btn" data-go="1" ${res.recs.length ? '' : 'disabled'}>${ic('check', 18)} استيراد ${res.recs.length} حركة</button><button class="btn sec" data-x="1">إلغاء</button></div></div>`;
+        ov.querySelectorAll('[data-c]').forEach(el => el.onchange = () => {
+          const k = el.dataset.c;
+          if (k === 'header') cfg.header = el.checked; else if (k === 'order') cfg.order = el.value; else cfg[k] = +el.value;
+          compute(); draw();
+        });
+        const go = ov.querySelector('[data-go]'); if (go) go.onclick = importNow;
+      }
+      ov.querySelectorAll('[data-x]').forEach(b => b.onclick = close);
+    };
+    async function readFile(f) {
+      try {
+        if (/\.(xls|xlsx|xlsm|xlsb|ods)$/i.test(f.name)) {
+          const XLSX = await loadXlsx();
+          const wb = XLSX.read(await f.arrayBuffer(), { type: 'array' });
+          rows = wb.SheetNames.flatMap(n => XLSX.utils.sheet_to_json(wb.Sheets[n], { header: 1, raw: false, dateNF: 'yyyy-mm-dd hh:mm:ss', defval: '' }))
+            .map(r => r.map(c => String(c ?? '').trim())).filter(r => r.some(c => c));
+        } else {
+          const buf = new Uint8Array(await f.arrayBuffer());
+          const u16 = (buf[0] === 0xFF && buf[1] === 0xFE) || (buf[0] === 0xFE && buf[1] === 0xFF);   // بعض الأجهزة تصدّر UTF-16
+          rows = devRowsFromText(new TextDecoder(u16 ? 'utf-16' : 'utf-8').decode(buf));
+        }
+        if (!rows.length) return toast('الملف فارغ أو بصيغة غير مدعومة', 'err');
+        cfg = devDetect(rows); compute();
+        if (cfg.idCol < 0 || (cfg.dtCol < 0 && (cfg.dateCol < 0 || cfg.timeCol < 0))) toast('تعذر اكتشاف الأعمدة تلقائياً — اخترها يدوياً', 'warn');
+        draw();
+      } catch (e) { console.error(e); rows = []; toast('تعذر قراءة الملف', 'err'); draw(); }
+    }
+    async function importNow() {
+      const recs = res.recs; if (!recs.length) return;
+      const btn = ov.querySelector('[data-go]'); if (btn) btn.disabled = true;
+      try {
+        for (let i = 0; i < recs.length; i += 350) {
+          const b = writeBatch(db);
+          recs.slice(i, i + 350).forEach(r => {
+            b.set(doc(db, 'employees', r.emp.id, 'records', 'bio_' + r.ms), { type: r.type, time: Timestamp.fromMillis(r.ms), lat: 0, lng: 0, accuracy: 0, distance: 0, locationId: 'biometric', locationName: 'جهاز البصمة', empName: r.emp.name, deviceId: 'device-import' });
+          });
+          await b.commit();
+        }
+        const months = [...new Set(recs.map(r => dayKey(new Date(r.ms)).slice(0, 7)))];
+        await Promise.all(months.map(m => invalidateMonthSummary(m)));
+        await RecCache.clear(); await refresh('emps', 'recs');
+        close(); toast(`تم استيراد ${recs.length} بصمة بنجاح ✅`, 'good');
+      } catch (e) { console.error(e); toast('فشل الاستيراد: ' + ((e && e.code) || 'خطأ'), 'err'); if (btn) btn.disabled = false; }
+    }
+    draw();
+  }
   /* --- تصدير Excel منسّق --- */
   const xlSafe = v => { if (typeof v !== 'string') return v; return /^[=+\-@\t\r]/.test(v) ? "'" + v : v; };
   async function loadXlsx() {
@@ -4749,6 +5235,192 @@ function adminApp(db, auth) {
     return S.leaves.filter(l => l.empId === empId && leaveDeducts(l)).reduce((a, l) => a + countLeaveDays(l.from, l.to, c.sc, c.rot, S.holKeys, year), 0);
   }
 
+  /* =====================================================================
+     تبويب «أجهزة البصمة»: تعريف الأجهزة، ربط (جهاز + معرّف) بالموظف، ومعالجة الحركات المعلّقة.
+     الاستقبال نفسه يتم في workers/biometric-ingest؛ هنا الإدارة فقط. الرمز لا يُخزَّن: تُحفظ بصمته (SHA-256) ويُعرض مرة واحدة.
+     ===================================================================== */
+  const BIO_PROTO = {
+    'zkteco-adms': ['ZKTeco / أجهزة ADMS (iClock Push)', 'يتصل الجهاز بعنوان Worker ويحدَّد بالرقم التسلسلي SN'],
+    'meqat-json-v1': ['JSON موحّد (برنامج أو جهاز يرسل JSON)', 'ترسل الجهة طلب POST برمز وصول'],
+    'generic': ['إشعارات HTTP عامة (JSON / XML) بتعيين حقول', 'لأي جهاز أو نظام يدفع أحداثاً: تحدّد أسماء الحقول بنفسك']
+  };
+  const BIO_MAPPING_EXAMPLE = '{\n  "recordsPath": "AccessControllerEvent.events",\n  "idPath": "employeeNoString",\n  "timePath": "dateTime",\n  "typePath": "",\n  "typeMap": {},\n  "order": "dmy"\n}';
+  const bioWorkerUrl = () => { try { return localStorage.getItem('meqat_worker_url') || ''; } catch { return ''; } };
+  const bioRandToken = () => Array.from(crypto.getRandomValues(new Uint8Array(32)), b => b.toString(16).padStart(2, '0')).join('');
+  async function loadBio(force = false) {
+    if (S.bio && S.bio.loaded && !force) return S.bio;
+    const rd = async (c, n) => (await getDocs(query(collection(db, c), limit(n)))).docs.map(d => ({ id: d.id, ...d.data() }));
+    try { S.bio = { devices: await rd('biometricDevices', 200), maps: await rd('biometricMap', 2000), pending: await rd('biometricPending', 1000), loaded: true, err: false }; }
+    catch (e) { console.warn(e); S.bio = { devices: [], maps: [], pending: [], loaded: true, err: true }; }
+    return S.bio;
+  }
+  const bioDevName = id => { const d = ((S.bio && S.bio.devices) || []).find(x => x.id === id); return d ? d.name : id; };
+  const tsMs = t => t && t.toMillis ? t.toMillis() : (+t || 0);
+
+  async function viewBio(el) {
+    el.innerHTML = '<div class="card"><p class="muted">جارٍ التحميل…</p></div>';
+    const B = await loadBio();
+    if (S.tab !== 'bio' || !el.isConnected) return;
+    if (B.err) { el.innerHTML = `<div class="card"><div class="notice"><b>تحديث مطلوب:</b> قواعد Firestore المنشورة لا تتيح مجموعات أجهزة البصمة. انسخ القواعد الأحدث وانشرها ثم أعد التحميل.<div style="margin-top:10px"><button class="btn sm" data-act="copyRules">${ic('copy', 16)} نسخ القواعد الأحدث</button></div></div></div>`; return; }
+    const url = bioWorkerUrl();
+    const groups = new Map();
+    for (const p of B.pending) { const k = p.deviceId + '|' + p.userKey; const g = groups.get(k) || groups.set(k, { deviceId: p.deviceId, userKey: p.userKey, ext: p.externalUserId, reason: p.reason, n: 0, from: Infinity, to: 0, ids: [] }).get(k); g.n++; g.ids.push(p.id); const t = tsMs(p.time); g.from = Math.min(g.from, t); g.to = Math.max(g.to, t); }
+    const pend = [...groups.values()].sort((a, b) => b.n - a.n);
+    const REASON = { unmatched: 'رقم غير مرتبط', ambiguous_bioId: 'رقم مكرر عند أكثر من موظف', mapping_disabled: 'الربط معطّل', mapping_pending: 'الربط بانتظار المراجعة', future_time: 'وقت مستقبلي (ساعة الجهاز؟)', employee_inactive: 'الموظف موقوف', employee_missing: 'الموظف غير موجود' };
+    const mapsBy = id => B.maps.filter(m => m.deviceId === id).length;
+    el.innerHTML = `
+    <div class="card">${ch('device', 'أجهزة البصمة والأنظمة المتصلة', `<div class="acts"><button class="btn sm" data-bact="addDev">${ic('plus', 16)} إضافة جهاز</button><button class="btn sm sec" data-bact="reload">${ic('refresh', 16)} تحديث</button></div>`)}
+      <div class="field" style="max-width:520px"><label>عنوان Worker (لعرض الروابط الجاهزة فقط)</label><input id="bioWu" dir="ltr" placeholder="https://meqat-biometric-ingest.<account>.workers.dev" value="${esc(url)}"></div>
+      <div class="tw"><table class="rt"><thead><tr><th>الجهاز</th><th>البروتوكول</th><th>المعرّف</th><th>آخر اتصال</th><th>الربط</th><th>الحالة</th><th>إجراءات</th></tr></thead><tbody>
+      ${B.devices.map(d => `<tr><td data-l="الجهاز"><b>${esc(d.name || d.id)}</b></td><td data-l="البروتوكول">${esc((BIO_PROTO[d.protocol] || [d.protocol])[0])}</td><td data-l="المعرّف" dir="ltr">${esc(d.protocol === 'zkteco-adms' ? 'SN ' + (d.sn || '—') : d.id)}</td>
+        <td data-l="آخر اتصال">${d.lastSeenAt ? `${fmtDate(new Date(tsMs(d.lastSeenAt)))} ${fmtTime(new Date(tsMs(d.lastSeenAt)))}<br><small class="muted" dir="ltr">${esc(d.lastResult || '')}</small>` : '<span class="muted">لم يتصل بعد</span>'}</td>
+        <td data-l="الربط">${mapsBy(d.id)}</td><td data-l="الحالة"><span class="badge ${d.active === false ? 'b-bad' : 'b-ok'}">${d.active === false ? 'معطّل' : 'فعّال'}</span></td>
+        <td data-l=""><div class="acts"><button class="btn sm sec" data-bact="editDev" data-id="${d.id}">${ic('edit', 16)} تعديل</button>${d.protocol !== 'zkteco-adms' || d.requireToken ? ` <button class="btn sm sec" data-bact="rotDev" data-id="${d.id}">${ic('refresh', 16)} رمز جديد</button>` : ''} <button class="btn sm ${d.active === false ? 'ok' : 'bad'}" data-bact="togDev" data-id="${d.id}">${d.active === false ? 'تفعيل' : 'تعطيل'}</button></div></td></tr>`).join('') || '<tr><td colspan="7" class="muted center">لم تُضف أجهزة بعد. أضف جهازاً ليستقبل ميقات حركاته مباشرة؛ ويبقى «استيراد من جهاز البصمة» (في التقارير) متاحاً دائماً كمسار احتياطي.</td></tr>'}
+      </tbody></table></div></div>
+
+    <div class="card">${ch('users', `ربط معرّفات الأجهزة بالموظفين (${B.maps.length})`, `<div class="acts"><button class="btn sm" data-bact="addMap">${ic('plus', 16)} إضافة ربط</button><button class="btn sm sec" data-bact="autoMap">${ic('check', 16)} ربط تلقائي من «رقم البصمة» في ملف الموظف</button></div>`)}
+      <p class="hint" style="margin-top:0">كل (جهاز + معرّف) يرتبط بموظف واحد فقط، والموظف الواحد يمكن أن يرتبط بعدة أجهزة بمعرّفات مختلفة. إن لم يوجد ربط خاص يُستعمل «رقم البصمة» في ملف الموظف بشرط أن يكون فريداً.</p>
+      <div class="tw"><table class="rt"><thead><tr><th>الجهاز</th><th>المعرّف في الجهاز</th><th>الموظف</th><th>الحالة</th><th></th></tr></thead><tbody>
+      ${B.maps.slice().sort((a, b) => String(a.deviceId).localeCompare(b.deviceId) || String(a.externalUserId).localeCompare(String(b.externalUserId), 'en', { numeric: true })).map(m => { const e = S.emps.find(x => x.id === m.employeeId); return `<tr><td data-l="الجهاز">${esc(bioDevName(m.deviceId))}</td><td data-l="المعرّف" dir="ltr">${esc(m.externalUserId)}</td><td data-l="الموظف">${e ? esc(e.name) : '<span class="muted">موظف محذوف</span>'}</td><td data-l="الحالة"><span class="badge ${m.status === 'disabled' ? 'b-bad' : 'b-ok'}">${m.status === 'disabled' ? 'معطّل' : 'فعّال'}</span></td><td data-l=""><div class="acts"><button class="btn sm sec" data-bact="togMap" data-id="${m.id}">${m.status === 'disabled' ? 'تفعيل' : 'تعطيل'}</button> <button class="btn sm bad" data-bact="delMap" data-id="${m.id}">${ic('trash', 16)}</button></div></td></tr>`; }).join('') || '<tr><td colspan="5" class="muted center">لا روابط خاصة بعد</td></tr>'}
+      </tbody></table></div></div>
+
+    <div class="card">${ch('alert', `حركات معلّقة بانتظار المراجعة (${B.pending.length})`)}
+      <p class="hint" style="margin-top:0">حركات وصلت من الأجهزة لكن تعذّر إسنادها بأمان (رقم غير مرتبط أو ملتبس أو ساعة جهاز خاطئة). لا تضيع: اربط المعرّف بموظف فتُسجَّل حركاته تلقائياً، أو تجاهلها.</p>
+      <div class="tw"><table class="rt"><thead><tr><th>الجهاز</th><th>المعرّف</th><th>السبب</th><th>الحركات</th><th>الفترة</th><th></th></tr></thead><tbody>
+      ${pend.map((g, i) => `<tr><td data-l="الجهاز">${esc(bioDevName(g.deviceId))}</td><td data-l="المعرّف" dir="ltr">${esc(g.ext)}</td><td data-l="السبب">${esc(REASON[g.reason] || g.reason || '')}</td><td data-l="الحركات">${g.n}</td><td data-l="الفترة">${fmtDate(new Date(g.from))}${g.to - g.from > 86400000 ? ' ← ' + fmtDate(new Date(g.to)) : ''}</td><td data-l=""><div class="acts">${g.reason === 'future_time' ? '' : `<button class="btn sm" data-bact="linkPend" data-i="${i}">${ic('users', 16)} ربط بموظف</button>`} <button class="btn sm bad" data-bact="dropPend" data-i="${i}">${ic('trash', 16)} تجاهل</button></div></td></tr>`).join('') || '<tr><td colspan="6" class="muted center">لا حركات معلّقة ✅</td></tr>'}
+      </tbody></table></div></div>`;
+    S._bioPend = pend;
+    const wu = $('#bioWu'); if (wu) wu.onchange = () => { try { localStorage.setItem('meqat_worker_url', wu.value.trim().replace(/\/+$/, '')); } catch {} };
+  }
+
+  /* يعرض الرمز مرة واحدة مع الروابط الجاهزة للصق في إعدادات الجهاز */
+  async function showBioSecret(d, token) {
+    const base = bioWorkerUrl() || 'https://<عنوان-worker>';
+    const line = (l, v) => `<div class="field"><label>${l}</label><input readonly dir="ltr" value="${esc(v)}" onclick="this.select()"></div>`;
+    let h = '';
+    if (d.protocol === 'zkteco-adms') h = line('عنوان الخادم في الجهاز (Server Address)', base.replace(/^https?:\/\//, '')) + (d.requireToken ? line('أو مسار كامل يتضمن الرمز', `${base}/t/${token}/iclock/cdata`) : '') + `<p class="hint">في قائمة الجهاز: Comm. ← Cloud Server Setting ← ضع العنوان أعلاه، المنفذ 80 (أو 443 مع TLS). الرقم التسلسلي المسجّل: <b dir="ltr">${esc(d.sn)}</b>.</p>`;
+    else h = line('رابط الاستقبال الجاهز (الرمز داخل الرابط)', `${base}/v1/hook/${d.id}/${token}`) + line('أو: رأس X-Meqat-Device', d.id) + line('رأس Authorization', 'Bearer ' + token);
+    const ov = document.createElement('div'); ov.className = 'ov'; document.body.appendChild(ov);
+    ov.innerHTML = `<div class="modal" style="max-width:560px" role="dialog"><div class="mh"><h3>${ic('lock', 22)} رمز الجهاز «${esc(d.name)}»</h3></div><div class="mb"><div class="notice"><b>انسخ الرمز الآن:</b> لا يُعرض مرة أخرى (يُحفظ في النظام مشفّراً بصمةً فقط). عند فقده أصدر رمزاً جديداً.</div>${line('الرمز', token)}${h}</div><div class="mf"><button class="btn" data-x="1">تم النسخ</button></div></div>`;
+    ov.querySelector('[data-x]').onclick = () => ov.remove();
+  }
+
+  function bioDeviceEditor(ex) {
+    const W = ex ? { ...ex } : { name: '', protocol: 'zkteco-adms', sn: '', tzOffset: TZOFF, typeSource: 'alternate', requireToken: false, mappingTxt: BIO_MAPPING_EXAMPLE };
+    if (ex && ex.mapping) W.mappingTxt = JSON.stringify(ex.mapping, null, 2); else if (ex) W.mappingTxt = BIO_MAPPING_EXAMPLE;
+    openModal({
+      title: ex ? 'تعديل جهاز' : 'إضافة جهاز بصمة', saveText: 'حفظ',
+      body: () => `<div class="g2"><div class="field"><label>اسم الجهاز / الفرع</label><input data-k="name" value="${esc(W.name)}" placeholder="بوابة المقر الرئيسي"></div>
+        <div class="field"><label>طريقة الاتصال</label><select data-k="protocol" data-redraw ${ex ? 'disabled' : ''}>${Object.entries(BIO_PROTO).map(([k, v]) => `<option value="${k}" ${W.protocol === k ? 'selected' : ''}>${esc(v[0])}</option>`).join('')}</select></div></div>
+        <p class="hint">${esc(BIO_PROTO[W.protocol][1])}</p>
+        ${W.protocol === 'zkteco-adms' ? `<div class="g2"><div class="field"><label>الرقم التسلسلي للجهاز (SN)</label><input data-k="sn" dir="ltr" value="${esc(W.sn)}" placeholder="يظهر في System Info على الجهاز"></div>
+          <div class="field"><label class="chk" style="margin-top:26px"><input type="checkbox" data-k="requireToken" ${W.requireToken ? 'checked' : ''}> اشتراط رمز في مسار الاتصال (إن سمح الجهاز بمسار)</label></div></div>` : ''}
+        ${W.protocol === 'generic' ? `<div class="field"><label>تعيين الحقول (JSON): مسار قائمة الأحداث، ومسار المعرّف، والوقت، والحالة</label><textarea data-k="mappingTxt" dir="ltr" rows="9" style="font-family:monospace;font-size:12.5px">${esc(W.mappingTxt)}</textarea><p class="hint">اترك typePath فارغاً إن كان الجهاز لا يرسل حضور/انصراف. يدعم المسارات المتداخلة مثل a.b[0].c، ولأجسام XML وmultipart (تُهمل الصور) وسطور نصية (format: "lines" مع idCol/timeCol/typeCol).</p></div>` : ''}
+        <div class="g2"><div class="field"><label>إزاحة توقيت الجهاز عن UTC (دقائق)</label><input type="number" class="num" data-k="tzOffset" value="${W.tzOffset}"><small class="muted">ليبيا +120. تُستعمل لأوقات الجهاز التي لا تحمل منطقة زمنية.</small></div>
+        <div class="field"><label>تحديد حضور/انصراف</label><select data-k="typeSource"><option value="alternate" ${W.typeSource !== 'device' ? 'selected' : ''}>بالتناوب داخل اليوم (موصى به — أغلب الأجهزة لا تميّز)</option><option value="device" ${W.typeSource === 'device' ? 'selected' : ''}>من حالة الجهاز (إن كان الموظفون يضغطون زر الحالة فعلاً)</option></select></div></div>`,
+      onField: (k, v) => { W[k] = k === 'tzOffset' ? (+v || 0) : v; },
+      onSave: async () => {
+        const bad = m => { toast(m, 'err'); return false; };
+        if (!String(W.name || '').trim()) return bad('اكتب اسم الجهاز');
+        if (W.protocol === 'zkteco-adms') {
+          const sn = String(W.sn || '').trim(); if (!/^[A-Za-z0-9_-]{4,64}$/.test(sn)) return bad('الرقم التسلسلي غير صالح');
+          if (S.bio.devices.some(d => d.sn === sn && (!ex || d.id !== ex.id))) return bad('هذا الرقم التسلسلي مسجّل لجهاز آخر');
+        }
+        let mapping = null;
+        if (W.protocol === 'generic') { try { mapping = JSON.parse(W.mappingTxt || '{}'); if (!mapping || typeof mapping !== 'object' || Array.isArray(mapping)) throw 0; } catch { return bad('تعيين الحقول ليس JSON صالحاً'); } }
+        const data = { name: String(W.name).trim().slice(0, 80), protocol: W.protocol, tzOffset: Math.max(-720, Math.min(840, Math.round(+W.tzOffset || 0))), typeSource: W.typeSource === 'device' ? 'device' : 'alternate', active: ex ? ex.active !== false : true, ...(W.protocol === 'zkteco-adms' ? { sn: String(W.sn).trim(), requireToken: !!W.requireToken } : {}), ...(mapping ? { mapping } : {}) };
+        let id = ex && ex.id, token = '';
+        if (!ex || (W.protocol === 'zkteco-adms' && data.requireToken && !ex.tokenHash)) { token = bioRandToken(); data.tokenHash = await sha256Hex(token); }
+        if (ex) await updateDoc(doc(db, 'biometricDevices', ex.id), data);
+        else { data.createdAt = serverTimestamp(); id = (await addDoc(collection(db, 'biometricDevices'), data)).id; }
+        logAudit('bio_device', id, `${ex ? 'تعديل' : 'إنشاء'} جهاز «${data.name}» (${data.protocol})`);
+        await loadBio(true); viewBio($('#content'));
+        if (token) setTimeout(() => showBioSecret({ ...data, id }, token), 50);
+      }
+    });
+  }
+
+  function empOptions(sel) { return S.emps.filter(e => e.empType !== 'task' && e.active !== false).slice().sort((a, b) => String(a.name).localeCompare(String(b.name), 'ar')).map(e => `<option value="${e.id}" ${sel === e.id ? 'selected' : ''}>${esc(e.name)}${e.bioId ? ' — #' + esc(e.bioId) : ''}</option>`).join(''); }
+
+  async function saveBioMap(deviceId, rawId, employeeId, by) {
+    const key = devIdKey(rawId); if (!key) throw new Error('empty-id');
+    const id = bioMapId(deviceId, rawId), ref = doc(db, 'biometricMap', id), cur = await getDoc(ref);
+    if (cur.exists() && cur.data().employeeId !== employeeId) { const e = S.emps.find(x => x.id === cur.data().employeeId); throw new Error('map-conflict:' + (e ? e.name : '؟')); }
+    await setDoc(ref, { deviceId, externalUserId: String(rawId).trim(), userKey: key, employeeId, status: 'active', mappingSource: by || 'manual', createdBy: (auth.currentUser && auth.currentUser.email) || '', createdAt: serverTimestamp() });
+    return id;
+  }
+  const bioMapErr = e => String(e.message || '').startsWith('map-conflict:') ? `هذا المعرّف مرتبط مسبقاً بالموظف «${e.message.slice(13)}» على الجهاز نفسه` : 'تعذر حفظ الربط';
+
+  /* يسجّل الحركات المعلّقة لمعرّف تم ربطه ثم يحذفها من المعلّقات */
+  async function replayPending(group, emp) {
+    const rows = S.bio.pending.filter(p => p.deviceId === group.deviceId && p.userKey === group.userKey && p.reason !== 'future_time');
+    const raw = rows.map(p => ({ emp, ms: tsMs(p.time), type: p.type === 'in' || p.type === 'out' ? p.type : null }));
+    const dev = S.bio.devices.find(d => d.id === group.deviceId) || {};
+    const recs = devBuild(raw, Number(dev.tzOffset ?? TZOFF));
+    for (let i = 0; i < recs.length; i += 300) {
+      const b = writeBatch(db);
+      recs.slice(i, i + 300).forEach(r => b.set(doc(db, 'employees', emp.id, 'records', 'bio_' + r.ms), { type: r.type, time: Timestamp.fromMillis(r.ms), lat: 0, lng: 0, accuracy: 0, distance: 0, locationId: 'biometric', locationName: 'جهاز البصمة', empName: emp.name, deviceId: group.deviceId, src: 'pending-link' }));
+      await b.commit();
+    }
+    for (let i = 0; i < rows.length; i += 400) { const b = writeBatch(db); rows.slice(i, i + 400).forEach(p => b.delete(doc(db, 'biometricPending', p.id))); await b.commit(); }
+    const months = [...new Set(recs.map(r => dayKey(new Date(r.ms)).slice(0, 7)))];
+    await Promise.all(months.map(m => invalidateMonthSummary(m)));
+    await RecCache.clear(); await refresh('recs');
+    return recs.length;
+  }
+
+  async function bioAction(act, b) {
+    const B = S.bio, id = b.dataset.id;
+    if (act === 'reload') { await loadBio(true); return viewBio($('#content')); }
+    if (act === 'addDev') return bioDeviceEditor(null);
+    if (act === 'editDev') return bioDeviceEditor(B.devices.find(d => d.id === id));
+    if (act === 'togDev') { const d = B.devices.find(x => x.id === id); if (!d) return; await updateDoc(doc(db, 'biometricDevices', id), { active: d.active === false }); logAudit('bio_device', id, `${d.active === false ? 'تفعيل' : 'تعطيل'} «${d.name}»`); await loadBio(true); return viewBio($('#content')); }
+    if (act === 'rotDev') {
+      const d = B.devices.find(x => x.id === id); if (!d || !await mqConfirm(`إصدار رمز جديد للجهاز «${d.name}»؟ يتوقف الرمز القديم فوراً ويجب تحديث إعدادات الجهاز.`)) return;
+      const token = bioRandToken(); await updateDoc(doc(db, 'biometricDevices', id), { tokenHash: await sha256Hex(token) });
+      logAudit('bio_device', id, `تدوير رمز «${d.name}»`); await loadBio(true); viewBio($('#content')); return showBioSecret(d, token);
+    }
+    if (act === 'addMap') {
+      if (!B.devices.length) return toast('أضف جهازاً أولاً', 'err');
+      const W = { deviceId: B.devices[0].id, ext: '', emp: '' };
+      return openModal({ title: 'ربط معرّف جهاز بموظف', saveText: 'حفظ الربط',
+        body: () => `<div class="g2"><div class="field"><label>الجهاز</label><select data-k="deviceId">${B.devices.map(d => `<option value="${d.id}" ${W.deviceId === d.id ? 'selected' : ''}>${esc(d.name)}</option>`).join('')}</select></div><div class="field"><label>المعرّف في الجهاز (User ID / PIN)</label><input data-k="ext" dir="ltr" value="${esc(W.ext)}"></div></div><div class="field"><label>الموظف</label><select data-k="emp"><option value="">— اختر —</option>${empOptions(W.emp)}</select></div>`,
+        onField: (k, v) => { W[k] = v; },
+        onSave: async () => { if (!String(W.ext).trim() || !W.emp) { toast('أكمل المعرّف والموظف', 'err'); return false; } try { const mid = await saveBioMap(W.deviceId, W.ext, W.emp); logAudit('bio_map', mid, `ربط ${W.ext} ← ${(S.emps.find(e => e.id === W.emp) || {}).name || ''}`); await loadBio(true); viewBio($('#content')); } catch (e) { toast(bioMapErr(e), 'err'); return false; } } });
+    }
+    if (act === 'autoMap') {
+      if (!B.devices.length) return toast('أضف جهازاً أولاً', 'err');
+      const dev = B.devices.length === 1 ? B.devices[0] : B.devices[await mqChoice('اختر الجهاز الذي تُنشأ له الروابط:', B.devices.map(d => d.name).concat(['إلغاء'])) ];
+      if (!dev) return;
+      const byKey = new Map(); S.emps.filter(e => e.bioId && e.active !== false && e.empType !== 'task').forEach(e => { const k = devIdKey(e.bioId); (byKey.get(k) || byKey.set(k, []).get(k)).push(e); });
+      const ok = [...byKey.entries()].filter(([, a]) => a.length === 1), amb = [...byKey.values()].filter(a => a.length > 1).length;
+      if (!ok.length) return toast('لا أرقام بصمة صالحة لربطها', 'err');
+      if (!await mqConfirm(`إنشاء ${ok.length} ربط للجهاز «${dev.name}» من أرقام البصمة الموجودة في ملفات الموظفين؟${amb ? `\n(سيُتخطى ${amb} رقم مكرر عند أكثر من موظف)` : ''}\nلا يُكتب فوق ربط موجود.`)) return;
+      let n = 0, skip = 0;
+      for (const [, [e]] of ok) { try { await saveBioMap(dev.id, e.bioId, e.id, 'import'); n++; } catch { skip++; } }
+      logAudit('bio_map', dev.id, `ربط تلقائي: ${n} (تخطي ${skip})`); toast(`تم إنشاء ${n} ربط${skip ? ` وتخطي ${skip}` : ''}`, 'good');
+      await loadBio(true); return viewBio($('#content'));
+    }
+    if (act === 'togMap') { const m = B.maps.find(x => x.id === id); if (!m) return; await updateDoc(doc(db, 'biometricMap', id), { status: m.status === 'disabled' ? 'active' : 'disabled' }); logAudit('bio_map', id, m.status === 'disabled' ? 'تفعيل ربط' : 'تعطيل ربط'); await loadBio(true); return viewBio($('#content')); }
+    if (act === 'delMap') { if (!await mqConfirm('حذف هذا الربط؟ لا تتأثر الحركات المسجّلة سابقاً.')) return; await deleteDoc(doc(db, 'biometricMap', id)); logAudit('bio_map', id, 'حذف ربط'); await loadBio(true); return viewBio($('#content')); }
+    const g = (S._bioPend || [])[+b.dataset.i];
+    if (act === 'dropPend' && g) {
+      if (!await mqConfirm(`تجاهل ${g.n} حركة للمعرّف ${g.ext}؟ تُحذف من المعلّقات نهائياً.`)) return;
+      for (let i = 0; i < g.ids.length; i += 400) { const w = writeBatch(db); g.ids.slice(i, i + 400).forEach(x => w.delete(doc(db, 'biometricPending', x))); await w.commit(); }
+      logAudit('bio_pending', g.deviceId, `تجاهل ${g.n} حركة للمعرّف ${g.ext}`); await loadBio(true); return viewBio($('#content'));
+    }
+    if (act === 'linkPend' && g) {
+      const W = { emp: '' };
+      return openModal({ title: `ربط المعرّف ${g.ext} (${bioDevName(g.deviceId)})`, saveText: 'ربط وتسجيل الحركات',
+        body: () => `<p class="hint" style="margin-top:0">سيُربط المعرّف بالموظف المختار وتُسجَّل له ${g.n} حركة معلّقة (الحضور/الانصراف بالتناوب داخل اليوم عند غياب حالة الجهاز).</p><div class="field"><label>الموظف</label><select data-k="emp"><option value="">— اختر —</option>${empOptions(W.emp)}</select></div>`,
+        onField: (k, v) => { W[k] = v; },
+        onSave: async () => {
+          const emp = S.emps.find(e => e.id === W.emp); if (!emp) { toast('اختر الموظف', 'err'); return false; }
+          try { await saveBioMap(g.deviceId, g.ext, emp.id); const n = await replayPending(g, emp); logAudit('bio_pending', g.deviceId, `ربط ${g.ext} ← ${emp.name} وتسجيل ${n} حركة`); toast(`تم الربط وتسجيل ${n} حركة`, 'good'); await loadBio(true); viewBio($('#content')); }
+          catch (e) { console.error(e); toast(bioMapErr(e), 'err'); return false; }
+        } });
+    }
+  }
   /* --- 6. تبويب الطلبات (إجازات وتصحيح ومهام) --- */
   function viewReqs(el) {
     const cname = empId => (S.emps.find(e => e.id === empId) || {}).name || 'موظف محذوف';
@@ -4765,14 +5437,15 @@ function adminApp(db, auth) {
       if (r.kind === 'task') return `<b>مهمة</b> ${esc(r.taskName || '')} × <b>${+(r.qtyApproved ?? r.qty) || 0}</b> · ${fmtDate(dayStart(r.from))}${r.status === 'approved' ? ` <span class="badge b-ok">${+r.amount || 0}</span>` : ''}`;
       if (r.type === 'offline_gps') {
         const meta = parseOfflineNote(r.note);
-        return `<span class="badge b-ok">📍 بصمة أوفلاين موثّقة بالـ GPS</span> يوم ${fmtDate(dayStart(r.from))}${r.fixIn ? ` · حضور <b>${fmtHM(esc(r.fixIn))}</b>` : ''}${r.fixOut ? ` · انصراف <b>${fmtHM(esc(r.fixOut))}</b>` : ''}${r.typeName ? ` · <b>${esc(r.typeName)}</b>` : ''}${meta ? ` <span class="badge b-pri">${meta.dist}م (±${meta.acc}م)</span> <a class="btn sm sec" style="text-decoration:none;padding:2px 8px;font-size:11.5px" href="${mapLink(meta.lat, meta.lng)}" target="_blank">${ic('map', 13)} خريطة</a>` : ''}`;
+        const weak = meta && meta.acc > 100, pendOff = r.status === 'pending';
+        return `<span class="badge ${pendOff ? 'b-warn' : 'b-pri'}" title="الإحداثيات والوقت مصدرهما جهاز الموظف ولا يمكن التحقق منهما من الخادم">📍 بصمة أوفلاين${pendOff ? ' — غير موثّقة، راجعها قبل الاعتماد' : ''}</span> يوم ${fmtDate(dayStart(r.from))}${r.fixIn ? ` · حضور <b>${fmtHM(esc(r.fixIn))}</b>` : ''}${r.fixOut ? ` · انصراف <b>${fmtHM(esc(r.fixOut))}</b>` : ''}${r.typeName ? ` · <b>${esc(r.typeName)}</b>` : ''}${meta ? ` <span class="badge ${weak ? 'b-warn' : 'b-pri'}" title="${weak ? 'دقة GPS ضعيفة (أكثر من 100م)' : 'المسافة عن الموقع (دقة GPS)'}">${weak ? '⚠️ ' : ''}${meta.dist}م (±${meta.acc}م)</span> <a class="btn sm sec" style="text-decoration:none;padding:2px 8px;font-size:11.5px" href="${mapLink(meta.lat, meta.lng)}" target="_blank">${ic('map', 13)} خريطة</a>` : ''}`;
       }
       return `<b>تصحيح</b> يوم ${fmtDate(dayStart(r.from))}${r.fixIn ? ` · حضور <b>${fmtHM(esc(r.fixIn))}</b>` : ''}${r.fixOut ? ` · انصراف <b>${fmtHM(esc(r.fixOut))}</b>` : ''}`;
     };
     const fmtReqNote = r => {
       if (r.type === 'offline_gps') {
         const meta = parseOfflineNote(r.note);
-        return meta ? (meta.extraNote ? esc(meta.extraNote) : `<small class="muted" dir="ltr">بصمة موقّعة: ${esc(meta.sig || '')}</small>`) : esc(r.note || '—');
+        return meta ? (meta.extraNote ? esc(meta.extraNote) : `<small class="muted">مصدرها جهاز الموظف دون تحقق من الخادم</small>`) : esc(r.note || '—');
       }
       return esc(r.note || '—');
     };
@@ -5313,8 +5986,7 @@ function adminApp(db, auth) {
     el.innerHTML = `<div class="card">
       ${ch('filter', 'فترة التقرير والتصدير', `<div class="acts">
         <button class="btn sm sec" data-act="xlsx">${ic('download', 18)} تصدير Excel</button>
-        <button class="btn sm sec" data-act="impBio">${ic('plus', 18)} استيراد بصمات جهاز (ZKTeco/CSV)</button>
-        <input type="file" id="bioFileInp" accept=".dat,.txt,.csv,.tsv" style="display:none">
+        <button class="btn sm sec" data-act="impBio">${ic('plus', 18)} استيراد من جهاز البصمة</button>
         <button class="btn sm sec" data-act="csv">${ic('download', 18)} تصدير CSV</button>
         <button class="btn sm sec" data-act="print">${ic('print', 20)} طباعة كشف A4</button>
       </div>`)}
@@ -5353,7 +6025,7 @@ function adminApp(db, auth) {
       return `<div class="card">${ch('pin', `سجل عمليات البصمة التفصيلي (${raw.length})`)}${anom.size ? `<div class="warnbox" style="margin-bottom:10px"><b>تنبيه رقابي (${anom.size}):</b> رصد محرك فحص الإحداثيات بصمات تحمل مؤشرات غير طبيعية (تطابق عشري مطلق أو سرعة انتقال غير منطقية)؛ مرّر المؤشر على شارة التحذير بجانب البصمة للتفاصيل.</div>` : ''}<div class="tw"><table><thead><tr><th>الموظف</th><th>العملية</th><th>التاريخ</th><th>الوقت</th><th>الموقع</th><th>البعد</th><th>الخريطة</th></tr></thead><tbody>
       ${raw.map(r => {
         const issues = anom.get(r.empId + '/' + r.id);
-        const flagHtml = issues ? ` <span class="badge b-warn" title="${esc(issues.join(' · '))}">⚠️ اشتباه GPS</span>` : (r.deviceId === 'offline-gps-verified' ? ' <span class="badge b-pri" title="بصمة أوفلاين موثّقة بالـ GPS">📍 أوفلاين</span>' : '');
+        const flagHtml = issues ? ` <span class="badge b-warn" title="${esc(issues.join(' · '))}">⚠️ اشتباه GPS</span>` : (r.deviceId === 'offline-gps-verified' ? ' <span class="badge b-pri" title="بصمة أوفلاين اعتُمدت يدوياً من الإدارة">📍 أوفلاين</span>' : '');
         return `<tr><td><b>${esc(r.empName)}</b>${flagHtml}</td><td><span class="badge ${r.type === 'in' ? 'b-ok' : 'b-bad'}">${r.type === 'in' ? 'حضور' : 'انصراف'}</span></td><td>${fmtDate(r.t)}</td><td>${fmtTime(r.t, true)}</td><td>${esc(r.locationName)}</td><td>${r.distance} م</td><td><a class="btn sm sec" style="text-decoration:none" href="${mapLink(r.lat, r.lng)}" target="_blank">${ic('map', 15)} عرض</a></td></tr>`;
       }).join('') || '<tr><td colspan="7" class="muted center">لا توجد بيانات في هذه الفترة</td></tr>'}
       </tbody></table></div></div>`;
@@ -5380,11 +6052,17 @@ function adminApp(db, auth) {
       S.recSub = rsub.dataset.rsub; return viewRecs($('#content'));
     }
 
+    const bb = ev.target.closest('[data-bact]');
+    if (bb) {
+      if (!(isSuper() || isHr())) return toast('إدارة أجهزة البصمة للمدير العام والموارد البشرية فقط', 'err');
+      try { await bioAction(bb.dataset.bact, bb); } catch (e) { console.error(e); toast(e.code === 'permission-denied' ? 'غير مسموح: حدّث قواعد Firestore ثم أعد المحاولة' : 'تعذر تنفيذ العملية', 'err'); }
+      return;
+    }
     const b = ev.target.closest('[data-act]'); if (!b) return;
     const act = b.dataset.act, id = b.dataset.id;
         const superOnly = new Set(['addAdmin', 'delAdmin', 'copyRules', 'v2Done', 'hardDelEmp', 'backupDB', 'restoreDB', 'runApprove', 'loanOpen', 'sealMonth', 'archivePurgeMonth', 'restoreArchiveMonth', 'isolateFinAll']);
-    const viewOnly = new Set(['logout', 'reload', 'copy', 'wa', 'moreReqs', 'reloadAudit', 'auditCsv']);
-        const payrollAllowed = new Set(['logout', 'reload', 'editEmp', 'runSave', 'runRecalc', 'runView', 'runPay', 'runVerify', 'runDel', 'runLedger', 'loanLog', 'runXlsx', 'runBankCsv', 'runSlips', 'runSlip', 'xlsx', 'print', 'bankCsv', 'printSlips', 'slipEmp', 'appr', 'rej', 'copy', 'wa']);
+    const viewOnly = new Set(['logout', 'idxHide', 'reload', 'copy', 'wa', 'moreReqs', 'reloadAudit', 'auditCsv']);
+        const payrollAllowed = new Set(['logout', 'idxHide', 'reload', 'editEmp', 'runSave', 'runRecalc', 'runView', 'runPay', 'runVerify', 'runDel', 'runLedger', 'loanLog', 'runXlsx', 'runBankCsv', 'runSlips', 'runSlip', 'xlsx', 'print', 'bankCsv', 'printSlips', 'slipEmp', 'appr', 'rej', 'copy', 'wa']);
     if (superOnly.has(act) && !isSuper()) return toast('هذه العملية متاحة للمدير العام فقط', 'err');
     if (['manager', 'auditor'].includes(S.role) && !viewOnly.has(act)) return toast('هذا الدور للعرض فقط', 'err');
     if (S.role === 'payroll_admin' && !payrollAllowed.has(act)) return toast('هذه العملية ليست ضمن صلاحيات محاسب الرواتب', 'err');
@@ -5626,57 +6304,7 @@ function adminApp(db, auth) {
         };
         inp.click(); return;
       }
-      if (act === 'impBio') {
-        const inp = $('#bioFileInp'); if (!inp) return;
-        inp.value = '';
-        inp.onchange = async e => {
-          const f = e.target.files[0]; if (!f) return;
-          try {
-            const txt = await f.text();
-            const byBio = new Map();
-            S.emps.forEach(emp => { if (emp.bioId) byBio.set(String(emp.bioId).trim(), emp); });
-            if (!byBio.size) return toast('اربط أرقام البصمة (ZKTeco ID) بالموظفين أولاً من تعديل بيانات الموظف', 'err');
-            // يدعم attlog.dat (معرّف ⟵ تاريخ ووقت ⟵ …) وملفات CSV (معرّف، تاريخ ووقت، [حالة])
-            const raw = [];
-            for (const line of txt.split(/\r?\n/)) {
-              const p = line.split(/[\t,;]+/).map(s => s.trim().replace(/^"|"$/g, ''));
-              if (p.length < 2) continue;
-              const emp = byBio.get(p[0]); if (!emp) continue;
-              const m = p[1].match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})(?::(\d{2}))?/); if (!m) continue;
-              // الوقت في الجهاز هو توقيت المنشأة، فنحوّله بحسب المنطقة الزمنية المضبوطة لا بحسب جهاز المدير
-              const ms = Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +(m[6] || 0)) - TZOFF * 60000;
-              let type = null;
-              if (p.length === 3) { const s = p[2].toLowerCase(); if (['1', 'o', 'out', 'انصراف'].includes(s)) type = 'out'; else if (['0', 'i', 'in', 'حضور'].includes(s)) type = 'in'; }
-              raw.push({ emp, ms, type });
-            }
-            if (!raw.length) return toast('لم يُعثر على سجلات مطابقة لأرقام البصمة المسجلة', 'err');
-            // ترتيب + حذف التكرار القريب (أقل من دقيقة) + تحديد حضور/انصراف بالتناوب داخل اليوم إن لم تُحدَّد الحالة
-            raw.sort((x, y) => x.emp.id.localeCompare(y.emp.id) || x.ms - y.ms);
-            const recs = []; let lastE = '', lastMs = 0, dayId = '', n = 0;
-            for (const r of raw) {
-              if (r.emp.id === lastE && r.ms - lastMs < 60000) continue;
-              const dk = r.emp.id + '|' + Math.floor((r.ms + TZOFF * 60000) / 86400000);
-              if (dk !== dayId) { dayId = dk; n = 0; }
-              recs.push({ emp: r.emp, ms: r.ms, type: r.type || (n % 2 === 0 ? 'in' : 'out') });
-              n++; lastE = r.emp.id; lastMs = r.ms;
-            }
-            const empN = new Set(recs.map(r => r.emp.id)).size;
-            if (!await mqConfirm(`تم العثور على ${recs.length} حركة بصمة تخص ${empN} موظفاً (من ${fmtDate(new Date(recs[0].ms))} إلى ${fmtDate(new Date(recs[recs.length - 1].ms))}).\nهل تريد استيرادها؟ (إعادة استيراد نفس الملف لا تكرّر السجلات)`)) return;
-            for (let i = 0; i < recs.length; i += 350) {
-              const b = writeBatch(db);
-              recs.slice(i, i + 350).forEach(r => {
-                const ref = doc(db, 'employees', r.emp.id, 'records', 'bio_' + r.ms);
-                b.set(ref, { type: r.type, time: Timestamp.fromMillis(r.ms), lat: 0, lng: 0, accuracy: 0, distance: 0, locationId: 'biometric', locationName: 'جهاز البصمة', empName: r.emp.name, deviceId: 'zkteco-import' });
-              });
-              await b.commit();
-            }
-            const monthsTouched = [...new Set(recs.map(r => dayKey(new Date(r.ms)).slice(0, 7)))];
-            await Promise.all(monthsTouched.map(m => invalidateMonthSummary(m)));
-            await RecCache.clear(); await refresh('emps', 'recs'); toast(`تم استيراد ${recs.length} بصمة بنجاح ✅`, 'good');
-          } catch (err) { console.error(err); toast('فشل استيراد ملف البصمات', 'err'); }
-        };
-        inp.click(); return;
-      }
+      if (act === 'impBio') return openDeviceImport();
       if (act === 'isolateFinAll') {
         await ensureFinanceLoaded(true);
         const targets = S.emps.filter(e => !e.finIsolated || e.payAmount > 0 || e.iban || e.loanTotal > 0);
@@ -5734,7 +6362,8 @@ function adminApp(db, auth) {
       if (act === 'dupSched') { const x = JSON.parse(JSON.stringify(S.scheds.find(y => y.id === id))); delete x.id; delete x.createdAt; delete x.updatedAt; x.name += ' (نسخة)'; await addDoc(collection(db, 'schedules'), { ...x, createdAt: serverTimestamp() }); await refresh('scheds'); toast('تم نسخ الجدول', 'good'); }
       if (act === 'delSched') { const n = S.emps.filter(e => e.scheduleId === id).length; if (await mqConfirm(n ? `هذا الجدول مرتبط بـ ${n} موظف وسيصبحون بدون جدول. هل تريد حذفه؟` : 'حذف هذا الجدول؟')) { await deleteDoc(doc(db, 'schedules', id)); await refresh('scheds'); } }
       if (act === 'editEmp') employeeEditor(S.emps.find(x => x.id === id));
-      if (act === 'delLoc') { if (await mqConfirm('حذف هذا الموقع؟')) { await deleteDoc(doc(db, 'locations', id)); await refresh('locs'); } }
+      if (act === 'delLoc') { if (await mqConfirm('حذف هذا الموقع؟')) { await deleteDoc(doc(db, 'locations', id)); try { await deleteDoc(doc(db, 'locSecrets', id)); } catch {} await refresh('locs'); } }
+      if (act === 'showQr') { const x = S.locs.find(y => y.id === id); if (x) return showQrBoard(x); }
       if (act === 'mapLoc') return locEditor(null);
       if (act === 'editLoc') { const x = S.locs.find(y => y.id === id); if (x) return locEditor(x); }
       if (act === 'runSave') return runSave();
@@ -5800,6 +6429,7 @@ function adminApp(db, auth) {
         await refresh('admins'); toast(note, 'good');
       }
       if (act === 'delAdmin') { if (await mqConfirm('إزالة صلاحيات هذا المشرف؟')) { await deleteDoc(doc(db, 'admins', id)); await refresh('admins'); } }
+      if (act === 'idxHide') { try { localStorage.setItem(b.dataset.k, '1'); } catch {} return render(); }
       if (act === 'v2Done') { localStorage.setItem('att_rules_v5', '1'); return render(); }
       if (act === 'appr' || act === 'rej') {
         const empId = b.dataset.e;
