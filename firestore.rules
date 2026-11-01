@@ -213,6 +213,16 @@ service cloud.firestore {
     match /locSecrets/{id} {
       allow read, write: if isSuperAdmin() || isHrAdmin();
     }
+    // رمز QR الحالي لكل موقع (تكتبه شاشة العرض كل 30 ثانية). الموظفون لا يقرؤونه إطلاقاً.
+    match /locQr/{id} {
+      allow read, delete: if isSuperAdmin() || isHrAdmin();
+      allow create, update: if (isSuperAdmin() || isHrAdmin())
+        && request.resource.data.keys().hasOnly(['cur', 'prev', 'at'])
+        && request.resource.data.keys().hasAll(['cur', 'at'])
+        && request.resource.data.cur is string && request.resource.data.cur.size() >= 16 && request.resource.data.cur.size() <= 128
+        && request.resource.data.get('prev', '') is string
+        && request.resource.data.at == request.time;
+    }
     match /schedules/{id} {
       allow read: if request.auth != null;
       allow write: if isSuperAdmin() || isHrAdmin();
@@ -381,16 +391,14 @@ service cloud.firestore {
             && d.accuracy >= 0 && d.accuracy <= 250
             && math.sqrt(dx * dx + dy * dy) <= l.radius + 10;
         }
-        // رمز QR = sha256(سر الموقع + ':' + رقم نافذة 30 ثانية)؛ السر في locSecrets لا يقرؤه إلا المشرفون وتقرؤه القاعدة وحدها.
+        // رمز QR: شاشة العرض (حساب إدارة) تكتب رمزاً عشوائياً جديداً كل 30 ثانية في locQr/{موقع} = {cur, prev, at}.
+        // لا يقرؤه الموظفون من Firestore؛ تقرؤه هذه القاعدة وحدها. المقارنة نص بنص دون أي تجزئة أو حساب وقت على الجهاز.
+        // الصلاحية: الرمز الحالي أو السابق (≈30–60 ثانية)، وبشرط أن تكون شاشة العرض حيّة (آخر تحديث خلال 150 ثانية بوقت الخادم).
         function qrOk(d) {
-          let s = get(/databases/$(database)/documents/locSecrets/$(d.locationId)).data.secret;
-          let w = math.floor(request.time.toMillis() / 30000);
-          let q = d.get('qr', '');
-          // toHexString() قد يعيد أحرفاً كبيرة أو صغيرة حسب المحرّك، فنقارن بعد تحويل الطرفين لأحرف صغيرة.
-          return q is string
-            && (q.lower() == hashing.sha256((s + ':' + string(w)).toUtf8()).toHexString().lower()
-              || q.lower() == hashing.sha256((s + ':' + string(w - 1)).toUtf8()).toHexString().lower()
-              || q.lower() == hashing.sha256((s + ':' + string(w + 1)).toUtf8()).toHexString().lower());
+          let q = get(/databases/$(database)/documents/locQr/$(d.locationId)).data;
+          return d.get('qr', '') is string && d.qr.size() >= 16 && d.qr.size() <= 128
+            && request.time < q.at + duration.value(150, 's')
+            && (d.qr == q.cur || d.qr == q.get('prev', ''));
         }
         // بصمة الجهاز (WebAuthn): يشترط وجود إثبات التوقيع وأن الموظف سجّل مفتاحاً. التحقق من التوقيع نفسه يجري في التطبيق ويُحفظ الإثبات للتدقيق.
         function bioOk(d, e) {
