@@ -385,10 +385,12 @@ service cloud.firestore {
         function qrOk(d) {
           let s = get(/databases/$(database)/documents/locSecrets/$(d.locationId)).data.secret;
           let w = math.floor(request.time.toMillis() / 30000);
-          return d.get('qr', '') is string
-            && (d.qr == hashing.sha256((s + ':' + string(w)).toUtf8()).toHexString()
-              || d.qr == hashing.sha256((s + ':' + string(w - 1)).toUtf8()).toHexString()
-              || d.qr == hashing.sha256((s + ':' + string(w + 1)).toUtf8()).toHexString());
+          let q = d.get('qr', '');
+          // toHexString() قد يعيد أحرفاً كبيرة أو صغيرة حسب المحرّك، فنقارن بعد تحويل الطرفين لأحرف صغيرة.
+          return q is string
+            && (q.lower() == hashing.sha256((s + ':' + string(w)).toUtf8()).toHexString().lower()
+              || q.lower() == hashing.sha256((s + ':' + string(w - 1)).toUtf8()).toHexString().lower()
+              || q.lower() == hashing.sha256((s + ':' + string(w + 1)).toUtf8()).toHexString().lower());
         }
         // بصمة الجهاز (WebAuthn): يشترط وجود إثبات التوقيع وأن الموظف سجّل مفتاحاً. التحقق من التوقيع نفسه يجري في التطبيق ويُحفظ الإثبات للتدقيق.
         function bioOk(d, e) {
