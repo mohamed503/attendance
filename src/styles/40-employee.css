@@ -5,7 +5,7 @@
 .emp-brand-l{display:flex;align-items:center;gap:10px}
 .emp-brand-l .mk{background:var(--pri);color:var(--on);border-radius:var(--r-md);padding:5px;box-sizing:content-box}
 .emp-brand .ib{width:42px;height:42px;background:var(--card);border:1px solid var(--line);color:var(--ink);border-radius:var(--r-md)}
-.emp-brand .pwa-btn{height:42px}
+.emp-brand .pwa-btn,.emp-brand .notif-btn{height:42px}
 .emp-head{display:flex;align-items:center;gap:16px;background:var(--pri-d);color:#fff;border-radius:var(--r-xl);padding:16px 18px;margin-bottom:16px;position:relative;overflow:hidden}
 [data-theme="dark"] .emp-head{background:#0A2A1C;border:1px solid var(--line)}
 .emp-head::after{content:"";position:absolute;width:200px;height:200px;border-radius:50%;border:34px solid rgba(255,255,255,.07);inset-inline-end:-60px;top:-80px;pointer-events:none}

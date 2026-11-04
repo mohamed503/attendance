@@ -87,8 +87,8 @@ pre.rules{background:#0B1F16;color:#E6F4EA;padding:16px;border-radius:var(--r-lg
 .btn.ok{background:var(--mint);color:var(--mint-ink)}
 .btn.bad{background:color-mix(in srgb,var(--abs) 14%,transparent);color:var(--abs-t)}
 .btn.sm{height:34px;padding:0 13px;font-size:13px;border-radius:var(--r-sm);gap:6px}
-.pwa-btn{display:none;align-items:center;gap:6px;padding:0 14px;height:40px;border-radius:var(--r-md);border:1px solid var(--line);background:var(--card);color:var(--ink);font-size:13px;font-weight:600;cursor:pointer}
-.pwa-btn:hover{background:var(--pri-l)}
+.pwa-btn,.notif-btn{display:none;align-items:center;gap:6px;padding:0 14px;height:40px;border-radius:var(--r-md);border:1px solid var(--line);background:var(--card);color:var(--ink);font-size:13px;font-weight:600;cursor:pointer}
+.pwa-btn:hover,.notif-btn:hover{background:var(--pri-l)}
 
 /* حقول */
 .row{display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end}
@@ -235,9 +235,9 @@ tfoot td{background:var(--th-bg);font-weight:700;border-top:2px solid var(--line
 .phead small{display:flex;align-items:center;gap:8px;flex-wrap:wrap;color:var(--mute);font-weight:500;font-size:14px}
 .phead h1{font-size:30px;line-height:1.2;font-weight:700;margin:2px 0 0}
 .ptools{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
-.ptools .ib,.ptools .pwa-btn{height:40px;border-radius:var(--r-md);background:var(--card);border:1px solid var(--line);color:var(--ink)}
+.ptools .ib,.ptools .pwa-btn,.ptools .notif-btn{height:40px;border-radius:var(--r-md);background:var(--card);border:1px solid var(--line);color:var(--ink)}
 .ptools .ib{width:40px;display:grid;place-items:center}
-.ptools .ib:hover,.ptools .pwa-btn:hover{background:var(--pri-l);color:var(--pri-t)}
+.ptools .ib:hover,.ptools .pwa-btn:hover,.ptools .notif-btn:hover{background:var(--pri-l);color:var(--pri-t)}
 .ptools [data-act=logout]{color:var(--abs-t)}
 
 /* شاشة اليوم (تُستبدل ببطاقات الحلقة/المسطرة في الخطوة 3.3) */
@@ -301,7 +301,7 @@ tfoot td{background:var(--th-bg);font-weight:700;border-top:2px solid var(--line
   .rail-nav .tab.on{background:var(--pri-l);color:var(--pri-t)}.rail-nav .tab.on::before{display:none}
   .rail-nav .tab em{position:absolute;top:2px;inset-inline-end:50%;margin:0 -22px 0 0;background:var(--abs);color:#fff;min-width:17px;height:17px;font-size:10.5px;padding:0 4px}
   .wrap.main{padding:18px 14px 120px}.phead h1{font-size:26px}.phead{margin-bottom:16px}
-  .ptools{width:100%}.ptools .ib,.ptools .pwa-btn{height:42px}.ptools .ib{width:42px}
+  .ptools{width:100%}.ptools .ib,.ptools .pwa-btn,.ptools .notif-btn{height:42px}.ptools .ib{width:42px}
   .tile{padding:16px 18px;min-height:120px}.tile .big{font-size:52px}.t-hero .big{font-size:92px}.tile .tl{font-size:14px}
   .tr-m{grid-template-columns:1fr 1fr;gap:10px 12px}.tr-p{grid-column:1/-1}.trow{padding:14px}
   .act-menu{position:static}.act-drop{inset-inline:12px;width:auto;top:auto}
@@ -445,7 +445,7 @@ html[dir=rtl] .hrs span{transform:translateX(50%)}
 .emp-brand-l{display:flex;align-items:center;gap:10px}
 .emp-brand-l .mk{background:var(--pri);color:var(--on);border-radius:var(--r-md);padding:5px;box-sizing:content-box}
 .emp-brand .ib{width:42px;height:42px;background:var(--card);border:1px solid var(--line);color:var(--ink);border-radius:var(--r-md)}
-.emp-brand .pwa-btn{height:42px}
+.emp-brand .pwa-btn,.emp-brand .notif-btn{height:42px}
 .emp-head{display:flex;align-items:center;gap:16px;background:var(--pri-d);color:#fff;border-radius:var(--r-xl);padding:16px 18px;margin-bottom:16px;position:relative;overflow:hidden}
 [data-theme="dark"] .emp-head{background:#0A2A1C;border:1px solid var(--line)}
 .emp-head::after{content:"";position:absolute;width:200px;height:200px;border-radius:50%;border:34px solid rgba(255,255,255,.07);inset-inline-end:-60px;top:-80px;pointer-events:none}
@@ -514,11 +514,14 @@ const firebaseConfig = {
 /* App Check (اختياري): ضع مفتاح reCAPTCHA v3 هنا لتفعيله، ثم فعّل «Enforce» في Firebase Console بعد مراقبة الطلبات.
    تنبيه: أدوات meqat-seed وmeqat-admin-migrate لا تحمل App Check؛ شغّلها قبل التفعيل الإلزامي. */
 const APP_CHECK_SITE_KEY = '';
+/* 0.15: المفتاح يُؤخذ من firebaseConfig.appCheckSiteKey (تحقنه لوحة التسليم وOTA لكل عميل) وإلا من الثابت أعلاه */
+const appCheckKeyOf = cfg => { const k = String((cfg && cfg.appCheckSiteKey) || APP_CHECK_SITE_KEY || ''); return /^[A-Za-z0-9_-]{20,100}$/.test(k) ? k : ''; };
 async function initAppCheck(app) {
-  if (!APP_CHECK_SITE_KEY) return;
+  const key = appCheckKeyOf(firebaseConfig);
+  if (!key) return;
   try {
     const m = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-app-check.js');
-    m.initializeAppCheck(app, { provider: new m.ReCaptchaV3Provider(APP_CHECK_SITE_KEY), isTokenAutoRefreshEnabled: true });
+    m.initializeAppCheck(app, { provider: new m.ReCaptchaV3Provider(key), isTokenAutoRefreshEnabled: true });
   } catch (e) { console.warn('App Check', e); }
 }
 
@@ -661,8 +664,8 @@ const MIN_GAP_MS = 20000;        // أقل فاصل بين عمليتين لنف
 const TZ_OFFSET_MIN = 120;       // توقيت طرابلس UTC+2 ثابت (بلا توقيت صيفي). غيّره إن استخدمت النظام في بلد آخر
 
 import { initializeApp, deleteApp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js";
-import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, signOut, onAuthStateChanged, signInAnonymously } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
-import { getFirestore, initializeFirestore, persistentLocalCache, persistentMultipleTabManager, terminate, clearIndexedDbPersistence, collection, collectionGroup, doc, getDoc as _getDoc, getDocs as _getDocs, onSnapshot as _onSnapshot, setDoc as _setDoc, addDoc as _addDoc, updateDoc as _updateDoc, deleteDoc as _deleteDoc, query, where, orderBy, limit, writeBatch, Timestamp, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
+import { getAuth, signInWithEmailAndPassword, createUserWithEmailAndPassword, sendEmailVerification, signOut, onAuthStateChanged, signInAnonymously } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js";
+import { getFirestore, initializeFirestore, persistentLocalCache, persistentMultipleTabManager, terminate, clearIndexedDbPersistence, collection, collectionGroup, doc, getDoc as _getDoc, getDocs as _getDocs, onSnapshot as _onSnapshot, setDoc as _setDoc, addDoc as _addDoc, updateDoc as _updateDoc, deleteDoc as _deleteDoc, query, where, orderBy, limit, writeBatch, runTransaction, Timestamp, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
 /* رقم إصدار الإعدادات (cfgVersion): يُرفع تلقائياً عند أي تعديل إداري على المواقع/الجداول/العطل/الإعدادات/المهام،
    فتعيد صفحات الموظفين والإدارة جلبها مرة واحدة فقط، وإلا تقرؤها من ذاكرة الجهاز (توفير معظم قراءات كل فتح).
    إذا كانت الكتابة على settings/general مباشرة، يُدمج cfgVersion في نفس العملية لتوفير كتابة إضافية. */
@@ -815,6 +818,8 @@ let _deferredPwaPrompt = null;
 const isStandalone = () => window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
 const isIOSDevice = () => /iphone|ipad|ipod/i.test(window.navigator.userAgent);
 function refreshPwaButtons() {
+  /* U1: زر الإشعارات مستقل عن أزرار التثبيت — يبقى ظاهراً في التطبيق المثبّت (حيث تعمل الإشعارات فعلاً) ويُخفى فقط إن لم يدعم المتصفح Notification */
+  document.querySelectorAll('.notif-btn').forEach(btn => { btn.style.display = ('Notification' in window) ? 'inline-flex' : 'none'; });
   document.querySelectorAll('.pwa-btn').forEach(btn => {
     if (isStandalone()) { btn.style.display = 'none'; return; }
     if (_deferredPwaPrompt || isIOSDevice()) btn.style.display = 'inline-flex';
@@ -992,6 +997,14 @@ function mergeRecs(a, b) {
 }
 
 /*MSUM-START*/
+/* B2: ملخص الشهر المجمّع يُقرأ لاحقاً كأنه كل سجلات الشهر؛ فلا يُحفظ إلا إذا غطّت البيانات المحمّلة الشهر كاملاً.
+   mk=YYYY-MM · fromKey/toKey=الفترة المحمّلة · failCount=عدد أجزاء فشل تحميلها · hasEmpFilter=وُجد فلتر موظف */
+function monthFullyLoaded(mk, fromKey, toKey, failCount, hasEmpFilter) {
+  if (!/^\d{4}-\d{2}$/.test(String(mk)) || !fromKey || !toKey) return false;
+  if (failCount > 0 || hasEmpFilter) return false;
+  const last = new Date(Date.UTC(+mk.slice(0, 4), +mk.slice(5, 7), 0)).getUTCDate();
+  return String(fromKey) <= mk + '-01' && String(toKey) >= mk + '-' + String(last).padStart(2, '0');
+}
 /* ضغط وفك ضغط بصمات الشهر المغلق في وثيقة واحدة (monthlySummaries/{YYYY-MM}) لتوفير آلاف القراءات إلى قراءة واحدة فقط */
 function packMonthRecs(rows, mk, tzOff) {
   const seen = new Set();
@@ -1140,7 +1153,16 @@ function parseOfflineNote(note) {
   try {
     const data = JSON.parse(rest.slice(0, endIdx + 1));
     const extraNote = rest.slice(endIdx + 1).trim();
-    return { ...data, extraNote };
+    /* الملاحظة يتحكم بها الموظف: لا يخرج من هنا إلا أرقام منتهية ضمن نطاقات معقولة (أو null) ونصوص قصيرة محدودة،
+       فلا يمكن حقن HTML عبر dist/acc/lat/lng عند عرضها في شاشة المدير (ثغرة S1). */
+    const num = (v, lo, hi) => { if (typeof v !== 'number' && typeof v !== 'string') return null; if (typeof v === 'string' && !/^-?\d+(\.\d+)?$/.test(v.trim())) return null; const n = +v; return Number.isFinite(n) && n >= lo && n <= hi ? n : null; };
+    return {
+      lat: num(data.lat, -90, 90), lng: num(data.lng, -180, 180),
+      acc: num(data.acc, 0, 100000), dist: num(data.dist, 0, 100000),
+      locId: String(data.locId == null ? '' : data.locId).slice(0, 32),
+      sig: String(data.sig == null ? '' : data.sig).slice(0, 16),
+      extraNote
+    };
   } catch { return null; }
 }
 /*SPOOF-END*/
@@ -1313,6 +1335,8 @@ function patchClientHtmlWithConfig(templateHtml, fbConfig, licenseObj) {
         messagingSenderId: fbConfig.messagingSenderId || '',
         appId: fbConfig.appId || ''
       };
+      if (typeof fbConfig.appCheckSiteKey === 'string' && /^[A-Za-z0-9_-]{20,100}$/.test(fbConfig.appCheckSiteKey)) cleanCfg.appCheckSiteKey = fbConfig.appCheckSiteKey;   // 0.15
+      if (typeof fbConfig.edgeUrl === 'string' && /^https:\/\/[A-Za-z0-9.-]{3,100}(:\d{2,5})?(\/[A-Za-z0-9._~-]{1,60})*$/.test(fbConfig.edgeUrl)) cleanCfg.edgeUrl = fbConfig.edgeUrl;   // P1أ
       html = html.slice(0, i) + 'const firebaseConfig = ' + JSON.stringify(cleanCfg, null, 2) + ';\n' + html.slice(j + 2);
     }
   }
@@ -1557,7 +1581,7 @@ const fmtPin = p => String(p).slice(0, 4) + '-' + String(p).slice(4);
 const normPin = v => String(v || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
 const randToken = () => Array.from(crypto.getRandomValues(new Uint8Array(16)), b => b.toString(16).padStart(2, '0')).join('');
 const dist = (a, b, c, d) => { const R = 6371000, r = x => x * Math.PI / 180; const dLat = r(c - a), dLng = r(d - b); const h = Math.sin(dLat/2)**2 + Math.cos(r(a)) * Math.cos(r(c)) * Math.sin(dLng/2)**2; return 2 * R * Math.asin(Math.sqrt(h)); };
-const mapLink = (lat, lng) => `https://www.google.com/maps?q=${lat},${lng}`;
+const mapLink = (lat, lng) => (Number.isFinite(+lat) && Number.isFinite(+lng) && lat !== null && lng !== null && lat !== '' && lng !== '') ? `https://www.google.com/maps?q=${encodeURIComponent(+lat)},${encodeURIComponent(+lng)}` : '#';
 function toast(msg, type = '') { const t = document.createElement('div'); t.className = 'toast ' + type; t.textContent = msg; document.body.appendChild(t); setTimeout(() => t.remove(), 3500); }
 /* ---------- تسجيل الأخطاء الصامتة: يحتفظ بآخر 50 خطأ للتشخيص (window.__meqatErrors) بدل ابتلاعها ---------- */
 const ERR_LOG = [];
@@ -1747,7 +1771,8 @@ service cloud.firestore {
   match /databases/{database}/documents {
     // المالك المعرّف عند توليد القواعد يبقى super_admin لاستعادة الوصول.
     function isOwnerEmail() {
-      return request.auth != null && request.auth.token.get('email', '') == '${email}';
+      return request.auth != null && request.auth.token.get('email', '') == '${email}'
+        && request.auth.token.get('email_verified', false) == true;
     }
     function uidAdminPath() {
       return /databases/$(database)/documents/admins/$(request.auth.uid);
@@ -1936,6 +1961,11 @@ service cloud.firestore {
         && request.resource.data.usedBy == request.auth.uid && request.resource.data.usedAt == request.time
         && existsAfter(/databases/$(database)/documents/employees/$(id)/joins/$(request.auth.uid));
     }
+    // تذاكر البصمة: يكتبها خادم الحافة وحده (حساب خدمة يتجاوز القواعد)؛ لا قراءة ولا كتابة من أي عميل، ويحذفها صاحبها في دفعة التسجيل نفسها (استهلاك).
+    match /punchTickets/{uid} {
+      allow read, create, update: if false;
+      allow delete: if request.auth != null && request.auth.uid == uid;
+    }
     match /payrollRuns/{rid} {
       allow read: if isSuperAdmin() || isPayrollAdmin();
       allow create: if (isSuperAdmin() || isPayrollAdmin()) && validRunCreate();
@@ -1951,7 +1981,17 @@ service cloud.firestore {
     }
     match /locations/{id} {
       allow read: if request.auth != null;
-      allow write: if isSuperAdmin() || isHrAdmin();
+      allow delete: if isSuperAdmin() || isHrAdmin();
+      // S5: سياسة طرق الحضور لا تُحفظ إلا صالحة (methods ⊆ gps/qr/bio وغير فارغة، mode = all|any).
+      // قيمة غير صالحة كانت تُسقط طريقة QR/البصمة أو تعطّل البصمة لكل موظفي الموقع.
+      allow create, update: if (isSuperAdmin() || isHrAdmin()) && validLocation();
+      function validLocation() {
+        let d = request.resource.data;
+        return d.get('methods', ['gps']) is list
+          && d.get('methods', ['gps']).size() > 0
+          && d.get('methods', ['gps']).hasOnly(['gps', 'qr', 'bio'])
+          && d.get('mode', 'all') in ['all', 'any'];
+      }
     }
     // أسرار رمز QR المتغيّر: لا يقرؤها الموظفون إطلاقاً (تستعملها قاعدة إنشاء البصمة وشاشة العرض عند الإدارة فقط).
     match /locSecrets/{id} {
@@ -2038,9 +2078,15 @@ service cloud.firestore {
           && resource.data.get('uid', null) == null
           && resource.data.get('devices', null) == null && resource.data.active == true;
       }
+      // S3: عند تفعيل settings/general.bindPin لا يُربط أول جهاز إلا برمز الإدارة (مستند joins يتحقق منه في الدفعة نفسها).
+      function bindPinOk() {
+        return !exists(/databases/$(database)/documents/settings/general)
+          || get(/databases/$(database)/documents/settings/general).data.get('bindPin', false) != true
+          || existsAfter(/databases/$(database)/documents/employees/$(empId)/joins/$(request.auth.uid));
+      }
       function claimDevice() {
         let n = request.resource.data;
-        return unclaimed() && (resource.data.get('deviceId', null) == null
+        return unclaimed() && bindPinOk() && (resource.data.get('deviceId', null) == null
             || n.get('rebindProof', null) == resource.data.get('deviceId', null))
           && n.diff(resource.data).affectedKeys().hasOnly(['deviceId', 'devices', 'rebindProof'])
           && n.devices.size() == 1 && n.devices.values().hasOnly([request.auth.uid])
@@ -2145,7 +2191,23 @@ service cloud.firestore {
             && (d.qr == q.cur || d.qr == q.get('prev', ''));
         }
         // بصمة الجهاز (WebAuthn): يشترط وجود إثبات التوقيع وأن الموظف سجّل مفتاحاً. التحقق من التوقيع نفسه يجري في التطبيق ويُحفظ الإثبات للتدقيق.
+        // P1أ: إذا فعّل المدير العام settings/general.edgeRequired فالبصمة لا تُقبل إلا بتذكرة من خادم الحافة (يتحقق من التوقيع فعلياً).
+        function edgeOn() {
+          return exists(/databases/$(database)/documents/settings/general)
+            && get(/databases/$(database)/documents/settings/general).data.get('edgeRequired', false) == true;
+        }
+        function ticketOk(d) {
+          let t = get(/databases/$(database)/documents/punchTickets/$(request.auth.uid)).data;
+          return d.get('ticket', '') is string && d.ticket == t.nonce
+            && t.empId == empId && t.locId == d.locationId && t.type == d.type
+            && 'bio' in t.m && request.time < t.exp
+            && !existsAfter(/databases/$(database)/documents/punchTickets/$(request.auth.uid));
+        }
         function bioOk(d, e) {
+          // تذكرة مُرسلة ⇒ يجب أن تكون صالحة دائماً؛ وبلا تذكرة يُقبل المسار القديم (wa) فقط إن لم تُلزَم المنشأة بخادم الحافة.
+          return (d.get('ticket', '') is string && d.get('ticket', '') != '') ? ticketOk(d) : (!edgeOn() && bioWaOk(d, e));
+        }
+        function bioWaOk(d, e) {
           return d.get('wa', '') is string && d.get('wa', '').size() >= 40 && d.get('wa', '').size() <= 1500
             && e.get('bio', null) != null;
         }
@@ -2166,7 +2228,7 @@ service cloud.firestore {
           // 50400000 = 14 ساعة = FORGOT_MS، وهو الحد الأدنى لمهلة نسيان الانصراف؛ مهلة الجدول (forgotMsOf) لا تقل عنه أبدًا،
           // فالقاعدة لا تمنع ما يسمح به التطبيق. يجب أن يبقى الرقمان متطابقين (يحرسه الاختبار tests/forgot-limit.test.mjs).
           return request.auth != null
-            && d.keys().hasOnly(['type','time','lat','lng','accuracy','distance','locationId','locationName','empName','deviceId','qr','wa','m'])
+            && d.keys().hasOnly(['type','time','lat','lng','accuracy','distance','locationId','locationName','empName','deviceId','qr','wa','m','ticket'])
             && d.keys().hasAll(['type','time','lat','lng','accuracy','distance','locationId','locationName','empName','deviceId'])
             && d.time == request.time && d.type in ['in', 'out']
             && d.lat is number && d.lng is number
@@ -2380,6 +2442,30 @@ async function waAssert(bio, challengeStr) {
   return b64u.enc(r.clientDataJSON) + '.' + b64u.enc(r.authenticatorData) + '.' + b64u.enc(r.signature);
 }
 
+/* ---------- خادم الحافة (meqat-edge): تحدٍّ من الخادم ⇒ توقيع بصمة الجهاز ⇒ تذكرة تتحقق منها القواعد ---------- */
+const edgeUrlOf = () => { try { return (typeof firebaseConfig !== 'undefined' && firebaseConfig && typeof firebaseConfig.edgeUrl === 'string') ? firebaseConfig.edgeUrl : ''; } catch { return ''; } };
+async function waGetRaw(bio, challengeB64) {
+  const a = await navigator.credentials.get({ publicKey: {
+    challenge: b64u.dec(challengeB64), rpId: location.hostname,
+    allowCredentials: [{ type: 'public-key', id: b64u.dec(bio.cid), transports: ['internal', 'hybrid'] }],
+    userVerification: 'required', timeout: 60000
+  } });
+  const r = a.response;
+  return { clientDataJSON: b64u.enc(r.clientDataJSON), authenticatorData: b64u.enc(r.authenticatorData), signature: b64u.enc(r.signature) };
+}
+async function edgeTicket(edgeUrl, idToken, bio, empId, locId, type) {
+  const post = async (path, body) => {
+    let r; try { r = await fetch(edgeUrl + path, { method: 'POST', headers: { 'content-type': 'application/json', authorization: 'Bearer ' + idToken }, body: JSON.stringify(body) }); }
+    catch { const e = new Error('edge-down'); e.edge = true; e.down = true; throw e; }
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) { const e = new Error('edge-' + (j.error || r.status)); e.edge = true; e.down = r.status >= 500; throw e; }
+    return j;
+  };
+  const c = await post('/v1/punch/challenge', { empId, locId, type });
+  const assertion = await waGetRaw(bio, c.challenge);
+  return (await post('/v1/punch/ticket', { challenge: c.challenge, assertion })).ticket;
+}
+
 /* ---------- استيراد سجلات أجهزة البصمة (ZKTeco / Hikvision / Suprema / Anviz / Excel / CSV / DAT …) ---------- */
 const devDigits = s => String(s ?? '').replace(/[٠-٩]/g, c => c.charCodeAt(0) - 1632).replace(/[۰-۹]/g, c => c.charCodeAt(0) - 1776);
 const DEV_AP = '([AaPp][Mm]|ص|م)';
@@ -2560,18 +2646,19 @@ async function employeeApp(db, auth, token) {
         : 'تعذر الاتصال بالنظام. تحقق من الإنترنت وحاول مجدداً.');
   }
   // شاشة رمز الأجهزة: تُضيف هذا الجهاز كجهاز إضافي (حد أقصى 3) بعد التحقق من الرمز في القواعد
-  const askPin = () => new Promise(resolve => {
+  const askPin = (bindUpd) => new Promise(resolve => {
     root.innerHTML = `<div class="emp-bg"><div class="emp-wrap"><div class="card center" style="margin-top:40px;line-height:1.9">
-      <h3 style="margin:0 0 10px">جهاز جديد</h3>
-      <p style="margin:0 0 12px">هذا الجهاز أو المتصفح غير مسجَّل لرابطك. أدخل «رمز الأجهزة» الذي أعطتك إياه الإدارة لإضافته. الرمز مؤقت (ينتهي خلال يومين) ويُصدره المسؤول عند الحاجة فقط.</p>
+      <h3 style="margin:0 0 10px">${bindUpd ? 'تفعيل رابطك' : 'جهاز جديد'}</h3>
+      <p style="margin:0 0 12px">${bindUpd ? 'لتفعيل رابطك على هذا الجهاز أدخل «رمز التفعيل» الذي أرسلته لك الإدارة في رسالة منفصلة. الرمز مؤقت (ينتهي خلال يومين) ويُستعمل مرة واحدة.' : 'هذا الجهاز أو المتصفح غير مسجَّل لرابطك. أدخل «رمز الأجهزة» الذي أعطتك إياه الإدارة لإضافته. الرمز مؤقت (ينتهي خلال يومين) ويُصدره المسؤول عند الحاجة فقط.'}</p>
       <input id="pinIn" autocomplete="off" autocapitalize="characters" spellcheck="false" dir="ltr" placeholder="XXXX-XXXX" style="width:100%;margin-bottom:10px;text-align:center;letter-spacing:2px">
       <button class="btn" id="pinGo" type="button">إضافة هذا الجهاز</button>
       <p id="pinMsg" class="bad-txt" style="font-size:13px;margin:10px 0 0"></p></div></div></div>`;
     const go = async () => {
       const pin = normPin($('#pinIn').value); if (pin.length < 8) { $('#pinMsg').textContent = 'الرمز مكوّن من 8 خانات.'; return; }
       const b = $('#pinGo'), msg = $('#pinMsg'); b.disabled = true; msg.textContent = '';
-      try { const jb = writeBatch(db); jb.set(doc(db, 'employees', token, 'joins', uid), { pin, ua: (navigator.userAgent || '').slice(0, 90), at: serverTimestamp() }); jb.update(doc(db, 'pins', token), { usedBy: uid, usedAt: serverTimestamp() }); await jb.commit(); }
+      try { const jb = writeBatch(db); jb.set(doc(db, 'employees', token, 'joins', uid), { pin, ua: (navigator.userAgent || '').slice(0, 90), at: serverTimestamp() }); jb.update(doc(db, 'pins', token), { usedBy: uid, usedAt: serverTimestamp() }); if (bindUpd) jb.update(ref, bindUpd); await jb.commit(); }
       catch { msg.textContent = 'الرمز غير صحيح أو منتهي، أو الرابط غير صالح/موقوف. اطلب من الإدارة رمزًا جديدًا.'; b.disabled = false; return; }
+      if (bindUpd) { resolve(true); return; }
       try { await updateDoc(ref, { ['devices.' + myDev]: uid, lastJoinAt: serverTimestamp() }); }
       catch { msg.textContent = 'تعذر إضافة الجهاز: وصلت الحد الأقصى لأجهزتك أو الرابط قديم. اطلب من الإدارة إلغاء جهاز قديم أو إعادة الضبط.'; b.disabled = false; return; }
       resolve(true);
@@ -2607,7 +2694,9 @@ async function employeeApp(db, auth, token) {
       if (emp.deviceId && emp.deviceId !== myDev) return showErr('هذا الرابط قديم ومرتبط بجهاز آخر. اطلب من الإدارة إعادة ضبط الأجهزة.');
       const upd = { deviceId: myDev, devices: { [myDev]: uid } };
       if (emp.deviceId) upd.rebindProof = myDev;
-      await updateDoc(ref, upd);
+      // S3: إن فعّلت الإدارة «رمز الربط» فأول جهاز لا يُربط إلا برمز (يُتحقق منه في القواعد).
+      if (cfgSt && cfgSt.exists() && cfgSt.data().bindPin === true) await askPin(upd);
+      else await updateDoc(ref, upd);
       emp.deviceId = myDev; emp.devices = { [myDev]: uid };
     } else if (emp.uid === uid) {
       // رابط قديم (uid بلا خريطة أجهزة): ترقية
@@ -2639,16 +2728,13 @@ async function employeeApp(db, auth, token) {
       if (Array.isArray(s.schedOverrides)) empOverrides = s.schedOverrides;
     }
   } catch {}
+  /* S8: الماليات (الراتب/IBAN/الرقم الوطني) لا تُحفظ في localStorage أبداً — تبقى في الذاكرة وفي كاش Firestore المحلي المحكوم بقواعد الجلسة.
+     ونمسح هنا أي نسخة قديمة خزّنتها إصدارات سابقة على هذا الجهاز. */
+  try { for (let i = localStorage.length - 1; i >= 0; i--) { const k = localStorage.key(i); if (k && k.startsWith('att_emp_fin_')) localStorage.removeItem(k); } } catch {}
   if (emp.finIsolated) {
     try {
-      const fKey = 'att_emp_fin_' + token;
-      let fData = null;
-      try { const fc = JSON.parse(localStorage.getItem(fKey) || 'null'); if (fc && Date.now() - (fc.at || 0) < 6 * 3600000) fData = fc.d; } catch {}
-      if (!fData) {
-        const fs = await getDoc(doc(db, 'empFinance', token));
-        if (fs.exists()) { fData = fs.data(); try { localStorage.setItem(fKey, JSON.stringify({ at: Date.now(), d: fData })); } catch {} }
-      }
-      if (fData) emp = mergeEmpFinance(emp, fData);
+      const fs = await getDoc(doc(db, 'empFinance', token));
+      if (fs.exists()) emp = mergeEmpFinance(emp, fs.data());
     } catch (e) { logErr('emp-finance-read', e); }
   }
   let empNotice = '';
@@ -2700,7 +2786,7 @@ async function employeeApp(db, auth, token) {
     <div class="emp-brand">
       <div class="emp-brand-l">${logoMark(30)}<span>${esc(orgName)}</span></div>
       <div style="display:flex;gap:8px;align-items:center">
-        <button class="pwa-btn" id="empNotifBtn" type="button" onclick="window.__meqatRequestNotif()">${MeqatNotify.perm() === 'granted' ? '🔔 التنبيهات مفعّلة' : '🔕 تفعيل التنبيهات'}</button>
+        <button class="notif-btn" id="empNotifBtn" type="button" onclick="window.__meqatRequestNotif()">${MeqatNotify.perm() === 'granted' ? '🔔 التنبيهات مفعّلة' : '🔕 تفعيل التنبيهات'}</button>
         <button class="pwa-btn" onclick="window.__installPWA()">${ic('download', 18)} تثبيت</button>
         ${themeBtnHtml()}
       </div>
@@ -2996,6 +3082,10 @@ async function employeeApp(db, auth, token) {
     if (c === 'wa-unsupported') return 'هاتفك أو متصفحك لا يدعم بصمة الجهاز، أو الصفحة ليست على رابط آمن (https).';
     if (c === 'wa-cancel' || e.name === 'NotAllowedError') return 'لم يكتمل التحقق ببصمة الجهاز.';
     if (c === 'wa-bad-sig') return 'فشل التحقق من بصمة الجهاز.';
+    if (c === 'edge-down') return 'خادم التحقق من البصمة غير متاح الآن. حاول بعد قليل.';
+    if (c === 'edge-unset') return 'التحقق من البصمة مفعّل لكن خادمه غير مُعدّ. تواصل مع الإدارة.';
+    if (c === 'edge-rate-limited') return 'محاولات كثيرة. انتظر دقيقة ثم أعد المحاولة.';
+    if (c.startsWith('edge-')) return 'رفض الخادم التحقق من بصمتك (' + c.slice(5) + '). أعد المحاولة، وإن تكرر تواصل مع الإدارة.';
     return 'تعذر إكمال التحقق. حاول مجدداً.';
   };
 
@@ -3074,7 +3164,7 @@ async function employeeApp(db, auth, token) {
       if (best.d <= best.l.radius) { gpsPassed = true; try { localStorage.setItem(GPS_PREV_KEY, JSON.stringify({ lat, lng, acc: accuracy, ms: Date.now() })); } catch {} }
       else { outMsg = `أنت خارج نطاق العمل. تبعد حوالي ${Math.round(best.d)} متر عن «${best.l.name}» (المسموح ${best.l.radius}م). لم يتم التسجيل.`; best = null; }
     }
-    let qr = null, wa = '';
+    let qr = null, wa = '', ticket = '';
     try {
       if (!best) {
         // خارج النطاق أو بلا GPS: يُقبل فقط موقع يسمح بإثبات الحضور بغير GPS
@@ -3094,7 +3184,13 @@ async function employeeApp(db, auth, token) {
         if (!navigator.onLine) throw new Error('offline-bio');
         const bio = await ensureBio();
         setMsg('تحقق ببصمتك أو وجهك على الهاتف…');
-        wa = await waAssert(bio, `${token}|${type}|${best.l.id}|${Math.floor(Date.now() / 1000)}`);
+        const eUrl = edgeUrlOf(), eReq = !!(cfgSt && cfgSt.exists() && cfgSt.data().edgeRequired === true);
+        if (eReq && !eUrl) throw new Error('edge-unset');
+        if (eUrl) {
+          try { ticket = await edgeTicket(eUrl, await auth.currentUser.getIdToken(), bio, token, best.l.id, type); }
+          catch (e) { if (eReq || !(e && e.edge && e.down)) throw e; /* الخادم متعطل والإدارة لم تُلزم به: نعود للتحقق في التطبيق */ ticket = ''; }
+        }
+        if (!ticket) wa = await waAssert(bio, `${token}|${type}|${best.l.id}|${Math.floor(Date.now() / 1000)}`);
       }
       // رمز QR يصلح نحو 35–90 ثانية فقط عند الخادم: نمسحه بعد البصمة مباشرة (أو نعيد المسح إن مضى عليه أكثر من 15 ث)
       if (plan.need.includes('qr') && (!qr || Date.now() - qrAt > 15000)) qr = await askQr([best.l.id]);
@@ -3103,7 +3199,7 @@ async function employeeApp(db, auth, token) {
       return loadHist();
     }
     const usedGps = !!(pos && gpsPassed);
-    const used = [usedGps ? 'gps' : '', qr ? 'qr' : '', wa ? 'bio' : ''].filter(Boolean).join('+') || 'gps';
+    const used = [usedGps ? 'gps' : '', qr ? 'qr' : '', (wa || ticket) ? 'bio' : ''].filter(Boolean).join('+') || 'gps';
     const rec = usedGps
       ? { lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: Math.round(pos.coords.accuracy), distance: Math.round(best.d) }
       : { lat: 0, lng: 0, accuracy: 0, distance: 0 };
@@ -3119,7 +3215,8 @@ async function employeeApp(db, auth, token) {
       const devToUse = emp.deviceId || myDev;
       recRef = doc(collection(db, 'employees', token, 'records'));
       const batch = writeBatch(db);
-      batch.set(recRef, { type, time: serverTimestamp(), ...rec, locationId: best.l.id, locationName: best.l.name, empName: emp.name, deviceId: devToUse, ...(qr ? { qr: qr.tok } : {}), ...(wa ? { wa } : {}), m: used });
+      batch.set(recRef, { type, time: serverTimestamp(), ...rec, locationId: best.l.id, locationName: best.l.name, empName: emp.name, deviceId: devToUse, ...(qr ? { qr: qr.tok } : {}), ...(wa ? { wa } : {}), ...(ticket ? { ticket } : {}), m: used });
+      if (ticket) batch.delete(doc(db, 'punchTickets', uid));
       batch.update(ref, { state: type, lastAt: serverTimestamp(), lastRecId: recRef.id });
       const done = batch.commit();
       const first = await Promise.race([done.then(() => 'ok'), new Promise(r => setTimeout(() => r('slow'), 15000))]);
@@ -3503,12 +3600,40 @@ function adminApp(db, auth) {
       const owner = await getDoc(doc(db, 'admins', 'owner'));
       canReadOwnerProfile = true;
       if (owner.exists() && String(owner.data().email || '').toLowerCase() === String(u.email || '').toLowerCase()) {
-        S.role = 'super_admin'; S.deptScope = ''; saveRole(); return;
+        S.role = 'super_admin'; S.deptScope = ''; saveRole(); await migrateOwnerDoc(u); return;
       }
     } catch (err) { if (err.code !== 'permission-denied') throw err; }
     // يظل المالك الأول قادرًا على الإعداد لأن قواعده تسمح له بقراءة /admins/owner حتى قبل إنشاء الوثيقة.
-    if (canReadOwnerProfile) { S.role = 'super_admin'; S.deptScope = ''; saveRole(); return; }
+    if (canReadOwnerProfile) { S.role = 'super_admin'; S.deptScope = ''; saveRole(); await migrateOwnerDoc(u); return; }
     S.role = 'unknown'; S.deptScope = '';
+  }
+  /* S2: بريد المالك في القواعد يشترط email_verified. لا نصل إلى هنا إلا إذا سمحت القواعد فعلاً بقراءة admins/owner (أي أنه super_admin بالقواعد)،
+     فنثبّت صلاحيته في مستند admins/{uid} الدائم كي لا يعتمد على توثيق البريد لاحقاً. تبقى المحاولة best-effort. */
+  async function migrateOwnerDoc(u) {
+    if (!u || !u.uid || u.isAnonymous) return;
+    try {
+      await setDoc(doc(db, 'admins', u.uid), { name: (u.displayName || 'المالك').slice(0, 100), email: String(u.email || '').slice(0, 254), role: 'super_admin', addedAt: serverTimestamp() });
+    } catch (e) { console.warn('owner-uid-doc', e && e.code); }
+  }
+  /* شاشة «أكّد بريدك»: بريد المالك غير موثّق فلا تعترف به القواعد بعد التشديد. نوفّر إرسال رابط التأكيد ثم إعادة المحاولة. */
+  function verifyGate() {
+    const u = auth.currentUser;
+    root.innerHTML = `<div class="auth-bg"><div class="login">
+      <div class="logo big">${ic('lock', 46)}</div>
+      <h1 class="center">${BRAND}</h1>
+      <p class="center" style="font-weight:700">أكّد بريدك الإلكتروني للمتابعة</p>
+      <p class="muted center">حسابك <b dir="ltr">${esc(u.email || '')}</b> غير موثّق، ولا يمنح النظام صلاحيات الإدارة لبريد غير موثّق. اضغط «إرسال رابط التأكيد» وافتح الرابط من بريدك، ثم عُد واضغط «تحقّقت».</p>
+      <button class="btn" id="vgSend" style="width:100%;margin-top:14px">إرسال رابط التأكيد</button>
+      <button class="btn ok" id="vgDone" style="width:100%;margin-top:10px">تحقّقت — أعد المحاولة</button>
+      <button class="btn sec" id="vgOut" style="width:100%;margin-top:10px">تسجيل الخروج</button>
+    </div></div>`;
+    $('#vgSend').onclick = async () => { try { await sendEmailVerification(u); toast('أُرسل رابط التأكيد إلى بريدك — افتحه ثم عُد إلى هنا', 'good'); } catch (e) { toast(e && e.code === 'auth/too-many-requests' ? 'محاولات كثيرة — انتظر قليلاً ثم أعد المحاولة' : 'تعذّر إرسال الرابط', 'err'); } };
+    $('#vgDone').onclick = async () => {
+      try { if (typeof u.reload === 'function') await u.reload(); if (typeof u.getIdToken === 'function') await u.getIdToken(true); } catch {}
+      if (!u.emailVerified) return toast('البريد ما زال غير موثّق — افتح الرابط في رسالة التأكيد أولاً', 'err');
+      await loadAll({ force: true });
+    };
+    $('#vgOut').onclick = async () => { try { await signOut(auth); } catch {} };
   }
   const isSuper = () => S.role === 'super_admin';
   const isHr = () => S.role === 'hr_admin';
@@ -3686,7 +3811,10 @@ function adminApp(db, auth) {
     }
     return out;
   }
-  async function loadRecs() { S.recsFail = []; S.recs = await fetchRecsCached(new Date(dayStart(S.from).getTime() - 86400000), dayEnd(S.to), S.recsFail); }
+  /* B3: نحمّل ذيلاً بعد آخر يوم في الفترة (أطول وردية + هامش) كي لا يضيع انصراف وردية ليلية بدأت في آخر يوم؛
+   العرض والمسيّر يقصّان على الفترة نفسها (filtered/summary)، فلا تتأثر الأرقام بالذيل. */
+  const RECS_TAIL_MS = 16 * 3600000;
+  async function loadRecs() { S.recsFail = []; S.recs = await fetchRecsCached(new Date(dayStart(S.from).getTime() - 86400000), new Date(dayEnd(S.to).getTime() + RECS_TAIL_MS), S.recsFail); }
   async function saveMonthSummaryDoc(mk, rows) {
     const p = packMonthRecs(rows, mk, TZOFF);
     if (p.packed.length > 880000) return false;
@@ -3835,8 +3963,15 @@ function adminApp(db, auth) {
         const s = await getDocs(collection(db, 'empFinance'));
         rows = s.docs.map(d => ({ id: d.id, ...tsSer(d.data()) }));
         await RecCache.set(cKey, { at: Date.now(), rows });
-      } catch (e) { console.warn('empFinance load:', e); rows = []; }
+      } catch (e) {
+        console.warn('empFinance load:', e);
+        /* B6: فشل التحميل ليس «لا توجد ماليات». من يملك صلاحية الرواتب يُوسَم بخطأ صريح (S.finErr) فتمتنع المسيّرات،
+           أما من لا يقرأ empFinance أصلاً (رفض صلاحيات) فيبقى سلوكه كما كان. */
+        if (e && e.code === 'permission-denied' && !(isSuper() || isPay())) rows = [];
+        else { S.finErr = true; S.finLoaded = false; return; }
+      }
     }
+    S.finErr = false;
     S.finMap = new Map(rows.map(r => [r.id, tsDe(r)]));
     S.emps = S.emps.map(e => mergeEmpFinance(e, S.finMap.get(e.id)));
     S.finLoaded = true;
@@ -3962,6 +4097,7 @@ function adminApp(db, auth) {
         try { localStorage.removeItem(CFG_KEY); sessionStorage.removeItem(ROLE_CACHE_KEY); } catch {}
       }
       await resolveAdminRole(!!opts.force);
+      if (S.role === 'unknown' && auth.currentUser && auth.currentUser.email && !auth.currentUser.emailVerified && !auth.currentUser.isAnonymous) { verifyGate(); return; }
       if (opts.force) S.finLoaded = false;
       await Promise.all([loadEmps().then(() => ensureFinanceLoaded(!!opts.force)), loadConfig(!!opts.force)]);
       // تشغيل مستمع اليوم بالتوازي مع الطلبات والمشرفين ثم استخدام بيانات اليوم داخل loadRecs لمنع ازدواجية قراءة أمس واليوم
@@ -4008,7 +4144,7 @@ function adminApp(db, auth) {
  <main class="wrap main">
  <header class="phead"><div><small>${esc(brandName())} · لوحة الإدارة ${licBadgeHtml()}</small><h1>${TT[S.tab] || ''}</h1></div>
  <div class="ptools">
- <button class="pwa-btn" id="admNotifBtn" type="button" onclick="window.__meqatRequestNotif()" title="تفعيل الإشعارات الفورية للطلبات واشتباهات الموقع">${MeqatNotify.perm() === 'granted' ? '🔔 التنبيهات مفعّلة' : '🔕 تفعيل التنبيهات'}</button>
+ <button class="notif-btn" id="admNotifBtn" type="button" onclick="window.__meqatRequestNotif()" title="تفعيل الإشعارات الفورية للطلبات واشتباهات الموقع">${MeqatNotify.perm() === 'granted' ? '🔔 التنبيهات مفعّلة' : '🔕 تفعيل التنبيهات'}</button>
  <button class="pwa-btn" onclick="window.__installPWA()">${ic('download', 18)} تثبيت</button>
  ${themeBtnHtml()}
  <button class="ib" data-act="reload" title="تحديث البيانات" aria-label="تحديث البيانات">${ic('refresh', 22)}</button>
@@ -4332,7 +4468,7 @@ function adminApp(db, auth) {
     const stamp = t => t && t.toDate ? `${fmtDate(t.toDate())} ${fmtTime(t.toDate())}` : '';
     const devRows = () => {
       const map = e.devices || {}, ks = Object.keys(map);
-      if (!ks.length) return `<p class="muted">${e.deviceId ? 'رابط قديم مربوط بجهاز واحد.' : 'لا توجد أجهزة مسجّلة بعد؛ أول جهاز يفتح الرابط يُسجَّل دون رمز.'}</p>`;
+      if (!ks.length) return `<p class="muted">${e.deviceId ? 'رابط قديم مربوط بجهاز واحد.' : (S.set && S.set.bindPin ? 'لا توجد أجهزة مسجّلة بعد؛ أول جهاز يحتاج «رمز تفعيل» أصدره أدناه.' : 'لا توجد أجهزة مسجّلة بعد؛ أول جهاز يفتح الرابط يُسجَّل دون رمز.')}</p>`;
       return ks.map(k => {
         const j = W.joins[map[k]];
         return `<div style="display:flex;gap:10px;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--line)"><div><b dir="ltr" style="font-size:12.5px;word-break:break-all">${j && j.ua ? esc(j.ua) : 'الجهاز الأول (سُجّل دون رمز)'}</b><div class="muted" style="font-size:12px">${esc(stamp(j && j.at))}</div></div><button class="btn sm bad" data-a="rev" data-key="${esc(k)}">إلغاء</button></div>`;
@@ -4353,7 +4489,7 @@ function adminApp(db, auth) {
         } else if (a === 'copypin' && W.pin) {
           await navigator.clipboard.writeText(fmtPin(W.pin)); toast('تم النسخ', 'good');
         } else if (a === 'wapin' && W.pin) {
-          const msg = `مرحباً ${e.name}، رمز إضافة جهاز جديد لرابطك في «${BRAND}»: ${fmtPin(W.pin)}\nصالح ${PIN_TTL_H} ساعة. لا تشاركه مع أحد.`;
+          const msg = `مرحباً ${e.name}، ${S.set && S.set.bindPin && !e.devices && !e.deviceId ? 'رمز تفعيل رابطك' : 'رمز إضافة جهاز جديد لرابطك'} في «${BRAND}»: ${fmtPin(W.pin)}\nصالح ${PIN_TTL_H} ساعة. لا تشاركه مع أحد.`;
           const l = document.createElement('a'); l.href = `https://wa.me/${e.phone || ''}?text=${encodeURIComponent(msg)}`; l.target = '_blank'; l.rel = 'noopener noreferrer'; l.click();
         } else if (a === 'rev') {
           const key = d.key, map = e.devices || {}, uidv = map[key];
@@ -4733,16 +4869,18 @@ function adminApp(db, auth) {
             <div class="field" style="max-width:320px"><label>اسم المنشأة (يظهر مكان «مِيقَاتْ» في اللوحة)</label><input id="sOrg" value="${esc((S.set && S.set.orgName) || '')}" placeholder="شركة النور"></div>
             <div class="field" style="max-width:260px"><label>المنطقة الزمنية للتقارير</label><select id="sTz">${TZ_OPTS.map(([v, l]) => `<option value="${v}" ${(S.set && +S.set.tzOffset || TZ_OFFSET_MIN) === v ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
             <div class="field" style="max-width:300px"><label>عند نسيان الموظف تسجيل الانصراف</label><select id="sForgot" ${isSuper() ? '' : 'disabled title="تعديل هذا الخيار للمدير العام فقط"'}>${[[0, 'بلا خصم تلقائي (تنبيه فقط)'], [0.25, 'خصم ربع يوم'], [0.5, 'خصم نصف يوم'], [1, 'خصم يوم كامل']].map(([v, l]) => `<option value="${v}" ${forgotDed() === v ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
+            <div class="field" style="max-width:360px"><label>ربط أول جهاز للموظف</label><select id="sBindPin" ${isSuper() ? '' : 'disabled title="تعديل هذا الخيار للمدير العام فقط"'}><option value="0" ${!(S.set && S.set.bindPin) ? 'selected' : ''}>بالرابط فقط (الوضع الحالي)</option><option value="1" ${S.set && S.set.bindPin ? 'selected' : ''}>بالرابط + رمز تفعيل من الإدارة (أأمن)</option></select></div>
+            <div class="field" style="max-width:360px"><label>التحقق من بصمة الجهاز</label><select id="sEdge" ${isSuper() ? '' : 'disabled title="تعديل هذا الخيار للمدير العام فقط"'}><option value="0" ${!(S.set && S.set.edgeRequired) ? 'selected' : ''}>داخل التطبيق (الوضع الحالي)</option><option value="1" ${S.set && S.set.edgeRequired ? 'selected' : ''}>على خادم الحافة (أأمن — يتطلب إعداد meqat-edge)</option></select></div>
             <div class="field" style="grid-column:1/-1;flex:1 1 100%"><label>تعميم / إشعار إداري يظهر أعلى شاشة كل موظف (اتركه فارغاً لإخفائه)</label><input id="sNotice" value="${esc((S.set && S.set.empNotice) || '')}" placeholder="مثال: تذكير: غداً عطلة رسمية بمناسبة..."></div>
             <button class="btn" data-act="saveSet">${ic('check', 18)} حفظ الإعدادات</button>
           </div>
           <p class="muted" style="font-size:13px;margin:12px 0 0">المنطقة الزمنية تثبّت أسماء الأيام والحدود اليومية في كل التقارير على جهاز أي مدير مهما كانت ساعة جهازه.<br>سياسة «نسيان الانصراف» تُطبَّق على الراتب الشهري (من الراتب اليومي) وعلى الأجر بالساعة (من ساعات اليوم المجدولة). ويظهر للإدارة تنبيه في «اليوم» وعلى تبويب التقارير إلى أن تُصحَّح البصمة، وعند التصحيح يُلغى الخصم تلقائياً.</p>
         </div>
         <div class="card">
-          ${ch('download', 'النسخ الاحتياطي واستعادة قاعدة البيانات (مجاناً)')}
-          <p class="hint" style="margin-top:0">نزّل نسخة احتياطية كاملة (JSON) تشمل جميع الموظفين، جداول الدوام، المواقع، العطل، والإعدادات للاحتفاظ بها على جهازك، أو استعدها في أي وقت.</p>
+          ${ch('download', 'نسخة الإعدادات والموظفين (احتياطي واستعادة)')}
+          <p class="hint" style="margin-top:0">نزّل نسخة (JSON) من الموظفين وجداول الدوام والمواقع والعطل والإعدادات للاحتفاظ بها على جهازك أو لاستعادتها. <b>لا تشمل</b> سجلات الحضور ولا الطلبات ولا الماليات ولا المسيّرات ولا دفتر السلف؛ لحفظ سجلات شهر مغلق استخدم «أرشفة الأشهر».</p>
           <div class="acts">
-            <button class="btn sec" data-act="backupDB">${ic('download', 18)} تنزيل نسخة احتياطية كاملة (JSON)</button>
+            <button class="btn sec" data-act="backupDB">${ic('download', 18)} تنزيل نسخة الإعدادات والموظفين (JSON)</button>
             <button class="btn sec" data-act="restoreDB">${ic('refresh', 18)} استعادة من ملف نسخة احتياطية</button>
             <input type="file" id="restoreInp" accept=".json" style="display:none">
           </div>
@@ -5292,8 +5430,8 @@ function adminApp(db, auth) {
       if (r.kind === 'task') return `<b>مهمة</b> ${esc(r.taskName || '')} × <b>${+(r.qtyApproved ?? r.qty) || 0}</b> · ${fmtDate(dayStart(r.from))}${r.status === 'approved' ? ` <span class="badge b-ok">${+r.amount || 0}</span>` : ''}`;
       if (r.type === 'offline_gps') {
         const meta = parseOfflineNote(r.note);
-        const weak = meta && meta.acc > 100, pendOff = r.status === 'pending';
-        return `<span class="badge ${pendOff ? 'b-warn' : 'b-pri'}" title="الإحداثيات والوقت مصدرهما جهاز الموظف ولا يمكن التحقق منهما من الخادم">📍 بصمة أوفلاين${pendOff ? ' — غير موثّقة، راجعها قبل الاعتماد' : ''}</span> يوم ${fmtDate(dayStart(r.from))}${r.fixIn ? ` · حضور <b>${fmtHM(esc(r.fixIn))}</b>` : ''}${r.fixOut ? ` · انصراف <b>${fmtHM(esc(r.fixOut))}</b>` : ''}${r.typeName ? ` · <b>${esc(r.typeName)}</b>` : ''}${meta ? ` <span class="badge ${weak ? 'b-warn' : 'b-pri'}" title="${weak ? 'دقة GPS ضعيفة (أكثر من 100م)' : 'المسافة عن الموقع (دقة GPS)'}">${weak ? '⚠️ ' : ''}${meta.dist}م (±${meta.acc}م)</span> <a class="btn sm sec" style="text-decoration:none;padding:2px 8px;font-size:11.5px" href="${mapLink(meta.lat, meta.lng)}" target="_blank">${ic('map', 13)} خريطة</a>` : ''}`;
+        const weak = meta && meta.acc != null && meta.acc > 100, pendOff = r.status === 'pending';
+        return `<span class="badge ${pendOff ? 'b-warn' : 'b-pri'}" title="الإحداثيات والوقت مصدرهما جهاز الموظف ولا يمكن التحقق منهما من الخادم">📍 بصمة أوفلاين${pendOff ? ' — غير موثّقة، راجعها قبل الاعتماد' : ''}</span> يوم ${fmtDate(dayStart(r.from))}${r.fixIn ? ` · حضور <b>${fmtHM(esc(r.fixIn))}</b>` : ''}${r.fixOut ? ` · انصراف <b>${fmtHM(esc(r.fixOut))}</b>` : ''}${r.typeName ? ` · <b>${esc(r.typeName)}</b>` : ''}${meta ? ` <span class="badge ${weak ? 'b-warn' : 'b-pri'}" title="${weak ? 'دقة GPS ضعيفة (أكثر من 100م)' : 'المسافة عن الموقع (دقة GPS)'}">${weak ? '⚠️ ' : ''}${esc(meta.dist == null ? '؟' : Math.round(meta.dist))}م (±${esc(meta.acc == null ? '؟' : Math.round(meta.acc))}م)</span>${meta.lat != null && meta.lng != null ? ` <a class="btn sm sec" style="text-decoration:none;padding:2px 8px;font-size:11.5px" href="${esc(mapLink(meta.lat, meta.lng))}" target="_blank" rel="noopener noreferrer">${ic('map', 13)} خريطة</a>` : ''}` : ''}`;
       }
       return `<b>تصحيح</b> يوم ${fmtDate(dayStart(r.from))}${r.fixIn ? ` · حضور <b>${fmtHM(esc(r.fixIn))}</b>` : ''}${r.fixOut ? ` · انصراف <b>${fmtHM(esc(r.fixOut))}</b>` : ''}`;
     };
@@ -5305,7 +5443,7 @@ function adminApp(db, auth) {
       return esc(r.note || '—');
     };
     el.innerHTML = `<div class="card">${ch('send', `طلبات بانتظار المراجعة (${pend.length})`)}<div class="tw"><table><thead><tr><th>الموظف</th><th>تفاصيل الطلب</th><th>ملاحظة</th><th>الحالة</th><th>إجراءات</th></tr></thead><tbody>
-    ${pend.map(r => `<tr><td><div class="who"><span class="av">${ini(cname(r.empId))}</span>${esc(cname(r.empId))}</div></td><td>${det(r)}</td><td class="muted">${fmtReqNote(r)}</td><td><span class="badge b-warn">بانتظار المراجعة</span></td><td><div class="acts"><button class="btn sm ok" data-act="appr" data-id="${r.id}" data-e="${r.empId}">${ic('check', 16)} اعتماد</button> <button class="btn sm bad" data-act="rej" data-id="${r.id}" data-e="${r.empId}">${ic('x', 16)} رفض</button></div></td></tr>`).join('') || '<tr><td colspan="5" class="muted center">لا توجد طلبات معلّقة حالياً</td></tr>'}
+    ${pend.map(r => `<tr><td><div class="who"><span class="av">${ini(cname(r.empId))}</span>${esc(cname(r.empId))}</div></td><td>${det(r)}</td><td class="muted">${fmtReqNote(r)}</td><td><span class="badge b-warn">بانتظار المراجعة</span></td><td><div class="acts"><button class="btn sm ok" data-act="appr" data-id="${esc(r.id)}" data-e="${esc(r.empId)}">${ic('check', 16)} اعتماد</button> <button class="btn sm bad" data-act="rej" data-id="${esc(r.id)}" data-e="${esc(r.empId)}">${ic('x', 16)} رفض</button></div></td></tr>`).join('') || '<tr><td colspan="5" class="muted center">لا توجد طلبات معلّقة حالياً</td></tr>'}
     </tbody></table></div></div>
     <div class="g2" style="align-items:start">
       <div class="card">${ch('check', 'آخر القرارات المعتمدة/المرفوضة')}<div class="tw"><table><thead><tr><th>الموظف</th><th>الطلب</th><th>القرار</th></tr></thead><tbody>
@@ -5474,12 +5612,15 @@ function adminApp(db, auth) {
       const adj = activeAdj(e, S.from, S.to);
       const allowBonus = (+e.allowance || 0) + adj.bonus;
       const dedPen = adj.penalty;
-      const dedLoan = (+e.loanTotal > 0 && +e.loanInst > 0) ? Math.min(+e.loanTotal, +e.loanInst) : 0;
       const grossAfterAtt = Math.max(0, base + otPay + allowBonus - dedLate - dedEarly - dedAbs - dedForgot);
       const statDetail = e.lyStatutory ? calcLibyanStatutory(grossAfterAtt, e.familyStatus) : null;
       const statDed = statDetail ? statDetail.total : 0;
       const paidH = regH;
-      const net = Math.max(0, grossAfterAtt - statDed - dedPen - dedLoan);
+      /* B4: القسط لا يتجاوز ما بقي من الصافي فعلاً (مقرّباً لأسفل لأقرب 0.01)؛ ما لا يُستقطع يبقى في رصيد السلفة ويتأجل
+         بدل أن يُشطب من الدفتر دون استقطاع. */
+      const preLoan = Math.max(0, grossAfterAtt - statDed - dedPen);
+      const dedLoan = (+e.loanTotal > 0 && +e.loanInst > 0) ? Math.min(+e.loanTotal, +e.loanInst, Math.floor(preLoan * 100 + 1e-6) / 100) : 0;
+      const net = Math.max(0, preLoan - dedLoan);
       return { empId: e.id, name: e.name, dept, jobTitle, nationalId, bankName, iban, pm, amt, paidH, otEq: g.otEq, base, otPay, allowBonus, dedLate, dedEarly, dedAbs, dedForgot, dedLoan, dedPen, statDed, statDetail, net, absent: g.absent, unpaidDays: g.lv.filter(x => x.pct === 0).length, payDays, lateMin: g.late, earlyMin: g.early, forgotDays: g.forgotDays, taskQty: 0 };
     });
   }
@@ -5509,8 +5650,18 @@ function adminApp(db, auth) {
     c.set(id, rows);
     return rows;
   }
+  /* B6: لا مسيّر (إنشاء/إعادة حساب/اعتماد) ما لم تكن الماليات المعزولة محمّلة فعلاً؛ وإلا نحسب رواتب بقيم ناقصة. يحاول إعادة التحميل مرة واحدة. */
+  async function finReady() {
+    const need = S.emps.some(e => e.finIsolated);
+    if (!need) return true;
+    if (!S.finLoaded) { try { await ensureFinanceLoaded(true); } catch (e) { console.warn(e); } }
+    if (S.finLoaded && !S.finErr) return true;
+    toast('تعذر تحميل البيانات المالية للموظفين؛ لن يُنشأ المسيّر ببيانات ناقصة. تحقق من الاتصال وأعد المحاولة.', 'err');
+    return false;
+  }
   async function runSave(existingId) {
     if (!(isSuper() || isPay())) return toast('غير مسموح', 'err');
+    if (!await finReady()) return;
     if (S.emp) return toast('ألغِ فلتر الموظف أولًا: المسيّر يشمل كل الموظفين', 'err');
     if (!S.from || !S.to || S.from > S.to) return toast('حدد فترة صحيحة', 'err');
     if ((Date.parse(S.to) - Date.parse(S.from)) / 86400000 > 62) return toast('الفترة أطول من 63 يومًا', 'err');
@@ -5549,6 +5700,7 @@ function adminApp(db, auth) {
   async function runApprove(id) {
     const run = (S.runs || []).find(r => r.id === id); if (!run || run.status !== 'draft') return;
     if (!isSuper()) return toast('الاعتماد للمدير العام فقط', 'err');
+    if (!await finReady()) return;
     if (run.to >= dayKey(new Date())) return toast('لا يمكن اعتماد مسيّر قبل انتهاء فترته', 'err');
     if (!await mqConfirm(`اعتماد مسيّر ${run.from} ← ${run.to}؟\nبعد الاعتماد لا يمكن تعديل أرقامه أو حذفه. التصحيح يكون في الفترة التالية.`)) return;
     try {
@@ -5582,9 +5734,13 @@ function adminApp(db, auth) {
         if (!await mqConfirm(`تنبيهات المراجعة: ${sm.warn} تحذير و${sm.info} ملاحظة\n\n` + alerts.slice(0, 10).map(a => '• ' + a.text).join('\n') + (alerts.length > 10 ? `\n… و${alerts.length - 10} أخرى` : '') + '\n\nهل تعتمد المسيّر رغم ذلك؟')) return;
       }
       await updateDoc(doc(db, 'payrollRuns', id), { status: 'approved', approvedBy: runBy(), approvedAt: serverTimestamp(), rowsHash, rowsCount: snap.size });
+      /* B1: runPostLedger تقرأ حالة المسيّر من الذاكرة المحلية؛ فبدون هذا التحديث كانت تراها «مسودة» وتخرج بنجاح دون أي قيد سلفة */
+      run.status = 'approved'; run.rowsHash = rowsHash; run.rowsCount = snap.size;
       logAudit('run_approve', `${run.from} ← ${run.to}`, `اعتماد وتجميد المسيّر (${snap.size} موظف · البصمة: ${rowsHash.slice(0, 12)}…)`);
       toast('اعتُمد المسيّر وجُمّدت أرقامه', 'good');
-      if (run.from.slice(0, 7) === run.to.slice(0, 7) && run.to < dayKey(new Date()).slice(0, 7) + '-01') {
+      /* B2: لا نحفظ الملخص الشهري إلا لو غطّت السجلات المحمّلة (S.from..S.to) الشهر كله بلا فشل أو فلتر موظف؛ وإلا يُترك لمسار fetchRecsCached الذي يجلب الشهر كاملاً */
+      if (run.from.slice(0, 7) === run.to.slice(0, 7) && run.to < dayKey(new Date()).slice(0, 7) + '-01'
+          && monthFullyLoaded(run.from.slice(0, 7), S.from, S.to, (S.recsFail || []).length, !!S.emp)) {
         const mk = run.from.slice(0, 7), ms = dayStart(mk + '-01'), me = dayStart(nextMonthKey(mk) + '-01');
         const mRecs = (S.recs || []).filter(r => r.t && r.t >= ms && r.t < me);
         if (mRecs.length) saveMonthSummaryDoc(mk, mRecs).catch(() => {});
@@ -5701,8 +5857,44 @@ function adminApp(db, auth) {
   }
   /* ---- دفتر السلف ---- */
   const ledgerCol = id => collection(db, 'employees', id, 'loanLedger');
+  /* B5: كل تعديل لرصيد السلفة (منح/قسط) معاملة: يُقرأ الرصيد طازجاً من الخادم داخلها وتُكتب القيود والرصيد معاً.
+     إن تغيّر المستند من جهاز آخر أثناء ذلك أعاد SDK تنفيذ المعاملة تلقائياً بدل أن يطغى على التعديل. */
+  const finOf = (ed, fs) => (ed.finIsolated && fs && fs.exists() ? fs.data() : ed);
+  async function commitLoanGrant(empId, reqId, addAmt, instRaw, decision) {
+    const reqRef = doc(db, 'employees', empId, 'requests', reqId), empRef = doc(db, 'employees', empId), finRef = doc(db, 'empFinance', empId);
+    const ledRef = doc(db, 'employees', empId, 'loanLedger', 'grant_' + reqId);
+    return runTransaction(db, async tx => {
+      const rq = await tx.get(reqRef);
+      if (!rq.exists() || rq.data().status !== 'pending') { const e = new Error('already-decided'); e.code = 'already-decided'; throw e; }
+      const es = await tx.get(empRef); if (!es.exists()) { const e = new Error('no-employee'); e.code = 'no-employee'; throw e; }
+      const ed = es.data(), iso = !!ed.finIsolated, fs = iso ? await tx.get(finRef) : null, cf = finOf(ed, fs);
+      const newTotal = r2((+cf.loanTotal || 0) + addAmt), newInst = parseFloat(instRaw) || (+cf.loanInst || 0);
+      tx.update(reqRef, decision);
+      if (iso) tx.set(finRef, { loanTotal: newTotal, loanInst: newInst, updatedAt: serverTimestamp() }, { merge: true });
+      else tx.update(empRef, { loanTotal: newTotal, loanInst: newInst });
+      if (addAmt > 0) tx.set(ledRef, { type: 'grant', delta: addAmt, balanceAfter: newTotal, reqId, note: 'سلفة بطلب معتمد', by: runBy(), at: serverTimestamp() });
+      return { newTotal, newInst, iso };
+    });
+  }
+  /* it: عنصر من planInstallments. يعيد { skipped } إن كان القيد موجوداً، أو { newBalance }، أو يرمي low-balance */
+  async function commitInstallment(it) {
+    const empRef = doc(db, 'employees', it.empId), finRef = doc(db, 'empFinance', it.empId), ledRef = doc(db, 'employees', it.empId, 'loanLedger', it.id);
+    return runTransaction(db, async tx => {
+      if ((await tx.get(ledRef)).exists()) return { skipped: true };
+      const es = await tx.get(empRef); if (!es.exists()) { const e = new Error('no-employee'); e.code = 'no-employee'; throw e; }
+      const ed = es.data(), iso = !!ed.finIsolated, fs = iso ? await tx.get(finRef) : null;
+      const cur = +finOf(ed, fs).loanTotal || 0, d = -it.entry.delta;
+      if (cur + 1e-9 < d) { const e = new Error('low-balance'); e.code = 'low-balance'; e.balance = cur; throw e; }
+      const nb = Math.max(0, r2(cur - d));
+      tx.set(ledRef, { ...it.entry, balanceAfter: nb, at: serverTimestamp() });
+      if (iso) { tx.update(empRef, { loanTotal: null }); tx.set(finRef, { loanTotal: nb, updatedAt: serverTimestamp() }, { merge: true }); }
+      else tx.update(empRef, { loanTotal: nb });
+      return { newBalance: nb };
+    });
+  }
   async function runPostLedger(id, preloadedRows = null) {
-    const run = (S.runs || []).find(r => r.id === id); if (!run || !['approved', 'paid'].includes(run.status)) return true;
+    const run = (S.runs || []).find(r => r.id === id);
+    if (!run || !['approved', 'paid'].includes(run.status)) { console.warn('runPostLedger: المسيّر غير معتمد أو غير موجود محلياً', id, run && run.status); return false; }
     const allRows = preloadedRows || await runRowsOf(id);
     const rows = allRows.filter(r => +r.dedLoan > 0);
     if (!rows.length) return true;
@@ -5725,18 +5917,17 @@ function adminApp(db, auth) {
     }));
     const plan = planInstallments(missing, emps, id, runBy());
     if (plan.problems.length) { await mqAlert('تعذر تسجيل قيود السلف:\n' + plan.problems.join('\n')); return false; }
-    for (let i = 0; i < plan.items.length; i += 8) {
-      const b = writeBatch(db);
-      plan.items.slice(i, i + 8).forEach(it => {
-        const empObj = S.emps.find(x => x.id === it.empId);
-        b.set(doc(db, 'employees', it.empId, 'loanLedger', it.id), { ...it.entry, at: serverTimestamp() });
-        b.update(doc(db, 'employees', it.empId), { loanTotal: (empObj && empObj.finIsolated) ? null : it.newBalance });
-        if (empObj && empObj.finIsolated) b.set(doc(db, 'empFinance', it.empId), { loanTotal: it.newBalance, updatedAt: serverTimestamp() }, { merge: true });
-      });
-      await b.commit();
+    const done = [], failed = [];
+    for (const it of plan.items) {
+      try { const res = await commitInstallment(it); if (!res.skipped) done.push({ it, nb: res.newBalance }); }
+      catch (e) {
+        if (e && e.code === 'low-balance') failed.push(`${(rows.find(x => x.empId === it.empId) || {}).name || it.empId}: الرصيد الحالي (${r2(e.balance)}) أقل من القسط`);
+        else throw e;
+      }
     }
-    plan.items.forEach(it => { const e = S.emps.find(x => x.id === it.empId); if (e) e.loanTotal = it.newBalance; });
-    toast(`سُجّلت ${plan.items.length} قيود أقساط سلف`, 'good'); return true;
+    done.forEach(({ it, nb }) => { const e = S.emps.find(x => x.id === it.empId); if (e) e.loanTotal = nb; });
+    if (failed.length) { await mqAlert('تعذر تسجيل بعض قيود السلف:\n' + failed.join('\n')); return false; }
+    toast(`سُجّلت ${done.length} قيود أقساط سلف`, 'good'); return true;
   }
   async function runLedgerAct(id) {
     try { const ok = await runPostLedger(id); if (ok) toast('قيود السلف مكتملة لهذا المسيّر', 'good'); }
@@ -5830,7 +6021,7 @@ function adminApp(db, auth) {
 
   function viewRecs(el) {
     if (!['super_admin', 'payroll_admin'].includes(S.role) && S.recSub === 'payroll') S.recSub = 'summary';
-    if (S.recSub === 'payroll' && !S.finLoaded && (isSuper() || isPay()) && S.emps.some(e => e.finIsolated)) {
+    if (S.recSub === 'payroll' && !S.finLoaded && !S.finErr && (isSuper() || isPay()) && S.emps.some(e => e.finIsolated)) {
       ensureFinanceLoaded().then(() => { if ($('#content') && S.tab === 'recs' && S.recSub === 'payroll') viewRecs($('#content')); });
     }
     const sum = summary();
@@ -5942,7 +6133,7 @@ function adminApp(db, auth) {
         const nid = randToken(); const isTask = !!($('#eType') && $('#eType').value === 'task');
         await setDoc(doc(db, 'employees', nid), { name, phone, active: true, deviceId: null, scheduleId: (isTask ? '' : ($('#eSched') ? $('#eSched').value : '')), empType: isTask ? 'task' : 'staff', payMode: isTask ? 'task' : 'none', payAmount: 0, rotOffset: 0, startDate: dayKey(new Date()), createdAt: serverTimestamp() });
         logAudit('emp_create', name, isTask ? 'إضافة موظف مهام جديد' : 'إضافة موظف دوام جديد');
-        await refresh('emps'); toast('تمت الإضافة — انسخ الرابط وأرسله للموظف', 'good');
+        await refresh('emps'); toast(S.set && S.set.bindPin ? 'تمت الإضافة — أرسل الرابط، ثم أصدر رمز التفعيل من «الأجهزة والرمز» وأرسله في رسالة منفصلة' : 'تمت الإضافة — انسخ الرابط وأرسله للموظف', 'good');
       }
       if (act === 'reloadAudit') { S.auditLogs = null; viewEmps($('#content')); await loadAuditLogs(true); viewEmps($('#content')); return toast('تم تحديث سجل التدقيق', 'good'); }
       if (act === 'auditCsv') {
@@ -5962,12 +6153,12 @@ function adminApp(db, auth) {
       if (act === 'copy') { await navigator.clipboard.writeText(linkOf(id)); toast('تم نسخ رابط الموظف', 'good'); }
       if (act === 'wa') {
         const e = S.emps.find(x => x.id === id);
-        const pinTxt = '';
+        const pinTxt = (S.set && S.set.bindPin) ? '\n\nسيصلك «رمز التفعيل» في رسالة منفصلة؛ تحتاجه عند فتح الرابط أول مرة.' : '';
         const msg = `مرحباً ${e.name}، هذا رابطك الشخصي في «${BRAND}» لتسجيل الحضور والانصراف (لا تشاركه مع أحد):\n${linkOf(id)}\n\nافتحه من متصفح Chrome أو Safari وليس من داخل واتساب.${pinTxt}`;
         const a = document.createElement('a'); a.href = `https://wa.me/${e.phone || ''}?text=${encodeURIComponent(msg)}`; a.target = '_blank'; a.rel = 'noopener noreferrer'; a.click();
       }
       if (act === 'devPin') return deviceManager(S.emps.find(x => x.id === id));
-      if (act === 'resetDev') { const e = S.emps.find(x => x.id === id); if (await mqConfirm('إعادة ضبط كل الأجهزة المرتبطة بهذا الموظف؟ سيتوجب عليه فتح الرابط من جهازه بعد ذلك.')) { await updateDoc(doc(db, 'employees', id), { deviceId: null, uid: null, devices: null, rebindProof: null }); logAudit('dev_reset', (e && e.name) || id, 'إعادة ضبط جميع الأجهزة المرتبطة'); await refresh('emps'); toast('تمت إعادة الضبط', 'good'); } }
+      if (act === 'resetDev') { const e = S.emps.find(x => x.id === id); if (await mqConfirm('إعادة ضبط كل الأجهزة المرتبطة بهذا الموظف؟ سيتوجب عليه فتح الرابط من جهازه بعد ذلك.')) { await updateDoc(doc(db, 'employees', id), { deviceId: null, uid: null, devices: null, rebindProof: null }); logAudit('dev_reset', (e && e.name) || id, 'إعادة ضبط جميع الأجهزة المرتبطة'); await refresh('emps'); toast(S.set && S.set.bindPin ? 'تمت إعادة الضبط — أصدر رمز تفعيل جديداً من «الأجهزة والرمز»' : 'تمت إعادة الضبط', 'good'); } }
       if (act === 'toggle') {
         const e = S.emps.find(x => x.id === id);
         if (e.active && !await mqConfirm(`إيقاف «${e.name}»؟\nتبقى سجلاته وتقاريره السابقة محفوظة، ولا يُحتسب غيابه بعد اليوم.`)) return;
@@ -6242,7 +6433,7 @@ function adminApp(db, auth) {
         const org = $('#sOrg').value.trim();
         const tz = parseInt($('#sTz').value, 10);
         const fgd = parseFloat($('#sForgot').value);
-        await setDoc(doc(db, 'settings', 'general'), { orgName: org, tzOffset: isNaN(tz) ? TZ_OFFSET_MIN : tz, ...(isSuper() ? { forgotDeductDays: isNaN(fgd) ? 0 : Math.min(1, Math.max(0, fgd)) } : {}), empNotice: ($('#sNotice') ? $('#sNotice').value.trim().slice(0, 300) : ''), updatedAt: serverTimestamp() }, { merge: true });
+        await setDoc(doc(db, 'settings', 'general'), { orgName: org, tzOffset: isNaN(tz) ? TZ_OFFSET_MIN : tz, ...(isSuper() ? { forgotDeductDays: isNaN(fgd) ? 0 : Math.min(1, Math.max(0, fgd)), bindPin: !!($('#sBindPin') && $('#sBindPin').value === '1'), edgeRequired: !!($('#sEdge') && $('#sEdge').value === '1') } : {}), empNotice: ($('#sNotice') ? $('#sNotice').value.trim().slice(0, 300) : ''), updatedAt: serverTimestamp() }, { merge: true });
         logAudit('settings_update', org || 'إعدادات المنشأة', `تحديث إعدادات المنشأة (التوقيت: ${tz})`);
         if (!isNaN(tz) && tz !== TZOFF) TZOFF = tz;
         await refresh('set', 'recs'); toast('حُفظت إعدادات المنشأة', 'good');
@@ -6341,27 +6532,13 @@ function adminApp(db, auth) {
             batch.update(doc(db, 'employees', empId), { state: latestType, lastAt: latestTs, lastRecId: latestId });
           }
         }
+        /* B5: منح السلفة معاملة (Transaction): الرصيد يُقرأ طازجاً داخلها فلا يضيع تعديل مدير آخر ولا تُحسب السلفة على رصيد قديم من الذاكرة */
         if (st === 'approved' && r && r.kind === 'loan') {
-          await ensureFinanceLoaded();
-          const empDoc = S.emps.find(x => x.id === empId) || {};
-          const addAmt = parseFloat(r.type) || 0, newInst = parseFloat(r.typeName) || (+empDoc.loanInst || 0);
-          const newTotal = r2((+empDoc.loanTotal || 0) + addAmt);
-          if (empDoc.finIsolated) {
-            batch.set(doc(db, 'empFinance', empId), { loanTotal: newTotal, loanInst: newInst, updatedAt: serverTimestamp() }, { merge: true });
-          } else {
-            batch.update(doc(db, 'employees', empId), { loanTotal: newTotal, loanInst: newInst });
-          }
-          if (addAmt > 0) batch.set(doc(db, 'employees', empId, 'loanLedger', 'grant_' + id), { type: 'grant', delta: addAmt, balanceAfter: newTotal, reqId: id, note: 'سلفة بطلب معتمد', by: runBy(), at: serverTimestamp() });
-        }
-        await batch.commit();
-        if (st === 'approved' && r && r.kind === 'loan') {
-          const empDoc = S.emps.find(x => x.id === empId);
-          if (empDoc && empDoc.finIsolated) {
-            const addAmt = parseFloat(r.type) || 0, newInst = parseFloat(r.typeName) || (+empDoc.loanInst || 0);
-            const newTotal = r2((+empDoc.loanTotal || 0) + addAmt);
-            await saveEmpFinanceCache(empId, { ...(S.finMap && S.finMap.get(empId) || {}), loanTotal: newTotal, loanInst: newInst });
-          }
-        }
+          let g;
+          try { g = await commitLoanGrant(empId, id, parseFloat(r.type) || 0, r.typeName, { status: st, reviewedAt: serverTimestamp(), reviewedBy: (auth.currentUser && auth.currentUser.email) || '', ...extra }); }
+          catch (e) { if (e && e.code === 'already-decided') return toast('هذا الطلب لم يعد معلّقاً — حدّث الصفحة', 'err'); throw e; }
+          if (g.iso) await saveEmpFinanceCache(empId, { ...(S.finMap && S.finMap.get(empId) || {}), loanTotal: g.newTotal, loanInst: g.newInst });
+        } else await batch.commit();
         logAudit(st === 'approved' ? 'req_approve' : 'req_reject', r.empName || empId, `${r.kind} (${r.from}${r.to && r.to !== r.from ? ' ← ' + r.to : ''})`);
         if (st === 'approved' && r.kind === 'fix') { await RecCache.clear(); await invalidateMonthSummary(r.from); }
         else await RecCache.del('reqs|' + recScope() + '|' + reqWin());

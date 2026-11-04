@@ -47,12 +47,40 @@ function adminApp(db, auth) {
       const owner = await getDoc(doc(db, 'admins', 'owner'));
       canReadOwnerProfile = true;
       if (owner.exists() && String(owner.data().email || '').toLowerCase() === String(u.email || '').toLowerCase()) {
-        S.role = 'super_admin'; S.deptScope = ''; saveRole(); return;
+        S.role = 'super_admin'; S.deptScope = ''; saveRole(); await migrateOwnerDoc(u); return;
       }
     } catch (err) { if (err.code !== 'permission-denied') throw err; }
     // يظل المالك الأول قادرًا على الإعداد لأن قواعده تسمح له بقراءة /admins/owner حتى قبل إنشاء الوثيقة.
-    if (canReadOwnerProfile) { S.role = 'super_admin'; S.deptScope = ''; saveRole(); return; }
+    if (canReadOwnerProfile) { S.role = 'super_admin'; S.deptScope = ''; saveRole(); await migrateOwnerDoc(u); return; }
     S.role = 'unknown'; S.deptScope = '';
+  }
+  /* S2: بريد المالك في القواعد يشترط email_verified. لا نصل إلى هنا إلا إذا سمحت القواعد فعلاً بقراءة admins/owner (أي أنه super_admin بالقواعد)،
+     فنثبّت صلاحيته في مستند admins/{uid} الدائم كي لا يعتمد على توثيق البريد لاحقاً. تبقى المحاولة best-effort. */
+  async function migrateOwnerDoc(u) {
+    if (!u || !u.uid || u.isAnonymous) return;
+    try {
+      await setDoc(doc(db, 'admins', u.uid), { name: (u.displayName || 'المالك').slice(0, 100), email: String(u.email || '').slice(0, 254), role: 'super_admin', addedAt: serverTimestamp() });
+    } catch (e) { console.warn('owner-uid-doc', e && e.code); }
+  }
+  /* شاشة «أكّد بريدك»: بريد المالك غير موثّق فلا تعترف به القواعد بعد التشديد. نوفّر إرسال رابط التأكيد ثم إعادة المحاولة. */
+  function verifyGate() {
+    const u = auth.currentUser;
+    root.innerHTML = `<div class="auth-bg"><div class="login">
+      <div class="logo big">${ic('lock', 46)}</div>
+      <h1 class="center">${BRAND}</h1>
+      <p class="center" style="font-weight:700">أكّد بريدك الإلكتروني للمتابعة</p>
+      <p class="muted center">حسابك <b dir="ltr">${esc(u.email || '')}</b> غير موثّق، ولا يمنح النظام صلاحيات الإدارة لبريد غير موثّق. اضغط «إرسال رابط التأكيد» وافتح الرابط من بريدك، ثم عُد واضغط «تحقّقت».</p>
+      <button class="btn" id="vgSend" style="width:100%;margin-top:14px">إرسال رابط التأكيد</button>
+      <button class="btn ok" id="vgDone" style="width:100%;margin-top:10px">تحقّقت — أعد المحاولة</button>
+      <button class="btn sec" id="vgOut" style="width:100%;margin-top:10px">تسجيل الخروج</button>
+    </div></div>`;
+    $('#vgSend').onclick = async () => { try { await sendEmailVerification(u); toast('أُرسل رابط التأكيد إلى بريدك — افتحه ثم عُد إلى هنا', 'good'); } catch (e) { toast(e && e.code === 'auth/too-many-requests' ? 'محاولات كثيرة — انتظر قليلاً ثم أعد المحاولة' : 'تعذّر إرسال الرابط', 'err'); } };
+    $('#vgDone').onclick = async () => {
+      try { if (typeof u.reload === 'function') await u.reload(); if (typeof u.getIdToken === 'function') await u.getIdToken(true); } catch {}
+      if (!u.emailVerified) return toast('البريد ما زال غير موثّق — افتح الرابط في رسالة التأكيد أولاً', 'err');
+      await loadAll({ force: true });
+    };
+    $('#vgOut').onclick = async () => { try { await signOut(auth); } catch {} };
   }
   const isSuper = () => S.role === 'super_admin';
   const isHr = () => S.role === 'hr_admin';
@@ -230,7 +258,10 @@ function adminApp(db, auth) {
     }
     return out;
   }
-  async function loadRecs() { S.recsFail = []; S.recs = await fetchRecsCached(new Date(dayStart(S.from).getTime() - 86400000), dayEnd(S.to), S.recsFail); }
+  /* B3: نحمّل ذيلاً بعد آخر يوم في الفترة (أطول وردية + هامش) كي لا يضيع انصراف وردية ليلية بدأت في آخر يوم؛
+   العرض والمسيّر يقصّان على الفترة نفسها (filtered/summary)، فلا تتأثر الأرقام بالذيل. */
+  const RECS_TAIL_MS = 16 * 3600000;
+  async function loadRecs() { S.recsFail = []; S.recs = await fetchRecsCached(new Date(dayStart(S.from).getTime() - 86400000), new Date(dayEnd(S.to).getTime() + RECS_TAIL_MS), S.recsFail); }
   async function saveMonthSummaryDoc(mk, rows) {
     const p = packMonthRecs(rows, mk, TZOFF);
     if (p.packed.length > 880000) return false;
@@ -379,8 +410,15 @@ function adminApp(db, auth) {
         const s = await getDocs(collection(db, 'empFinance'));
         rows = s.docs.map(d => ({ id: d.id, ...tsSer(d.data()) }));
         await RecCache.set(cKey, { at: Date.now(), rows });
-      } catch (e) { console.warn('empFinance load:', e); rows = []; }
+      } catch (e) {
+        console.warn('empFinance load:', e);
+        /* B6: فشل التحميل ليس «لا توجد ماليات». من يملك صلاحية الرواتب يُوسَم بخطأ صريح (S.finErr) فتمتنع المسيّرات،
+           أما من لا يقرأ empFinance أصلاً (رفض صلاحيات) فيبقى سلوكه كما كان. */
+        if (e && e.code === 'permission-denied' && !(isSuper() || isPay())) rows = [];
+        else { S.finErr = true; S.finLoaded = false; return; }
+      }
     }
+    S.finErr = false;
     S.finMap = new Map(rows.map(r => [r.id, tsDe(r)]));
     S.emps = S.emps.map(e => mergeEmpFinance(e, S.finMap.get(e.id)));
     S.finLoaded = true;
@@ -506,6 +544,7 @@ function adminApp(db, auth) {
         try { localStorage.removeItem(CFG_KEY); sessionStorage.removeItem(ROLE_CACHE_KEY); } catch {}
       }
       await resolveAdminRole(!!opts.force);
+      if (S.role === 'unknown' && auth.currentUser && auth.currentUser.email && !auth.currentUser.emailVerified && !auth.currentUser.isAnonymous) { verifyGate(); return; }
       if (opts.force) S.finLoaded = false;
       await Promise.all([loadEmps().then(() => ensureFinanceLoaded(!!opts.force)), loadConfig(!!opts.force)]);
       // تشغيل مستمع اليوم بالتوازي مع الطلبات والمشرفين ثم استخدام بيانات اليوم داخل loadRecs لمنع ازدواجية قراءة أمس واليوم
@@ -552,7 +591,7 @@ function adminApp(db, auth) {
  <main class="wrap main">
  <header class="phead"><div><small>${esc(brandName())} · لوحة الإدارة ${licBadgeHtml()}</small><h1>${TT[S.tab] || ''}</h1></div>
  <div class="ptools">
- <button class="pwa-btn" id="admNotifBtn" type="button" onclick="window.__meqatRequestNotif()" title="تفعيل الإشعارات الفورية للطلبات واشتباهات الموقع">${MeqatNotify.perm() === 'granted' ? '🔔 التنبيهات مفعّلة' : '🔕 تفعيل التنبيهات'}</button>
+ <button class="notif-btn" id="admNotifBtn" type="button" onclick="window.__meqatRequestNotif()" title="تفعيل الإشعارات الفورية للطلبات واشتباهات الموقع">${MeqatNotify.perm() === 'granted' ? '🔔 التنبيهات مفعّلة' : '🔕 تفعيل التنبيهات'}</button>
  <button class="pwa-btn" onclick="window.__installPWA()">${ic('download', 18)} تثبيت</button>
  ${themeBtnHtml()}
  <button class="ib" data-act="reload" title="تحديث البيانات" aria-label="تحديث البيانات">${ic('refresh', 22)}</button>

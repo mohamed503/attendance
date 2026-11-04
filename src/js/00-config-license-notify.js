@@ -14,11 +14,14 @@ const firebaseConfig = {
 /* App Check (اختياري): ضع مفتاح reCAPTCHA v3 هنا لتفعيله، ثم فعّل «Enforce» في Firebase Console بعد مراقبة الطلبات.
    تنبيه: أدوات meqat-seed وmeqat-admin-migrate لا تحمل App Check؛ شغّلها قبل التفعيل الإلزامي. */
 const APP_CHECK_SITE_KEY = '';
+/* 0.15: المفتاح يُؤخذ من firebaseConfig.appCheckSiteKey (تحقنه لوحة التسليم وOTA لكل عميل) وإلا من الثابت أعلاه */
+const appCheckKeyOf = cfg => { const k = String((cfg && cfg.appCheckSiteKey) || APP_CHECK_SITE_KEY || ''); return /^[A-Za-z0-9_-]{20,100}$/.test(k) ? k : ''; };
 async function initAppCheck(app) {
-  if (!APP_CHECK_SITE_KEY) return;
+  const key = appCheckKeyOf(firebaseConfig);
+  if (!key) return;
   try {
     const m = await import('https://www.gstatic.com/firebasejs/10.12.2/firebase-app-check.js');
-    m.initializeAppCheck(app, { provider: new m.ReCaptchaV3Provider(APP_CHECK_SITE_KEY), isTokenAutoRefreshEnabled: true });
+    m.initializeAppCheck(app, { provider: new m.ReCaptchaV3Provider(key), isTokenAutoRefreshEnabled: true });
   } catch (e) { console.warn('App Check', e); }
 }
 

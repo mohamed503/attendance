@@ -17,18 +17,19 @@ async function employeeApp(db, auth, token) {
         : 'تعذر الاتصال بالنظام. تحقق من الإنترنت وحاول مجدداً.');
   }
   // شاشة رمز الأجهزة: تُضيف هذا الجهاز كجهاز إضافي (حد أقصى 3) بعد التحقق من الرمز في القواعد
-  const askPin = () => new Promise(resolve => {
+  const askPin = (bindUpd) => new Promise(resolve => {
     root.innerHTML = `<div class="emp-bg"><div class="emp-wrap"><div class="card center" style="margin-top:40px;line-height:1.9">
-      <h3 style="margin:0 0 10px">جهاز جديد</h3>
-      <p style="margin:0 0 12px">هذا الجهاز أو المتصفح غير مسجَّل لرابطك. أدخل «رمز الأجهزة» الذي أعطتك إياه الإدارة لإضافته. الرمز مؤقت (ينتهي خلال يومين) ويُصدره المسؤول عند الحاجة فقط.</p>
+      <h3 style="margin:0 0 10px">${bindUpd ? 'تفعيل رابطك' : 'جهاز جديد'}</h3>
+      <p style="margin:0 0 12px">${bindUpd ? 'لتفعيل رابطك على هذا الجهاز أدخل «رمز التفعيل» الذي أرسلته لك الإدارة في رسالة منفصلة. الرمز مؤقت (ينتهي خلال يومين) ويُستعمل مرة واحدة.' : 'هذا الجهاز أو المتصفح غير مسجَّل لرابطك. أدخل «رمز الأجهزة» الذي أعطتك إياه الإدارة لإضافته. الرمز مؤقت (ينتهي خلال يومين) ويُصدره المسؤول عند الحاجة فقط.'}</p>
       <input id="pinIn" autocomplete="off" autocapitalize="characters" spellcheck="false" dir="ltr" placeholder="XXXX-XXXX" style="width:100%;margin-bottom:10px;text-align:center;letter-spacing:2px">
       <button class="btn" id="pinGo" type="button">إضافة هذا الجهاز</button>
       <p id="pinMsg" class="bad-txt" style="font-size:13px;margin:10px 0 0"></p></div></div></div>`;
     const go = async () => {
       const pin = normPin($('#pinIn').value); if (pin.length < 8) { $('#pinMsg').textContent = 'الرمز مكوّن من 8 خانات.'; return; }
       const b = $('#pinGo'), msg = $('#pinMsg'); b.disabled = true; msg.textContent = '';
-      try { const jb = writeBatch(db); jb.set(doc(db, 'employees', token, 'joins', uid), { pin, ua: (navigator.userAgent || '').slice(0, 90), at: serverTimestamp() }); jb.update(doc(db, 'pins', token), { usedBy: uid, usedAt: serverTimestamp() }); await jb.commit(); }
+      try { const jb = writeBatch(db); jb.set(doc(db, 'employees', token, 'joins', uid), { pin, ua: (navigator.userAgent || '').slice(0, 90), at: serverTimestamp() }); jb.update(doc(db, 'pins', token), { usedBy: uid, usedAt: serverTimestamp() }); if (bindUpd) jb.update(ref, bindUpd); await jb.commit(); }
       catch { msg.textContent = 'الرمز غير صحيح أو منتهي، أو الرابط غير صالح/موقوف. اطلب من الإدارة رمزًا جديدًا.'; b.disabled = false; return; }
+      if (bindUpd) { resolve(true); return; }
       try { await updateDoc(ref, { ['devices.' + myDev]: uid, lastJoinAt: serverTimestamp() }); }
       catch { msg.textContent = 'تعذر إضافة الجهاز: وصلت الحد الأقصى لأجهزتك أو الرابط قديم. اطلب من الإدارة إلغاء جهاز قديم أو إعادة الضبط.'; b.disabled = false; return; }
       resolve(true);
@@ -64,7 +65,9 @@ async function employeeApp(db, auth, token) {
       if (emp.deviceId && emp.deviceId !== myDev) return showErr('هذا الرابط قديم ومرتبط بجهاز آخر. اطلب من الإدارة إعادة ضبط الأجهزة.');
       const upd = { deviceId: myDev, devices: { [myDev]: uid } };
       if (emp.deviceId) upd.rebindProof = myDev;
-      await updateDoc(ref, upd);
+      // S3: إن فعّلت الإدارة «رمز الربط» فأول جهاز لا يُربط إلا برمز (يُتحقق منه في القواعد).
+      if (cfgSt && cfgSt.exists() && cfgSt.data().bindPin === true) await askPin(upd);
+      else await updateDoc(ref, upd);
       emp.deviceId = myDev; emp.devices = { [myDev]: uid };
     } else if (emp.uid === uid) {
       // رابط قديم (uid بلا خريطة أجهزة): ترقية
@@ -96,16 +99,13 @@ async function employeeApp(db, auth, token) {
       if (Array.isArray(s.schedOverrides)) empOverrides = s.schedOverrides;
     }
   } catch {}
+  /* S8: الماليات (الراتب/IBAN/الرقم الوطني) لا تُحفظ في localStorage أبداً — تبقى في الذاكرة وفي كاش Firestore المحلي المحكوم بقواعد الجلسة.
+     ونمسح هنا أي نسخة قديمة خزّنتها إصدارات سابقة على هذا الجهاز. */
+  try { for (let i = localStorage.length - 1; i >= 0; i--) { const k = localStorage.key(i); if (k && k.startsWith('att_emp_fin_')) localStorage.removeItem(k); } } catch {}
   if (emp.finIsolated) {
     try {
-      const fKey = 'att_emp_fin_' + token;
-      let fData = null;
-      try { const fc = JSON.parse(localStorage.getItem(fKey) || 'null'); if (fc && Date.now() - (fc.at || 0) < 6 * 3600000) fData = fc.d; } catch {}
-      if (!fData) {
-        const fs = await getDoc(doc(db, 'empFinance', token));
-        if (fs.exists()) { fData = fs.data(); try { localStorage.setItem(fKey, JSON.stringify({ at: Date.now(), d: fData })); } catch {} }
-      }
-      if (fData) emp = mergeEmpFinance(emp, fData);
+      const fs = await getDoc(doc(db, 'empFinance', token));
+      if (fs.exists()) emp = mergeEmpFinance(emp, fs.data());
     } catch (e) { logErr('emp-finance-read', e); }
   }
   let empNotice = '';
@@ -157,7 +157,7 @@ async function employeeApp(db, auth, token) {
     <div class="emp-brand">
       <div class="emp-brand-l">${logoMark(30)}<span>${esc(orgName)}</span></div>
       <div style="display:flex;gap:8px;align-items:center">
-        <button class="pwa-btn" id="empNotifBtn" type="button" onclick="window.__meqatRequestNotif()">${MeqatNotify.perm() === 'granted' ? '🔔 التنبيهات مفعّلة' : '🔕 تفعيل التنبيهات'}</button>
+        <button class="notif-btn" id="empNotifBtn" type="button" onclick="window.__meqatRequestNotif()">${MeqatNotify.perm() === 'granted' ? '🔔 التنبيهات مفعّلة' : '🔕 تفعيل التنبيهات'}</button>
         <button class="pwa-btn" onclick="window.__installPWA()">${ic('download', 18)} تثبيت</button>
         ${themeBtnHtml()}
       </div>
@@ -424,11 +424,13 @@ async function employeeApp(db, auth, token) {
   window.addEventListener('online', () => { flushOfflineQueue(false); });
 
   /* يطلب من الموظف مسح رمز QR الظاهر عند الموقع ويعيد {locId, tok} */
+  let qrAt = 0;
   async function askQr(allowedIds) {
     setMsg('وجّه الكاميرا إلى رمز QR المعروض عند مكان العمل…');
     const raw = await scanQrOnce();
     const q = parseQrPayload(raw);
     if (!q) throw new Error('qr-format');
+    qrAt = Date.now();
     if (allowedIds && !allowedIds.includes(q.locId)) throw new Error('qr-loc');
     return q;
   }
@@ -451,8 +453,52 @@ async function employeeApp(db, auth, token) {
     if (c === 'wa-unsupported') return 'هاتفك أو متصفحك لا يدعم بصمة الجهاز، أو الصفحة ليست على رابط آمن (https).';
     if (c === 'wa-cancel' || e.name === 'NotAllowedError') return 'لم يكتمل التحقق ببصمة الجهاز.';
     if (c === 'wa-bad-sig') return 'فشل التحقق من بصمة الجهاز.';
+    if (c === 'edge-down') return 'خادم التحقق من البصمة غير متاح الآن. حاول بعد قليل.';
+    if (c === 'edge-unset') return 'التحقق من البصمة مفعّل لكن خادمه غير مُعدّ. تواصل مع الإدارة.';
+    if (c === 'edge-rate-limited') return 'محاولات كثيرة. انتظر دقيقة ثم أعد المحاولة.';
+    if (c.startsWith('edge-')) return 'رفض الخادم التحقق من بصمتك (' + c.slice(5) + '). أعد المحاولة، وإن تكرر تواصل مع الإدارة.';
     return 'تعذر إكمال التحقق. حاول مجدداً.';
   };
+
+  /* عند رفض الخادم: يقرأ ملف الموظف والموقع الحاليين ويفحص الشروط نفسها التي تفحصها القواعد، ليعرض السبب الفعلي بدل رسالة عامة */
+  async function diagnoseDenied(type, l, rec, used) {
+    const bad = [];
+    try {
+      const es = await _getDoc(ref); const e2 = es.exists() ? es.data() : null;
+      const ls = await _getDoc(doc(db, 'locations', l.id)); const l2 = ls.exists() ? ls.data() : null;
+      if (!e2) bad.push('ملف الموظف غير مقروء (الجهاز غير مربوط بهذا الرابط؟)');
+      else {
+        const isOwn = e2.uid === auth.currentUser?.uid || Object.values(e2.devices || {}).includes(auth.currentUser?.uid);
+        if (!isOwn) bad.push('هذا الجهاز غير مربوط بالموظف: أعد ربطه برمز جهاز جديد من الإدارة');
+        if (e2.active !== true) bad.push('حساب الموظف موقوف');
+        if ((e2.deviceId || null) !== (emp.deviceId || myDev)) bad.push('معرّف الجهاز المخزَّن لا يطابق هذا الجهاز');
+        if (e2.name !== emp.name) bad.push('اسم الموظف تغيّر: حدّث الصفحة');
+        if (Array.isArray(e2.locs) && e2.locs.length && !e2.locs.includes(l.id)) bad.push('الموقع غير مسموح لهذا الموظف');
+        const lastMs = e2.lastAt && e2.lastAt.toMillis ? e2.lastAt.toMillis() : null;
+        if (lastMs && Date.now() + offset - lastMs < MIN_GAP_MS) bad.push('مرّ أقل من 20 ثانية على آخر تسجيل');
+        if (type === 'in' && e2.state === 'in' && !(lastMs && Date.now() + offset - lastMs >= FORGOT_MS)) bad.push('حالتك الحالية «حاضر»: سجّل انصرافاً أولاً');
+        if (type === 'out' && e2.state === 'out') bad.push('حالتك الحالية «منصرف»: سجّل حضوراً أولاً');
+        if (used.includes('bio') && !e2.bio) bad.push('مفتاح بصمة الجهاز غير مسجَّل في ملفك');
+      }
+      if (!l2) bad.push('الموقع غير موجود');
+      else {
+        if (l2.active === false) bad.push('الموقع معطّل');
+        if (l2.name !== l.name) bad.push('اسم الموقع تغيّر: حدّث الصفحة');
+        if (used.includes('gps') && !(l2.kx > 0 && l2.ky > 0)) bad.push('إعدادات الموقع ناقصة (kx/ky): افتح تبويب المواقع في لوحة الإدارة مرة لتُصحَّح');
+        const nums = ['lat', 'lng', 'radius', 'kx', 'ky'].filter(k => typeof l2[k] !== 'number');
+        if (nums.length) bad.push('حقول الموقع ليست أرقاماً: ' + nums.join('،'));
+        const ms = l2.methods === undefined ? ['gps'] : l2.methods;
+        if (!Array.isArray(ms) || !ms.length) bad.push('حقل methods في الموقع غير صالح');
+        if (used.includes('gps') && !nums.length && rec.lat) {
+          const dx = (rec.lng - l2.lng) * l2.kx, dy = (rec.lat - l2.lat) * l2.ky, dm = Math.sqrt(dx * dx + dy * dy);
+          if (dm > l2.radius + 10) bad.push(`حسب معادلة القواعد تبعد ${Math.round(dm)}م والمسموح ${l2.radius}م (+10)`);
+        }
+        bad.push('[معلومات: مشروع ' + (db.app.options.projectId || '؟') + ' · الموقع ' + l.id + ' · الطرق ' + JSON.stringify(ms) + ' · الوضع ' + (l2.mode || 'all') + ']');
+      }
+    } catch (x) { bad.push('تعذر الفحص: ' + (x.code || x.message)); }
+    if (!bad.some(x => x[0] !== '[')) bad.unshift('كل شروط الملف سليمة؛ السبب غالباً أن قواعد Firestore المنشورة قديمة أو ناقصة (حقل m أو locQr) أو أن شاشة عرض QR مغلقة/غير متصلة أو أن الرمز انتهى (يصلح نحو دقيقة). افتح «عرض QR» على الشاشة وأبقِه مفتوحاً. انشر firestore.rules الحالية');
+    return bad.join(' — ');
+  }
 
   async function punch(type) {
     if (!locs.length) return setMsg('لم تحدد الإدارة أي موقع عمل بعد.', 'err');
@@ -489,7 +535,7 @@ async function employeeApp(db, auth, token) {
       if (best.d <= best.l.radius) { gpsPassed = true; try { localStorage.setItem(GPS_PREV_KEY, JSON.stringify({ lat, lng, acc: accuracy, ms: Date.now() })); } catch {} }
       else { outMsg = `أنت خارج نطاق العمل. تبعد حوالي ${Math.round(best.d)} متر عن «${best.l.name}» (المسموح ${best.l.radius}م). لم يتم التسجيل.`; best = null; }
     }
-    let qr = null, wa = '';
+    let qr = null, wa = '', ticket = '';
     try {
       if (!best) {
         // خارج النطاق أو بلا GPS: يُقبل فقط موقع يسمح بإثبات الحضور بغير GPS
@@ -505,19 +551,26 @@ async function employeeApp(db, auth, token) {
       }
       const plan = stepsFor(best.l, gpsPassed);
       if (!plan.ok) { setMsg(outMsg || gpsMsg || 'هذا الموقع يشترط تأكيد موقعك بالـ GPS.', 'err'); return loadHist(); }
-      if (plan.need.includes('qr') && !qr) qr = await askQr([best.l.id]);
       if (plan.need.includes('bio')) {
         if (!navigator.onLine) throw new Error('offline-bio');
         const bio = await ensureBio();
         setMsg('تحقق ببصمتك أو وجهك على الهاتف…');
-        wa = await waAssert(bio, `${token}|${type}|${best.l.id}|${Math.floor(Date.now() / 1000)}`);
+        const eUrl = edgeUrlOf(), eReq = !!(cfgSt && cfgSt.exists() && cfgSt.data().edgeRequired === true);
+        if (eReq && !eUrl) throw new Error('edge-unset');
+        if (eUrl) {
+          try { ticket = await edgeTicket(eUrl, await auth.currentUser.getIdToken(), bio, token, best.l.id, type); }
+          catch (e) { if (eReq || !(e && e.edge && e.down)) throw e; /* الخادم متعطل والإدارة لم تُلزم به: نعود للتحقق في التطبيق */ ticket = ''; }
+        }
+        if (!ticket) wa = await waAssert(bio, `${token}|${type}|${best.l.id}|${Math.floor(Date.now() / 1000)}`);
       }
+      // رمز QR يصلح نحو 35–90 ثانية فقط عند الخادم: نمسحه بعد البصمة مباشرة (أو نعيد المسح إن مضى عليه أكثر من 15 ث)
+      if (plan.need.includes('qr') && (!qr || Date.now() - qrAt > 15000)) qr = await askQr([best.l.id]);
     } catch (e) {
       setMsg(e && e.message === 'offline-bio' ? 'التحقق ببصمة الجهاز يحتاج اتصالاً بالإنترنت.' : amErr(e), 'err');
       return loadHist();
     }
     const usedGps = !!(pos && gpsPassed);
-    const used = [usedGps ? 'gps' : '', qr ? 'qr' : '', wa ? 'bio' : ''].filter(Boolean).join('+') || 'gps';
+    const used = [usedGps ? 'gps' : '', qr ? 'qr' : '', (wa || ticket) ? 'bio' : ''].filter(Boolean).join('+') || 'gps';
     const rec = usedGps
       ? { lat: pos.coords.latitude, lng: pos.coords.longitude, accuracy: Math.round(pos.coords.accuracy), distance: Math.round(best.d) }
       : { lat: 0, lng: 0, accuracy: 0, distance: 0 };
@@ -533,7 +586,8 @@ async function employeeApp(db, auth, token) {
       const devToUse = emp.deviceId || myDev;
       recRef = doc(collection(db, 'employees', token, 'records'));
       const batch = writeBatch(db);
-      batch.set(recRef, { type, time: serverTimestamp(), ...rec, locationId: best.l.id, locationName: best.l.name, empName: emp.name, deviceId: devToUse, ...(qr ? { qr: qr.tok } : {}), ...(wa ? { wa } : {}), m: used });
+      batch.set(recRef, { type, time: serverTimestamp(), ...rec, locationId: best.l.id, locationName: best.l.name, empName: emp.name, deviceId: devToUse, ...(qr ? { qr: qr.tok } : {}), ...(wa ? { wa } : {}), ...(ticket ? { ticket } : {}), m: used });
+      if (ticket) batch.delete(doc(db, 'punchTickets', uid));
       batch.update(ref, { state: type, lastAt: serverTimestamp(), lastRecId: recRef.id });
       const done = batch.commit();
       const first = await Promise.race([done.then(() => 'ok'), new Promise(r => setTimeout(() => r('slow'), 15000))]);
@@ -553,7 +607,11 @@ async function employeeApp(db, auth, token) {
         await queueOfflinePunch(type, pos.coords, best);
         return;
       }
-      setMsg(e.code === 'permission-denied' ? 'رفض الخادم التسجيل: تأكد أنك داخل نطاق العمل (أو أن رمز QR ما زال صالحاً) وأن آخر عملية لم تُسجَّل للتو، ثم أعد المحاولة.' : 'تعذر حفظ التسجيل. تحقق من الاتصال وحاول مجدداً.', 'err');
+      if (e.code === 'permission-denied') {
+        const why = await diagnoseDenied(type, best.l, rec, used);
+        setMsg('رفض الخادم التسجيل. ' + why, 'err');
+        try { window.__meqatLastDeny = why; logErr('punch-denied', new Error(why)); } catch {}
+      } else setMsg('تعذر حفظ التسجيل. تحقق من الاتصال وحاول مجدداً.', 'err');
     }
     loadHist(punched ? { add: punched } : {});
   }

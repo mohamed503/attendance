@@ -159,3 +159,16 @@ test('الخطوة 5 — patchClientHtmlWithConfig: يدمج firebaseConfig و M
   assert.ok(patched.includes('"projectId": "meqat-client-1"'));
   assert.ok(patched.includes('window.MEQAT_LICENSE = {"company":"شركة النور"'));
 });
+
+test('0.15: patchClientHtmlWithConfig يحفظ appCheckSiteKey الصالح فقط', () => {
+  const tpl = `<!doctype html><html><body><script type="module">\nconst firebaseConfig = {\n  apiKey: "OLD"\n};\n</script></body></html>`;
+  const good = '6LcTESTKEYabcdefghijklmnopqrstuvwxyz1';
+  assert.ok(N.patchClientHtmlWithConfig(tpl, { apiKey: 'AIzaNewKey', projectId: 'p1', appCheckSiteKey: good }, null).includes('"appCheckSiteKey": "' + good + '"'));
+  for (const bad of ['short', 'x'.repeat(30) + '<script>', 123, '']) assert.ok(!N.patchClientHtmlWithConfig(tpl, { apiKey: 'AIzaNewKey', projectId: 'p1', appCheckSiteKey: bad }, null).includes('appCheckSiteKey'), String(bad));
+});
+
+test('1أ: patchClientHtmlWithConfig يحفظ edgeUrl الصالح (https بلا / أخيرة) فقط', () => {
+  const tpl = `<!doctype html><html><body><script type="module">\nconst firebaseConfig = {\n  apiKey: "OLD"\n};\n</script></body></html>`;
+  for (const good of ['https://meqat-edge.acme.workers.dev', 'https://edge.example.com/v1x']) assert.ok(N.patchClientHtmlWithConfig(tpl, { apiKey: 'AIzaNewKey', projectId: 'p1', edgeUrl: good }, null).includes('"edgeUrl": "' + good + '"'), good);
+  for (const bad of ['http://edge.example.com', 'https://edge.example.com/', 'https://a b.com', 'javascript:alert(1)', 'https://x.com"};alert(1);//', 123, '']) assert.ok(!N.patchClientHtmlWithConfig(tpl, { apiKey: 'AIzaNewKey', projectId: 'p1', edgeUrl: bad }, null).includes('edgeUrl'), String(bad));
+});

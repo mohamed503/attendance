@@ -12,7 +12,7 @@ export const { chromium } = require('playwright');
 const MOCK_JS = readFileSync(join(here, 'mock-firebase.js'), 'utf8');
 /* «الآن» الثابت للاختبارات: الأربعاء 2026-10-28 الساعة 14:20 بتوقيت طرابلس (12:20 UTC) */
 export const NOW = Date.UTC(2026, 9, 28, 12, 20);
-const FILES = { '/index.html': 'text/html; charset=utf-8', '/sw.js': 'text/javascript', '/manifest.json': 'application/json', '/icon.svg': 'image/svg+xml' };
+const FILES = { '/index.html': 'text/html; charset=utf-8', '/sw.js': 'text/javascript', '/manifest.json': 'application/json', '/icon.svg': 'image/svg+xml', '/meqat-seed.html': 'text/html; charset=utf-8' };
 
 export function startServer(dir = root) {
   const t0 = Date.now();
@@ -62,10 +62,14 @@ export async function openApp(browser, base, opts = {}) {
   await page.route(/gstatic\.com\/firebasejs\/.*\.js/, r => r.fulfill({ status: 200, contentType: 'text/javascript', body: MOCK_JS }));
   await page.route(/fonts\.(googleapis|gstatic)\.com|unpkg|jsdelivr|cdnjs|sheetjs/, r => r.abort());
   const seed = opts.seed || buildSeed(); if (opts.user === false) seed.user = null;
+  if (opts.failPaths) await page.addInitScript(f => { window.__MOCK_FAIL = f; }, opts.failPaths);
+  if (opts.denyPaths) await page.addInitScript(f => { window.__MOCK_DENY = f; }, opts.denyPaths);
   await page.addInitScript(([s, theme]) => {
     window.__MOCK_SEED = s; window.__MOCK_ACCOUNTS = { 'asmaa@alnoor.ly': { pw: 'Passw0rd!', uid: 'adm1' } };
     try { localStorage.setItem('att_rules_v5', '1'); if (theme) localStorage.setItem('meqat_theme', theme); } catch {}
   }, [JSON.stringify(seed), opts.theme || null]);
+  if (opts.initScript) await page.addInitScript(opts.initScript);
+  if (opts.htmlPatch) await page.route(/\/index\.html/, async r => { const resp = await r.fetch(); await r.fulfill({ response: resp, body: opts.htmlPatch(await resp.text()) }); });
   await page.goto(base + '/index.html' + (opts.search || ''));
   return { page, ctx, errors };
 }

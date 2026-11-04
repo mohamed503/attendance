@@ -302,7 +302,7 @@
     const stamp = t => t && t.toDate ? `${fmtDate(t.toDate())} ${fmtTime(t.toDate())}` : '';
     const devRows = () => {
       const map = e.devices || {}, ks = Object.keys(map);
-      if (!ks.length) return `<p class="muted">${e.deviceId ? 'رابط قديم مربوط بجهاز واحد.' : 'لا توجد أجهزة مسجّلة بعد؛ أول جهاز يفتح الرابط يُسجَّل دون رمز.'}</p>`;
+      if (!ks.length) return `<p class="muted">${e.deviceId ? 'رابط قديم مربوط بجهاز واحد.' : (S.set && S.set.bindPin ? 'لا توجد أجهزة مسجّلة بعد؛ أول جهاز يحتاج «رمز تفعيل» أصدره أدناه.' : 'لا توجد أجهزة مسجّلة بعد؛ أول جهاز يفتح الرابط يُسجَّل دون رمز.')}</p>`;
       return ks.map(k => {
         const j = W.joins[map[k]];
         return `<div style="display:flex;gap:10px;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--line)"><div><b dir="ltr" style="font-size:12.5px;word-break:break-all">${j && j.ua ? esc(j.ua) : 'الجهاز الأول (سُجّل دون رمز)'}</b><div class="muted" style="font-size:12px">${esc(stamp(j && j.at))}</div></div><button class="btn sm bad" data-a="rev" data-key="${esc(k)}">إلغاء</button></div>`;
@@ -323,7 +323,7 @@
         } else if (a === 'copypin' && W.pin) {
           await navigator.clipboard.writeText(fmtPin(W.pin)); toast('تم النسخ', 'good');
         } else if (a === 'wapin' && W.pin) {
-          const msg = `مرحباً ${e.name}، رمز إضافة جهاز جديد لرابطك في «${BRAND}»: ${fmtPin(W.pin)}\nصالح ${PIN_TTL_H} ساعة. لا تشاركه مع أحد.`;
+          const msg = `مرحباً ${e.name}، ${S.set && S.set.bindPin && !e.devices && !e.deviceId ? 'رمز تفعيل رابطك' : 'رمز إضافة جهاز جديد لرابطك'} في «${BRAND}»: ${fmtPin(W.pin)}\nصالح ${PIN_TTL_H} ساعة. لا تشاركه مع أحد.`;
           const l = document.createElement('a'); l.href = `https://wa.me/${e.phone || ''}?text=${encodeURIComponent(msg)}`; l.target = '_blank'; l.rel = 'noopener noreferrer'; l.click();
         } else if (a === 'rev') {
           const key = d.key, map = e.devices || {}, uidv = map[key];

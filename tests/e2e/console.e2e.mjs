@@ -152,3 +152,62 @@ test('الوصول: Esc يغلق قائمة التسليم ونافذة التع
   await page.click('[data-act="editCli"]'); await page.waitForSelector('#mSave'); await page.keyboard.press('Escape'); await page.waitForTimeout(100);
   assert.equal(await page.$('#mSave'), null); await ctx.close();
 });
+
+test('0.15: مفتاح App Check للعميل يصل إلى firebaseConfig في الحزمة المولَّدة (وبدونه لا يظهر)', async () => {
+  const KEY = '6LcTESTKEYabcdefghijklmnopqrstuvwxyz1';
+  for (const withKey of [true, false]) {
+    const { page, ctx, errors } = await open();
+    await page.evaluate(([k, on]) => { const l = JSON.parse(localStorage.getItem('mc_clients')); l.find(c => c.id === 'c1').appCheckKey = on ? k : ''; localStorage.setItem('mc_clients', JSON.stringify(l)); }, [KEY, withKey]);
+    await page.click('#tabbar .tab[data-t="generator"]'); await page.waitForSelector('#gClient');
+    await page.selectOption('#gClient', 'c1'); await page.fill('#tplUrl', url + '/index.html');
+    const [dl] = await Promise.all([page.waitForEvent('download', { timeout: 15000 }), page.click('#gRun')]);
+    await page.waitForSelector('#gOut .res-ok', { timeout: 15000 });
+    const files = unzip(readFileSync(await dl.path())), idx = Object.keys(files).find(n => /site\/index\.html$/.test(n));
+    const html = files[idx].toString('utf8');
+    assert.equal(html.includes('"appCheckSiteKey": "' + KEY + '"'), withKey, withKey ? 'المفتاح غائب من الحزمة' : 'مفتاح ظهر بلا إعداد');
+    assert.deepEqual(errors, []); await ctx.close();
+  }
+});
+test('0.15: نموذج إضافة العميل يرفض مفتاح App Check بصيغة غير صالحة', async () => {
+  const { page, ctx } = await open();
+  await page.click('#tabbar .tab[data-t="clients"]'); await page.waitForSelector('#content details.fold summary'); await page.click('#content details.fold summary'); await page.waitForSelector('#cCompany', { state: 'visible' });
+  await page.fill('#cCompany', 'شركة اختبار'); await page.fill('#cAppCheck', 'bad key <script>');
+  await page.click('#cAdd');
+  await page.waitForTimeout(300);
+  const n = await page.evaluate(() => JSON.parse(localStorage.getItem('mc_clients')).filter(c => c.company === 'شركة اختبار').length);
+  assert.equal(n, 0, 'حُفظ عميل بمفتاح غير صالح');
+  await ctx.close();
+});
+
+test('1أ: رابط خادم الحافة للعميل يصل إلى firebaseConfig (وبدونه لا يظهر)', async () => {
+  const EDGE = 'https://meqat-edge.acme.workers.dev';
+  for (const on of [true, false]) {
+    const { page, ctx, errors } = await open();
+    await page.evaluate(([e, on]) => { const l = JSON.parse(localStorage.getItem('mc_clients')); l.find(c => c.id === 'c1').edgeUrl = on ? e : ''; localStorage.setItem('mc_clients', JSON.stringify(l)); }, [EDGE, on]);
+    await page.click('#tabbar .tab[data-t="generator"]'); await page.waitForSelector('#gClient');
+    await page.selectOption('#gClient', 'c1'); await page.fill('#tplUrl', url + '/index.html');
+    const [dl] = await Promise.all([page.waitForEvent('download', { timeout: 15000 }), page.click('#gRun')]);
+    await page.waitForSelector('#gOut .res-ok', { timeout: 15000 });
+    const files = unzip(readFileSync(await dl.path())), idx = Object.keys(files).find(n => /site\/index\.html$/.test(n));
+    assert.equal(files[idx].toString('utf8').includes('"edgeUrl": "' + EDGE + '"'), on);
+    assert.deepEqual(errors, []); await ctx.close();
+  }
+});
+
+test('1أ: تبويب «خادم الحافة» يعرض 12 خطوة بروابط مباشرة وقيم العميل، ويعمل زر النسخ والانتقال', async () => {
+  const { page, ctx, errors } = await open();
+  await page.click('#tabbar .tab[data-t="edge"]'); await page.waitForSelector('#eClient');
+  assert.equal(await page.$$eval('#eSteps .step-row', r => r.length), 12);
+  const c = await page.evaluate(() => { const l = JSON.parse(localStorage.getItem('mc_clients')).find(x => x.id === 'c1'); return { pid: l.projectId, dom: l.domain }; });
+  await page.selectOption('#eClient', 'c1'); await page.waitForTimeout(200);
+  const links = await page.$$eval('#eSteps .s-link a', a => a.map(x => x.href));
+  assert.ok(links.includes(`https://console.firebase.google.com/project/${c.pid}/settings/serviceaccounts/adminsdk`), 'رابط مفتاح حساب الخدمة');
+  assert.ok(links.includes(`https://console.firebase.google.com/project/${c.pid}/firestore/rules`), 'رابط القواعد');
+  assert.ok(links.some(h => h.startsWith('https://dash.cloudflare.com/sign-up')), 'رابط Cloudflare');
+  assert.ok(links.every(h => h.startsWith('https://')), 'كل الروابط https');
+  const txt = await page.textContent('#eSteps');
+  for (const s of ['npx wrangler login', 'npx wrangler secret put SA_PRIVATE_KEY', 'npx wrangler deploy', 'FIREBASE_PROJECT_ID = "' + c.pid + '"', 'ALLOWED_ORIGINS = "']) assert.ok(txt.includes(s), s);
+  await page.click('#eSteps [data-copy] >> nth=0');
+  await page.click('[data-goto="generator"]'); await page.waitForSelector('#gClient');
+  assert.deepEqual(errors, []); await ctx.close();
+});

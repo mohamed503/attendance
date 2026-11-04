@@ -88,6 +88,30 @@ async function waAssert(bio, challengeStr) {
   return b64u.enc(r.clientDataJSON) + '.' + b64u.enc(r.authenticatorData) + '.' + b64u.enc(r.signature);
 }
 
+/* ---------- خادم الحافة (meqat-edge): تحدٍّ من الخادم ⇒ توقيع بصمة الجهاز ⇒ تذكرة تتحقق منها القواعد ---------- */
+const edgeUrlOf = () => { try { return (typeof firebaseConfig !== 'undefined' && firebaseConfig && typeof firebaseConfig.edgeUrl === 'string') ? firebaseConfig.edgeUrl : ''; } catch { return ''; } };
+async function waGetRaw(bio, challengeB64) {
+  const a = await navigator.credentials.get({ publicKey: {
+    challenge: b64u.dec(challengeB64), rpId: location.hostname,
+    allowCredentials: [{ type: 'public-key', id: b64u.dec(bio.cid), transports: ['internal', 'hybrid'] }],
+    userVerification: 'required', timeout: 60000
+  } });
+  const r = a.response;
+  return { clientDataJSON: b64u.enc(r.clientDataJSON), authenticatorData: b64u.enc(r.authenticatorData), signature: b64u.enc(r.signature) };
+}
+async function edgeTicket(edgeUrl, idToken, bio, empId, locId, type) {
+  const post = async (path, body) => {
+    let r; try { r = await fetch(edgeUrl + path, { method: 'POST', headers: { 'content-type': 'application/json', authorization: 'Bearer ' + idToken }, body: JSON.stringify(body) }); }
+    catch { const e = new Error('edge-down'); e.edge = true; e.down = true; throw e; }
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) { const e = new Error('edge-' + (j.error || r.status)); e.edge = true; e.down = r.status >= 500; throw e; }
+    return j;
+  };
+  const c = await post('/v1/punch/challenge', { empId, locId, type });
+  const assertion = await waGetRaw(bio, c.challenge);
+  return (await post('/v1/punch/ticket', { challenge: c.challenge, assertion })).ticket;
+}
+
 /* ---------- استيراد سجلات أجهزة البصمة (ZKTeco / Hikvision / Suprema / Anviz / Excel / CSV / DAT …) ---------- */
 const devDigits = s => String(s ?? '').replace(/[٠-٩]/g, c => c.charCodeAt(0) - 1632).replace(/[۰-۹]/g, c => c.charCodeAt(0) - 1776);
 const DEV_AP = '([AaPp][Mm]|ص|م)';

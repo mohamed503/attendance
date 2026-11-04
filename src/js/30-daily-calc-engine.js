@@ -86,6 +86,14 @@ function mergeRecs(a, b) {
 }
 
 /*MSUM-START*/
+/* B2: ملخص الشهر المجمّع يُقرأ لاحقاً كأنه كل سجلات الشهر؛ فلا يُحفظ إلا إذا غطّت البيانات المحمّلة الشهر كاملاً.
+   mk=YYYY-MM · fromKey/toKey=الفترة المحمّلة · failCount=عدد أجزاء فشل تحميلها · hasEmpFilter=وُجد فلتر موظف */
+function monthFullyLoaded(mk, fromKey, toKey, failCount, hasEmpFilter) {
+  if (!/^\d{4}-\d{2}$/.test(String(mk)) || !fromKey || !toKey) return false;
+  if (failCount > 0 || hasEmpFilter) return false;
+  const last = new Date(Date.UTC(+mk.slice(0, 4), +mk.slice(5, 7), 0)).getUTCDate();
+  return String(fromKey) <= mk + '-01' && String(toKey) >= mk + '-' + String(last).padStart(2, '0');
+}
 /* ضغط وفك ضغط بصمات الشهر المغلق في وثيقة واحدة (monthlySummaries/{YYYY-MM}) لتوفير آلاف القراءات إلى قراءة واحدة فقط */
 function packMonthRecs(rows, mk, tzOff) {
   const seen = new Set();
@@ -234,7 +242,16 @@ function parseOfflineNote(note) {
   try {
     const data = JSON.parse(rest.slice(0, endIdx + 1));
     const extraNote = rest.slice(endIdx + 1).trim();
-    return { ...data, extraNote };
+    /* الملاحظة يتحكم بها الموظف: لا يخرج من هنا إلا أرقام منتهية ضمن نطاقات معقولة (أو null) ونصوص قصيرة محدودة،
+       فلا يمكن حقن HTML عبر dist/acc/lat/lng عند عرضها في شاشة المدير (ثغرة S1). */
+    const num = (v, lo, hi) => { if (typeof v !== 'number' && typeof v !== 'string') return null; if (typeof v === 'string' && !/^-?\d+(\.\d+)?$/.test(v.trim())) return null; const n = +v; return Number.isFinite(n) && n >= lo && n <= hi ? n : null; };
+    return {
+      lat: num(data.lat, -90, 90), lng: num(data.lng, -180, 180),
+      acc: num(data.acc, 0, 100000), dist: num(data.dist, 0, 100000),
+      locId: String(data.locId == null ? '' : data.locId).slice(0, 32),
+      sig: String(data.sig == null ? '' : data.sig).slice(0, 16),
+      extraNote
+    };
   } catch { return null; }
 }
 /*SPOOF-END*/
@@ -407,6 +424,8 @@ function patchClientHtmlWithConfig(templateHtml, fbConfig, licenseObj) {
         messagingSenderId: fbConfig.messagingSenderId || '',
         appId: fbConfig.appId || ''
       };
+      if (typeof fbConfig.appCheckSiteKey === 'string' && /^[A-Za-z0-9_-]{20,100}$/.test(fbConfig.appCheckSiteKey)) cleanCfg.appCheckSiteKey = fbConfig.appCheckSiteKey;   // 0.15
+      if (typeof fbConfig.edgeUrl === 'string' && /^https:\/\/[A-Za-z0-9.-]{3,100}(:\d{2,5})?(\/[A-Za-z0-9._~-]{1,60})*$/.test(fbConfig.edgeUrl)) cleanCfg.edgeUrl = fbConfig.edgeUrl;   // P1أ
       html = html.slice(0, i) + 'const firebaseConfig = ' + JSON.stringify(cleanCfg, null, 2) + ';\n' + html.slice(j + 2);
     }
   }
@@ -651,4 +670,4 @@ const fmtPin = p => String(p).slice(0, 4) + '-' + String(p).slice(4);
 const normPin = v => String(v || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
 const randToken = () => Array.from(crypto.getRandomValues(new Uint8Array(16)), b => b.toString(16).padStart(2, '0')).join('');
 const dist = (a, b, c, d) => { const R = 6371000, r = x => x * Math.PI / 180; const dLat = r(c - a), dLng = r(d - b); const h = Math.sin(dLat/2)**2 + Math.cos(r(a)) * Math.cos(r(c)) * Math.sin(dLng/2)**2; return 2 * R * Math.asin(Math.sqrt(h)); };
-const mapLink = (lat, lng) => `https://www.google.com/maps?q=${lat},${lng}`;
+const mapLink = (lat, lng) => (Number.isFinite(+lat) && Number.isFinite(+lng) && lat !== null && lng !== null && lat !== '' && lng !== '') ? `https://www.google.com/maps?q=${encodeURIComponent(+lat)},${encodeURIComponent(+lng)}` : '#';

@@ -1,13 +1,9 @@
   /* =====================================================================
      لوحة الإدارة: شاشة عرض QR المتغيّر + استيراد سجلات أجهزة البصمة (كل الماركات)
      ===================================================================== */
+  /* شاشة عرض QR: تولّد رمزاً عشوائياً كل 30 ثانية وتكتبه في locQr/{موقع} = {cur, prev, at(وقت الخادم)}.
+     قاعدة Firestore تقارن رمز الموظف بـ cur أو prev نصاً بنص، فلا تعتمد على ساعة أي جهاز ولا على دوال تجزئة. */
   async function showQrBoard(loc) {
-    let secret = '';
-    try {
-      const sd = await getDoc(doc(db, 'locSecrets', loc.id));
-      if (sd.exists()) secret = sd.data().secret;
-      else { secret = newQrSecret(); await setDoc(doc(db, 'locSecrets', loc.id), { secret, rotatedAt: serverTimestamp() }); }
-    } catch (e) { console.warn(e); return toast('تعذر قراءة سر الرمز. حدّث قواعد Firestore (قسم locSecrets) ثم أعد المحاولة', 'err'); }
     const ov = document.createElement('div'); ov.className = 'ov';
     ov.style.cssText = 'align-items:center;justify-content:center;background:#fff;z-index:200';
     ov.innerHTML = `<div style="width:min(92vw,78vh);text-align:center;color:#111">
@@ -16,25 +12,33 @@
       <div style="font-size:18px;font-weight:700;margin-bottom:10px">${esc(loc.name)} — امسح الرمز بتطبيق الحضور</div>
       <div id="qbImg" style="width:100%;aspect-ratio:1/1;background:#fff;display:flex;align-items:center;justify-content:center">جارٍ التحميل…</div>
       <div style="height:8px;background:#e5e7eb;border-radius:8px;margin:12px 0 6px;overflow:hidden"><div id="qbBar" style="height:100%;background:#0E6B4D;width:100%"></div></div>
-      <div id="qbTxt" style="font-size:13px;color:#555">يتجدد الرمز كل 30 ثانية — لا تلتقط له صورة لإرسالها</div></div>`;
+      <div id="qbTxt" style="font-size:13px;color:#555">يتجدد الرمز كل 30 ثانية — أبقِ هذه الشاشة مفتوحة ومتصلة بالإنترنت، ولا تلتقط له صورة لإرسالها</div></div>`;
     document.body.appendChild(ov);
-    let curW = -1, alive = true, wl = null, busy = false;
+    const qref = doc(db, 'locQr', loc.id);
+    const newTok = () => Array.from(crypto.getRandomValues(new Uint8Array(32)), b => b.toString(16).padStart(2, '0')).join('');
+    let cur = '', prev = '', startedAt = 0, alive = true, wl = null, busy = false, fails = 0;
     try { wl = await navigator.wakeLock?.request('screen'); } catch {}
+    const txt = (t, bad) => { const el = ov.querySelector('#qbTxt'); if (el) { el.textContent = t; el.style.color = bad ? '#b42318' : '#555'; el.style.fontWeight = bad ? '700' : '400'; } };
     const close = () => { alive = false; clearInterval(iv); try { wl && wl.release(); } catch {} ov.remove(); };
     ov.querySelector('#qbX').onclick = close;
+    const rotate = async () => {
+      const next = newTok();
+      await _setDoc(qref, { cur: next, prev: cur, at: serverTimestamp() });   // كتابة ناجحة أولاً، ثم نعرض الرمز الجديد
+      prev = cur; cur = next; startedAt = Date.now();
+      const svg = await qrSvg(qrPayload(loc.id, cur));
+      const box = ov.querySelector('#qbImg'); if (!box) return;
+      box.innerHTML = svg; const sv = box.querySelector('svg'); if (sv) sv.style.cssText = 'width:100%;height:100%';
+    };
     const tick = async () => {
       if (!alive || busy) return; busy = true;
       try {
-        const ms = Date.now(), w = qrWindow(ms);
-        if (w !== curW) {
-          const svg = await qrSvg(qrPayload(loc.id, await qrToken(secret, ms)));
-          const box = ov.querySelector('#qbImg'); if (!box) return;
-          box.innerHTML = svg; const sv = box.querySelector('svg'); if (sv) { sv.style.cssText = 'width:100%;height:100%'; }
-          curW = w;
-        }
-        const left = QR_WIN_MS - (ms % QR_WIN_MS);
-        const bar = ov.querySelector('#qbBar'); if (bar) bar.style.width = (left / QR_WIN_MS * 100) + '%';
-      } catch (e) { const box = ov.querySelector('#qbImg'); if (box) box.textContent = 'تعذر تحميل مولّد الرمز — تحقق من الاتصال'; }
+        if (!cur || Date.now() - startedAt >= QR_WIN_MS) { await rotate(); fails = 0; txt('يتجدد الرمز كل 30 ثانية — أبقِ هذه الشاشة مفتوحة ومتصلة بالإنترنت، ولا تلتقط له صورة لإرسالها'); }
+        const bar = ov.querySelector('#qbBar'); if (bar) bar.style.width = Math.max(0, 100 - (Date.now() - startedAt) / QR_WIN_MS * 100) + '%';
+      } catch (e) {
+        fails++; logErr('qr-rotate', e);
+        if (e && e.code === 'permission-denied') { txt('رُفضت كتابة الرمز: انشر قواعد Firestore الأخيرة (قسم locQr) وتأكد أنك مدخل كمدير عام أو موارد بشرية.', true); }
+        else txt('تعذّر تحديث الرمز (' + fails + ') — تحقق من اتصال الإنترنت. الرمز الظاهر قد لا يعمل.', true);
+      }
       busy = false;
     };
     const iv = setInterval(tick, 1000); tick();

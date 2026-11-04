@@ -1,0 +1,18 @@
+name = "meqat-edge"
+main = "src/index.js"
+compatibility_date = "2026-01-01"
+
+[vars]
+FIREBASE_PROJECT_ID = "ضع-معرّف-مشروع-العميل"
+# النطاقات المسموحة لطلبات التطبيق وللتحقق من origin داخل توقيع البصمة (مفصولة بفواصل، بلا / في النهاية)
+ALLOWED_ORIGINS = "https://example.pages.dev"
+
+[[durable_objects.bindings]]
+name = "CHALLENGES"
+class_name = "ChallengeStore"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["ChallengeStore"]
+
+# الأسرار (لا تُكتب هنا): wrangler secret put SA_CLIENT_EMAIL  /  wrangler secret put SA_PRIVATE_KEY

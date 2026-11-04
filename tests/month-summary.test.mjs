@@ -79,3 +79,19 @@ test('الخطوة 2 — packMonthRecs & unpackMonthRecs: ضغط وفك ضغط �
   assert.equal(ses[0].start.getTime(), day(5, 8, 2).getTime());
   assert.equal(ses[0].end.getTime(), day(5, 16, 1).getTime());
 });
+
+/* ---- B2: لا يُحفظ ملخص شهري إلا لو غطّت البيانات المحمّلة الشهر كاملاً ---- */
+const { monthFullyLoaded } = new Function(src + '\nreturn { monthFullyLoaded };')();
+test('B2: تغطية كاملة بلا فشل ⇒ يُسمح بالحفظ', () => {
+  assert.equal(monthFullyLoaded('2026-09', '2026-09-01', '2026-09-30', 0, false), true);
+  assert.equal(monthFullyLoaded('2026-09', '2026-08-15', '2026-10-05', 0, false), true);
+  assert.equal(monthFullyLoaded('2024-02', '2024-02-01', '2024-02-29', 0, false), true);       // كبيس
+});
+test('B2: فترة جزئية أو فشل تحميل أو فلتر موظف ⇒ يُمنع الحفظ', () => {
+  assert.equal(monthFullyLoaded('2026-09', '2026-09-05', '2026-09-30', 0, false), false);      // تبدأ متأخرة
+  assert.equal(monthFullyLoaded('2026-09', '2026-09-01', '2026-09-29', 0, false), false);      // تنتهي مبكراً
+  assert.equal(monthFullyLoaded('2024-02', '2024-02-01', '2024-02-28', 0, false), false);      // فبراير الكبيس ناقص يوماً
+  assert.equal(monthFullyLoaded('2026-09', '2026-09-01', '2026-09-30', 1, false), false);      // جزء فشل تحميله
+  assert.equal(monthFullyLoaded('2026-09', '2026-09-01', '2026-09-30', 0, true), false);       // فلتر موظف
+  assert.equal(monthFullyLoaded('bad', '2026-09-01', '2026-09-30', 0, false), false);
+});

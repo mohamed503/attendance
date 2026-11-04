@@ -95,8 +95,8 @@ const qSnap = (docs, prev) => {
   return { docs, size: docs.length, empty: docs.length === 0, forEach: f => docs.forEach(f),
     docChanges: () => docs.filter(d => !prevIds.has(d.ref.path)).map((d, i) => ({ type: 'added', doc: d, oldIndex: -1, newIndex: i })) };
 };
-export const getDoc = async ref => docSnap(ref.path);
-export const getDocs = async q => qSnap(runQuery(q));
+export const getDoc = async ref => { if ((window.__MOCK_DENY || []).includes(ref.path)) { const e = new Error('permission-denied'); e.code = 'permission-denied'; throw e; } return docSnap(ref.path); };
+export const getDocs = async q => { if ((window.__MOCK_FAIL || []).includes(q.path)) { const e = new Error('mock unavailable: ' + q.path); e.code = 'unavailable'; throw e; } return qSnap(runQuery(q)); };
 export const onSnapshot = (q, cb, errCb) => {
   const isDoc = q.type === 'document'; let prev = null;
   const emit = () => { try { if (isDoc) cb(docSnap(q.path)); else { const d = runQuery(q); cb(qSnap(d, prev)); prev = d; } } catch (e) { if (errCb) errCb(e); } };
@@ -121,12 +121,24 @@ export const updateDoc = async (ref, data) => { wUpd(ref, data); notify(); };
 export const deleteDoc = async ref => { wDel(ref); notify(); };
 export const addDoc = async (col, data) => { const ref = doc(col); wSet(ref, data); notify(); return ref; };
 export const writeBatch = () => { const ops = []; const b = { set: (r, d, o) => (ops.push(() => wSet(r, d, o)), b), update: (r, d) => (ops.push(() => wUpd(r, d)), b), delete: r => (ops.push(() => wDel(r)), b), commit: async () => { ops.forEach(f => f()); notify(); } }; return b; };
+/* معاملة مبسطة: القراءات تجلب أحدث حالة، والكتابات تُخزَّن وتُطبَّق دفعة واحدة عند النجاح (وتُهمل كلها عند أي استثناء) */
+export const runTransaction = async (_db, fn) => {
+  const ops = [];
+  const tx = {
+    get: async ref => docSnap(ref.path),
+    set: (r, d, o) => (ops.push(() => wSet(r, d, o)), tx),
+    update: (r, d) => (ops.push(() => wUpd(r, d)), tx),
+    delete: r => (ops.push(() => wDel(r)), tx)
+  };
+  const res = await fn(tx);
+  ops.forEach(f => f()); notify(); return res;
+};
 export const getFirestore = () => db; export const initializeFirestore = () => db;
 export const persistentLocalCache = () => ({}); export const persistentMultipleTabManager = () => ({});
 export const terminate = async () => {}; export const clearIndexedDbPersistence = async () => {};
 
 /* مصادقة */
-const authObj = { get currentUser() { return G.user; } };
+const authObj = { get currentUser() { const u = G.user; return u && !u.getIdToken ? Object.assign(u, { getIdToken: async () => 'mock-id-token' }) : u; } };
 const setUser = u => { G.user = u; G.authCbs.forEach(cb => setTimeout(() => cb(G.user), 0)); };
 export const getAuth = () => authObj;
 export const onAuthStateChanged = (_a, cb) => { G.authCbs.add(cb); setTimeout(() => cb(G.user), 0); return () => G.authCbs.delete(cb); };
@@ -138,6 +150,7 @@ export const signInWithEmailAndPassword = async (_a, email, pw) => {
 export const createUserWithEmailAndPassword = async (_a, email) => ({ user: { uid: 'new-' + email, email } });
 export const signInAnonymously = async () => { setUser({ uid: 'anon-' + Math.random().toString(36).slice(2, 8), isAnonymous: true, emailVerified: false }); return { user: G.user }; };
 export const signOut = async () => setUser(null);
+export const sendEmailVerification = async () => { G.verifyMails = (G.verifyMails || 0) + 1; };
 
 /* app */
 export const initializeApp = () => ({ __app: true }); export const deleteApp = async () => {};

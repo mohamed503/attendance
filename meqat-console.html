@@ -335,6 +335,7 @@ const ICO = {
   flask:'<path d="M9.5 3.5h5M10.5 3.5v6L5 19a1.5 1.5 0 0 0 1.3 2h11.4a1.5 1.5 0 0 0 1.3-2l-5.5-9.5v-6"/>',
   chat:'<path d="M4 5.5A1.5 1.5 0 0 1 5.5 4h13A1.5 1.5 0 0 1 20 5.5v9a1.5 1.5 0 0 1-1.5 1.5H10l-4.5 4v-4A1.5 1.5 0 0 1 4 14.5z"/>',
   db:'<ellipse cx="12" cy="6" rx="7.5" ry="3"/><path d="M4.5 6v6c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3V6M4.5 12v6c0 1.7 3.4 3 7.5 3s7.5-1.3 7.5-3v-6"/>',
+  bolt:'<path d="M13 3 5 13.5h6L10 21l8-10.5h-6z"/>',
   globe:'<circle cx="12" cy="12" r="8.5"/><path d="M3.5 12h17M12 3.5c2.5 2.5 3.5 5.5 3.5 8.5s-1 6-3.5 8.5C9.5 18 8.5 15 8.5 12s1-6 3.5-8.5z"/>',
   book:'<path d="M5 4.5h10a3 3 0 0 1 3 3V20H8a3 3 0 0 1-3-3zM5 17a3 3 0 0 1 3-3h10"/>',
   sun:'<circle cx="12" cy="12" r="4"/><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4"/>',
@@ -476,11 +477,11 @@ function normalizeClient(c) {
   const company = text('company', 160);
   const ownerEmail = text('ownerEmail', 254).toLowerCase();
   const projectId = text('projectId', 30);
-  const apiKey = text('apiKey', 120), appId = text('appId', 120);
+  const apiKey = text('apiKey', 120), appId = text('appId', 120), appCheckKey = text('appCheckKey', 100), edgeUrl = text('edgeUrl', 150);
   const domain = text('domain', 2048), safeDomain = domain ? safeHttpUrl(domain) : '';
   if (!company || (ownerEmail && !EMAIL_RE.test(ownerEmail)) || (projectId && !PROJECT_ID_RE.test(projectId))
       || (apiKey && !/^[A-Za-z0-9_-]{8,120}$/.test(apiKey))
-      || (appId && !/^[A-Za-z0-9:._-]{1,120}$/.test(appId)) || (domain && !safeDomain)) throw new Error('بيانات العميل أو رابط الموقع غير صالح');
+      || (appId && !/^[A-Za-z0-9:._-]{1,120}$/.test(appId)) || (appCheckKey && !/^[A-Za-z0-9_-]{20,100}$/.test(appCheckKey)) || (edgeUrl && !/^https:\/\/[A-Za-z0-9.-]{3,100}(:\d{2,5})?(\/[A-Za-z0-9._~-]{1,60})*$/.test(edgeUrl)) || (domain && !safeDomain)) throw new Error('بيانات العميل أو رابط الموقع غير صالح');
   const kind = text('kind', 16, 'paid');
   if (!['paid', 'trial', 'demo'].includes(kind)) throw new Error('نوع اشتراك غير صالح');
   const planId = text('planId', 40, DEF_PLANS[0].id);
@@ -491,7 +492,7 @@ function normalizeClient(c) {
   if (!Number.isFinite(durationDays) || durationDays < 1 || durationDays > 36500) throw new Error('مدة الاشتراك غير صالحة');
   const phone = text('phone', 24).replace(/\D/g, '');
   return { id, company, contact: text('contact', 120), phone, ownerEmail, planId, kind, start, durationDays,
-    domain: safeDomain, projectId, apiKey, appId, support: text('support', 500), notes: text('notes', 1000),
+    domain: safeDomain, projectId, apiKey, appId, appCheckKey, edgeUrl, support: text('support', 500), notes: text('notes', 1000),
     createdAt: text('createdAt', 10, todayKey()), permanent: !!c.permanent,
     checks: c.checks && typeof c.checks === 'object' && !Array.isArray(c.checks)
       ? Object.fromEntries(Object.entries(c.checks).filter(([k, v]) => /^[A-Za-z0-9_-]{1,50}$/.test(k) && typeof v === 'boolean')) : {} };
@@ -566,6 +567,8 @@ function renderClients(el, sub = 'list') {
       <div class="field"><label for="cProjectId">معرّف المشروع في Firebase (projectId)</label><input id="cProjectId" dir="ltr" placeholder="norour-app"></div>
       <div class="field"><label for="cApiKey">apiKey (اختياري)</label><input id="cApiKey" dir="ltr" placeholder="AIza..."></div>
       <div class="field"><label for="cAppId">appId (اختياري)</label><input id="cAppId" dir="ltr" placeholder="1:123:web:abc"></div>
+      <div class="field"><label for="cAppCheck">مفتاح App Check — reCAPTCHA v3 (اختياري)</label><input id="cAppCheck" dir="ltr" placeholder="6Lc..."></div>
+      <div class="field"><label for="cEdge">رابط خادم الحافة meqat-edge (اختياري)</label><input id="cEdge" dir="ltr" placeholder="https://meqat-edge.xxx.workers.dev"></div>
     </div>
     <div class="g" style="--n:4">
       <div class="field s2"><label for="cSupport">بيانات التواصل التي تظهر للعميل عند انتهاء اشتراكه</label><input id="cSupport" placeholder="واتساب: 0912345678 — للتجديد"></div>
@@ -607,7 +610,7 @@ function renderClients(el, sub = 'list') {
     const g = id => $(id).value.trim();
     const company = g('#cCompany'); if (!company) return toast('اكتب اسم الشركة', 'err');
     try {
-      const c = normalizeClient({ id: uid(), company, contact: g('#cContact'), phone: g('#cPhone'), ownerEmail: g('#cOwnerEmail').toLowerCase(), planId: $('#cPlan').value, kind: $('#cKind').value, start: $('#cStart').value || todayKey(), durationDays: +$('#cDur').value || 365, domain: g('#cDomain'), projectId: g('#cProjectId'), apiKey: g('#cApiKey'), appId: g('#cAppId'), support: g('#cSupport'), notes: g('#cNotes'), createdAt: todayKey(), permanent: $('#cPerm').checked });
+      const c = normalizeClient({ id: uid(), company, contact: g('#cContact'), phone: g('#cPhone'), ownerEmail: g('#cOwnerEmail').toLowerCase(), planId: $('#cPlan').value, kind: $('#cKind').value, start: $('#cStart').value || todayKey(), durationDays: +$('#cDur').value || 365, domain: g('#cDomain'), projectId: g('#cProjectId'), apiKey: g('#cApiKey'), appId: g('#cAppId'), appCheckKey: g('#cAppCheck'), edgeUrl: g('#cEdge'), support: g('#cSupport'), notes: g('#cNotes'), createdAt: todayKey(), permanent: $('#cPerm').checked });
       const l = getClients(); l.unshift(c); saveClients(l); toast('حُفظ العميل في الأرشيف', 'good'); go('clients');
     } catch (err) { toast(err.message || 'بيانات العميل غير صالحة', 'err'); }
   };
@@ -698,6 +701,8 @@ function editClient(c) {
       <div class="field"><label>projectId</label><input id="mPid" dir="ltr" value="${sN(c.projectId)}"></div>
       <div class="field"><label>apiKey</label><input id="mKey" dir="ltr" value="${sN(c.apiKey)}"></div>
       <div class="field"><label>appId</label><input id="mApp" dir="ltr" value="${sN(c.appId)}"></div>
+      <div class="field"><label>مفتاح App Check (reCAPTCHA v3)</label><input id="mAppCheck" dir="ltr" value="${sN(c.appCheckKey)}"></div>
+      <div class="field"><label>رابط خادم الحافة (meqat-edge)</label><input id="mEdge" dir="ltr" value="${sN(c.edgeUrl)}"></div>
     </div>
     <div class="row" style="margin-top:10px">
       <div class="field"><label>تواصل الدعم (يظهر للعميل عند الانتهاء)</label><input id="mSupport" value="${sN(c.support)}"></div>
@@ -717,7 +722,7 @@ function editClient(c) {
     const list = getClients(); const i = list.findIndex(x => x.id === c.id); if (i < 0) return close();
     const gv = sel => { const e = overlay.querySelector(sel); return e ? e.value.trim() : ''; };
     try {
-      list[i] = normalizeClient({ ...c, company: gv('#mCompany'), contact: gv('#mContact'), phone: gv('#mPhone'), ownerEmail: gv('#mOwnerEmail').toLowerCase(), planId: gv('#mPlan'), kind: gv('#mKind'), start: gv('#mStart'), durationDays: +gv('#mDur') || 365, permanent: overlay.querySelector('#mPerm').checked, domain: gv('#mDomain'), projectId: gv('#mPid'), apiKey: gv('#mKey'), appId: gv('#mApp'), support: gv('#mSupport'), notes: gv('#mNotes') });
+      list[i] = normalizeClient({ ...c, company: gv('#mCompany'), contact: gv('#mContact'), phone: gv('#mPhone'), ownerEmail: gv('#mOwnerEmail').toLowerCase(), planId: gv('#mPlan'), kind: gv('#mKind'), start: gv('#mStart'), durationDays: +gv('#mDur') || 365, permanent: overlay.querySelector('#mPerm').checked, domain: gv('#mDomain'), projectId: gv('#mPid'), apiKey: gv('#mKey'), appId: gv('#mApp'), appCheckKey: gv('#mAppCheck'), edgeUrl: gv('#mEdge'), support: gv('#mSupport'), notes: gv('#mNotes') });
     } catch (err) { return toast(err.message || 'بيانات العميل غير صالحة', 'err'); }
     saveClients(list); close(); toast('تم التحديث', 'good'); go('clients');
   };
@@ -798,7 +803,7 @@ $('#impFile').onchange = e => {
 
 /* ============ نظام التبويبات ============ */
 // [المفتاح، العنوان الكامل، الاسم القصير للجوال، الأيقونة]
-const TABS = [['clients', 'العملاء والأرشيف', 'العملاء', 'users'], ['generator', 'مولّد النسخ والقواعد', 'المولّد', 'gen'], ['plans', 'الباقات الثلاث', 'الباقات', 'tag'], ['demo', 'الديمو والبذر', 'الديمو', 'flask'], ['msgs', 'رسائل واتساب', 'الرسائل', 'chat'], ['databases', 'قواعد البيانات', 'القواعد', 'db'], ['hosting', 'الاستضافة خطوة بخطوة', 'الاستضافة', 'globe'], ['guide', 'الدليل الاحترافي', 'الدليل', 'book']];
+const TABS = [['clients', 'العملاء والأرشيف', 'العملاء', 'users'], ['generator', 'مولّد النسخ والقواعد', 'المولّد', 'gen'], ['plans', 'الباقات الثلاث', 'الباقات', 'tag'], ['demo', 'الديمو والبذر', 'الديمو', 'flask'], ['msgs', 'رسائل واتساب', 'الرسائل', 'chat'], ['databases', 'قواعد البيانات', 'القواعد', 'db'], ['hosting', 'الاستضافة خطوة بخطوة', 'الاستضافة', 'globe'], ['edge', 'خادم الحافة (Cloudflare) خطوة بخطوة', 'الحافة', 'bolt'], ['guide', 'الدليل الاحترافي', 'الدليل', 'book']];
 let CUR = 'clients';
 function go(t) {
   CUR = t;
@@ -816,6 +821,7 @@ function go(t) {
   if (t === 'msgs') renderMsgs(c);
   if (t === 'databases') renderDatabases(c);
   if (t === 'hosting') renderHosting(c);
+  if (t === 'edge') renderEdge(c);
 }
 
 /* ============ الباقات ============ */
@@ -905,7 +911,8 @@ service cloud.firestore {
   match /databases/{database}/documents {
     // المالك المعرّف عند توليد القواعد يبقى super_admin لاستعادة الوصول.
     function isOwnerEmail() {
-      return request.auth != null && request.auth.token.get('email', '') == '${email}';
+      return request.auth != null && request.auth.token.get('email', '') == '${email}'
+        && request.auth.token.get('email_verified', false) == true;
     }
     function uidAdminPath() {
       return /databases/$(database)/documents/admins/$(request.auth.uid);
@@ -1094,6 +1101,11 @@ service cloud.firestore {
         && request.resource.data.usedBy == request.auth.uid && request.resource.data.usedAt == request.time
         && existsAfter(/databases/$(database)/documents/employees/$(id)/joins/$(request.auth.uid));
     }
+    // تذاكر البصمة: يكتبها خادم الحافة وحده (حساب خدمة يتجاوز القواعد)؛ لا قراءة ولا كتابة من أي عميل، ويحذفها صاحبها في دفعة التسجيل نفسها (استهلاك).
+    match /punchTickets/{uid} {
+      allow read, create, update: if false;
+      allow delete: if request.auth != null && request.auth.uid == uid;
+    }
     match /payrollRuns/{rid} {
       allow read: if isSuperAdmin() || isPayrollAdmin();
       allow create: if (isSuperAdmin() || isPayrollAdmin()) && validRunCreate();
@@ -1109,11 +1121,31 @@ service cloud.firestore {
     }
     match /locations/{id} {
       allow read: if request.auth != null;
-      allow write: if isSuperAdmin() || isHrAdmin();
+      allow delete: if isSuperAdmin() || isHrAdmin();
+      // S5: سياسة طرق الحضور لا تُحفظ إلا صالحة (methods ⊆ gps/qr/bio وغير فارغة، mode = all|any).
+      // قيمة غير صالحة كانت تُسقط طريقة QR/البصمة أو تعطّل البصمة لكل موظفي الموقع.
+      allow create, update: if (isSuperAdmin() || isHrAdmin()) && validLocation();
+      function validLocation() {
+        let d = request.resource.data;
+        return d.get('methods', ['gps']) is list
+          && d.get('methods', ['gps']).size() > 0
+          && d.get('methods', ['gps']).hasOnly(['gps', 'qr', 'bio'])
+          && d.get('mode', 'all') in ['all', 'any'];
+      }
     }
     // أسرار رمز QR المتغيّر: لا يقرؤها الموظفون إطلاقاً (تستعملها قاعدة إنشاء البصمة وشاشة العرض عند الإدارة فقط).
     match /locSecrets/{id} {
       allow read, write: if isSuperAdmin() || isHrAdmin();
+    }
+    // رمز QR الحالي لكل موقع (تكتبه شاشة العرض كل 30 ثانية). الموظفون لا يقرؤونه إطلاقاً.
+    match /locQr/{id} {
+      allow read, delete: if isSuperAdmin() || isHrAdmin();
+      allow create, update: if (isSuperAdmin() || isHrAdmin())
+        && request.resource.data.keys().hasOnly(['cur', 'prev', 'at'])
+        && request.resource.data.keys().hasAll(['cur', 'at'])
+        && request.resource.data.cur is string && request.resource.data.cur.size() >= 16 && request.resource.data.cur.size() <= 128
+        && request.resource.data.get('prev', '') is string
+        && request.resource.data.at == request.time;
     }
     match /schedules/{id} {
       allow read: if request.auth != null;
@@ -1186,9 +1218,15 @@ service cloud.firestore {
           && resource.data.get('uid', null) == null
           && resource.data.get('devices', null) == null && resource.data.active == true;
       }
+      // S3: عند تفعيل settings/general.bindPin لا يُربط أول جهاز إلا برمز الإدارة (مستند joins يتحقق منه في الدفعة نفسها).
+      function bindPinOk() {
+        return !exists(/databases/$(database)/documents/settings/general)
+          || get(/databases/$(database)/documents/settings/general).data.get('bindPin', false) != true
+          || existsAfter(/databases/$(database)/documents/employees/$(empId)/joins/$(request.auth.uid));
+      }
       function claimDevice() {
         let n = request.resource.data;
-        return unclaimed() && (resource.data.get('deviceId', null) == null
+        return unclaimed() && bindPinOk() && (resource.data.get('deviceId', null) == null
             || n.get('rebindProof', null) == resource.data.get('deviceId', null))
           && n.diff(resource.data).affectedKeys().hasOnly(['deviceId', 'devices', 'rebindProof'])
           && n.devices.size() == 1 && n.devices.values().hasOnly([request.auth.uid])
@@ -1283,17 +1321,33 @@ service cloud.firestore {
             && d.accuracy >= 0 && d.accuracy <= 250
             && math.sqrt(dx * dx + dy * dy) <= l.radius + 10;
         }
-        // رمز QR = sha256(سر الموقع + ':' + رقم نافذة 30 ثانية)؛ السر في locSecrets لا يقرؤه إلا المشرفون وتقرؤه القاعدة وحدها.
+        // رمز QR: شاشة العرض (حساب إدارة) تكتب رمزاً عشوائياً جديداً كل 30 ثانية في locQr/{موقع} = {cur, prev, at}.
+        // لا يقرؤه الموظفون من Firestore؛ تقرؤه هذه القاعدة وحدها. المقارنة نص بنص دون أي تجزئة أو حساب وقت على الجهاز.
+        // الصلاحية: الرمز الحالي أو السابق (≈30–60 ثانية)، وبشرط أن تكون شاشة العرض حيّة (آخر تحديث خلال 150 ثانية بوقت الخادم).
         function qrOk(d) {
-          let s = get(/databases/$(database)/documents/locSecrets/$(d.locationId)).data.secret;
-          let w = math.floor(request.time.toMillis() / 30000);
-          return d.get('qr', '') is string
-            && (d.qr == hashing.sha256((s + ':' + string(w)).toUtf8()).toHexString()
-              || d.qr == hashing.sha256((s + ':' + string(w - 1)).toUtf8()).toHexString()
-              || d.qr == hashing.sha256((s + ':' + string(w + 1)).toUtf8()).toHexString());
+          let q = get(/databases/$(database)/documents/locQr/$(d.locationId)).data;
+          return d.get('qr', '') is string && d.qr.size() >= 16 && d.qr.size() <= 128
+            && request.time < q.at + duration.value(150, 's')
+            && (d.qr == q.cur || d.qr == q.get('prev', ''));
         }
         // بصمة الجهاز (WebAuthn): يشترط وجود إثبات التوقيع وأن الموظف سجّل مفتاحاً. التحقق من التوقيع نفسه يجري في التطبيق ويُحفظ الإثبات للتدقيق.
+        // P1أ: إذا فعّل المدير العام settings/general.edgeRequired فالبصمة لا تُقبل إلا بتذكرة من خادم الحافة (يتحقق من التوقيع فعلياً).
+        function edgeOn() {
+          return exists(/databases/$(database)/documents/settings/general)
+            && get(/databases/$(database)/documents/settings/general).data.get('edgeRequired', false) == true;
+        }
+        function ticketOk(d) {
+          let t = get(/databases/$(database)/documents/punchTickets/$(request.auth.uid)).data;
+          return d.get('ticket', '') is string && d.ticket == t.nonce
+            && t.empId == empId && t.locId == d.locationId && t.type == d.type
+            && 'bio' in t.m && request.time < t.exp
+            && !existsAfter(/databases/$(database)/documents/punchTickets/$(request.auth.uid));
+        }
         function bioOk(d, e) {
+          // تذكرة مُرسلة ⇒ يجب أن تكون صالحة دائماً؛ وبلا تذكرة يُقبل المسار القديم (wa) فقط إن لم تُلزَم المنشأة بخادم الحافة.
+          return (d.get('ticket', '') is string && d.get('ticket', '') != '') ? ticketOk(d) : (!edgeOn() && bioWaOk(d, e));
+        }
+        function bioWaOk(d, e) {
           return d.get('wa', '') is string && d.get('wa', '').size() >= 40 && d.get('wa', '').size() <= 1500
             && e.get('bio', null) != null;
         }
@@ -1314,7 +1368,7 @@ service cloud.firestore {
           // 50400000 = 14 ساعة = FORGOT_MS، وهو الحد الأدنى لمهلة نسيان الانصراف؛ مهلة الجدول (forgotMsOf) لا تقل عنه أبدًا،
           // فالقاعدة لا تمنع ما يسمح به التطبيق. يجب أن يبقى الرقمان متطابقين (يحرسه الاختبار tests/forgot-limit.test.mjs).
           return request.auth != null
-            && d.keys().hasOnly(['type','time','lat','lng','accuracy','distance','locationId','locationName','empName','deviceId','qr','wa','m'])
+            && d.keys().hasOnly(['type','time','lat','lng','accuracy','distance','locationId','locationName','empName','deviceId','qr','wa','m','ticket'])
             && d.keys().hasAll(['type','time','lat','lng','accuracy','distance','locationId','locationName','empName','deviceId'])
             && d.time == request.time && d.type in ['in', 'out']
             && d.lat is number && d.lng is number
@@ -1395,7 +1449,8 @@ function cfgPreview(c) {
     projectId: c.projectId || 'PROJECT-ID',
     storageBucket: (c.projectId || 'PROJECT-ID') + '.firebasestorage.app',
     messagingSenderId: senderM ? senderM[1] : 'SENDER-ID',
-    appId: c.appId || 'YOUR_APP_ID'
+    appId: c.appId || 'YOUR_APP_ID',
+    ...(c.appCheckKey ? { appCheckSiteKey: c.appCheckKey } : {}), ...(c.edgeUrl ? { edgeUrl: c.edgeUrl } : {})
   }, null, 2)};`;
 }
 
@@ -1484,7 +1539,7 @@ async function genFile() {
     const j = html.indexOf('};', i);
     if (j < 0) throw new Error('بلوك الإعدادات غير مكتمل في القالب');
     const senderM = /1:([0-9]+):web:/.exec(c.appId || '');
-    const cfgObj = { apiKey: c.apiKey || 'YOUR_API_KEY', authDomain: c.projectId + '.firebaseapp.com', projectId: c.projectId, storageBucket: c.projectId + '.firebasestorage.app', messagingSenderId: senderM ? senderM[1] : '', appId: c.appId || 'YOUR_APP_ID' };
+    const cfgObj = { apiKey: c.apiKey || 'YOUR_API_KEY', authDomain: c.projectId + '.firebaseapp.com', projectId: c.projectId, storageBucket: c.projectId + '.firebasestorage.app', messagingSenderId: senderM ? senderM[1] : '', appId: c.appId || 'YOUR_APP_ID', ...(c.appCheckKey ? { appCheckSiteKey: c.appCheckKey } : {}), ...(c.edgeUrl ? { edgeUrl: c.edgeUrl } : {}) };
     html = html.slice(0, i) + 'const firebaseConfig = ' + scriptJson(cfgObj, 2) + ';\n' + html.slice(j + 2);
     const si = html.indexOf('<script type="module">');
     if (si < 0) throw new Error('لم أجد وسم السكربت الرئيسي في القالب');
@@ -1597,7 +1652,7 @@ async function genFileFor(c, url, out) {
     if (i < 0) throw new Error('قالب غير صالح');
     const j = html.indexOf('};', i);
     const senderM = /1:([0-9]+):web:/.exec(c.appId || '');
-    html = html.slice(0, i) + 'const firebaseConfig = ' + scriptJson({ apiKey: c.apiKey, authDomain: c.projectId + '.firebaseapp.com', projectId: c.projectId, storageBucket: c.projectId + '.firebasestorage.app', messagingSenderId: senderM ? senderM[1] : '', appId: c.appId }, 2) + ';\n' + html.slice(j + 2);
+    html = html.slice(0, i) + 'const firebaseConfig = ' + scriptJson({ apiKey: c.apiKey, authDomain: c.projectId + '.firebaseapp.com', projectId: c.projectId, storageBucket: c.projectId + '.firebasestorage.app', messagingSenderId: senderM ? senderM[1] : '', appId: c.appId, ...(c.appCheckKey ? { appCheckSiteKey: c.appCheckKey } : {}), ...(c.edgeUrl ? { edgeUrl: c.edgeUrl } : {}) }, 2) + ';\n' + html.slice(j + 2);
     const si = html.indexOf('<script type="module">');
     const lic = licFor(c);
     if (si < 0) throw new Error('قالب غير صالح');
@@ -1815,6 +1870,64 @@ function renderHosting(el) {
   $('#hClient').onchange = () => { const c = getClients().find(x => x.id === $('#hClient').value); if (c) { $('#hPid').value = c.projectId || ''; fillFb(); } };
   $('#hPid').oninput = fillFb;
   fillFb();
+}
+
+/* ============ خادم الحافة meqat-edge على Cloudflare Workers (المرحلة 1أ) ============ */
+function renderEdge(el) {
+  const list = getClients();
+  const st = (n, title, url, desc, undo) => `<div class="step-row">
+    <div class="s-num">${n}</div>
+    <div class="s-body"><b>${title}</b><div class="hint">${desc}</div>${undo || ''}</div>
+    ${url ? `<div class="s-link"><a class="btn sm sec" href="${esc(url)}" target="_blank" rel="noopener">${ic('link', 16)}افتح المكان</a></div>` : ''}
+  </div>`;
+  const undoBox = txt => `<details class="undo"><summary>التراجع عن هذه الخطوة</summary><div>${txt}</div></details>`;
+  const cmd = txt => `<div style="display:flex;gap:8px;align-items:center;margin:6px 0"><code class="dir" style="flex:1;white-space:pre-wrap;word-break:break-all">${esc(txt)}</code><button class="btn sm sec" data-copy="${esc(txt)}">نسخ</button></div>`;
+  const originOf = d => { try { const u = new URL(/^https?:\/\//.test(d) ? d : 'https://' + d); return u.origin; } catch { return ''; } };
+  const CF = 'https://dash.cloudflare.com/?to=/:account/workers-and-pages';
+
+  el.innerHTML = `
+  <div class="card">
+    <h2>خادم الحافة (meqat-edge) على Cloudflare — خطوة بخطوة</h2>
+    <p class="hint">يتحقق من توقيع بصمة الجهاز فعلياً قبل قبول التسجيل. مجاني بلا بطاقة دفع. اختياري: بدونه يعمل النظام كما كان. المجلد <b dir="ltr">edge</b> موجود داخل حزمة النظام، وتفاصيله في <span dir="ltr">edge/README.md</span>.</p>
+    <div class="row">
+      <div class="field" style="min-width:250px"><label>العميل (لتعبئة القيم تلقائياً)</label>
+        <select id="eClient"><option value="">— أدخل القيم يدوياً —</option>${list.map(c => `<option value="${esc(c.id)}">${esc(c.company)}</option>`).join('')}</select></div>
+      <div class="field" style="min-width:210px"><label>projectId لمشروع Firebase</label><input id="ePid" dir="ltr" placeholder="client-app123"></div>
+      <div class="field" style="min-width:260px"><label>رابط موقع العميل (النطاق بالضبط)</label><input id="eDom" dir="ltr" placeholder="https://client-app123.web.app"></div>
+    </div>
+  </div>
+  <div id="eSteps"></div>
+  <div class="card" style="border:2px solid var(--warn)">
+    <h3>تنبيهات مهمة</h3>
+    <p class="hint" style="margin:4px 0 0">• نطاق الموقع في <span dir="ltr">ALLOWED_ORIGINS</span> يجب أن يطابق عنوان التطبيق حرفياً (بلا <span dir="ltr">/</span> في النهاية)، وإلا ترفض الخادم كل بصمة.<br>• مفتاح حساب الخدمة سرّ: لا ترفعه مع مجلد site ولا تشاركه. يوضع في أسرار Cloudflare فقط.<br>• غيّر النطاق النهائي للتطبيق قبل تفعيل البصمة عند العميل؛ تغييره لاحقاً يُبطل بصمات الأجهزة المسجلة.<br>• جرّب بموظف اختبار قبل تفعيل «على خادم الحافة» للجميع.</p>
+  </div>`;
+
+  const fill = () => {
+    const pid = ($('#ePid').value || '').trim(), P = pid || '{PROJECT_ID}', live = !!pid;
+    const dom = originOf(($('#eDom').value || '').trim()) || 'https://example.pages.dev';
+    $('#eSteps').innerHTML = [
+      st(1, 'أنشئ حساب Cloudflare مجانياً', 'https://dash.cloudflare.com/sign-up', 'بريد وكلمة سر — الحساب المجاني يكفي ولا يطلب بطاقة دفع. أكّد بريدك من الرسالة.', undoBox('لا يحتاج تراجعاً. إن تركت الحساب فارغاً لا يُحاسَب أحد.')),
+      st(2, 'ثبّت Node.js على جهازك (مرة واحدة)', 'https://nodejs.org', 'حمّل إصدار <b>LTS</b> وثبّته بالضغط التالي. للتأكد افتح موجه الأوامر واكتب: ' + cmd('node -v')),
+      st(3, 'افتح مجلد edge في موجه الأوامر', '', 'فك ضغط حزمة النظام ثم افتح موجه الأوامر (CMD أو Terminal) داخل مجلد <b dir="ltr">edge</b>. مثلاً: ' + cmd('cd edge')),
+      st(4, 'سجّل الدخول إلى Cloudflare من الأداة', 'https://developers.cloudflare.com/workers/wrangler/commands/#login', 'اكتب الأمر، يفتح المتصفح، اضغط <b>Allow</b>:' + cmd('npx wrangler login'), undoBox('من لوحة Cloudflare › My Profile › API Tokens يمكنك إلغاء صلاحية الجهاز، أو ' + '<span dir="ltr">npx wrangler logout</span>.')),
+      st(5, 'أنشئ مفتاح حساب الخدمة من Firebase', live ? `https://console.firebase.google.com/project/${P}/settings/serviceaccounts/adminsdk` : 'https://console.firebase.google.com', 'الإعدادات ‣ Service accounts ‣ <b>Generate new private key</b> ‣ يُنزَّل ملف JSON. احفظه بعيداً عن مجلد الموقع. ستحتاج منه حقلين: <b dir="ltr">client_email</b> و<b dir="ltr">private_key</b>.', undoBox(`من <a href="https://console.cloud.google.com/iam-admin/serviceaccounts?project=${esc(P)}" target="_blank" rel="noopener">صفحة حسابات الخدمة</a> افتح الحساب ثم تبويب Keys واحذف المفتاح؛ يتوقف الخادم عن الكتابة فوراً.`)),
+      st(6, 'اكتب إعدادات المشروع في wrangler.toml', '', 'افتح <span dir="ltr">edge/wrangler.toml</span> واستبدل قسم <span dir="ltr">[vars]</span> بهذا:' + cmd(`[vars]\nFIREBASE_PROJECT_ID = "${pid || 'ضع-معرف-المشروع'}"\nALLOWED_ORIGINS = "${dom}"`)),
+      st(7, 'ضع مفتاح الخدمة في أسرار Cloudflare', 'https://developers.cloudflare.com/workers/configuration/secrets/', 'نفّذ الأمرين؛ يطلب كل واحد لصق القيمة (من ملف JSON). للمفتاح الخاص الصق القيمة كاملة بما فيها <span dir="ltr">BEGIN/END</span>:' + cmd('npx wrangler secret put SA_CLIENT_EMAIL') + cmd('npx wrangler secret put SA_PRIVATE_KEY'), undoBox('<span dir="ltr">npx wrangler secret delete SA_PRIVATE_KEY</span> — يتوقف الخادم عن الكتابة.')),
+      st(8, 'انشر الخادم', CF, 'ينشأ الخادم ويظهر لك رابط مثل <span dir="ltr">https://meqat-edge.حسابك.workers.dev</span>. انسخه:' + cmd('npx wrangler deploy'), undoBox('من لوحة Cloudflare › Workers & Pages › meqat-edge › Settings › <b>Delete</b>. أو للرجوع لإصدار سابق: <span dir="ltr">npx wrangler rollback</span>.')),
+      st(9, 'سجّل الرابط عند العميل وأعد توليد النسخة', '', 'في تبويب «العملاء» ‣ تعديل العميل ‣ الصق الرابط في حقل <b>رابط خادم الحافة</b> ‣ احفظ ‣ ثم تبويب «مولّد النسخ والقواعد» لتوليد حزمة العميل وارفعها على استضافته.<div style="margin-top:8px"><button class="btn sm" data-goto="clients">فتح العملاء</button> <button class="btn sm sec" data-goto="generator">فتح المولّد</button></div>', undoBox('امسح الحقل وأعد التوليد والرفع؛ يعود التطبيق للتحقق داخله.')),
+      st(10, 'انشر قواعد Firestore الجديدة', live ? `https://console.firebase.google.com/project/${P}/firestore/rules` : 'https://console.firebase.google.com', 'خذ النص من المولّد (زر القواعد) والصقه في صفحة Rules ثم <b>Publish</b>. لا أثر لها حتى تفعّل الخيار في الخطوة 12.', undoBox('صفحة Rules › سجل الإصدارات › أعد نشر الإصدار السابق.')),
+      st(11, 'جرّب بموظف اختبار', live ? `https://console.firebase.google.com/project/${P}/firestore/data` : 'https://console.firebase.google.com', 'اجعل موقعاً تجريبياً يشترط «بصمة الجهاز»، وسجّل مفتاح البصمة لموظف اختبار، ثم اضغط «حضور». يجب أن يظهر السجل في <span dir="ltr">employees/…/records</span> وفيه الحقل <span dir="ltr">ticket</span> بدل <span dir="ltr">wa</span>، وأن تختفي التذكرة من <span dir="ltr">punchTickets</span> بعد التسجيل. إن فشل راجع السجلات من لوحة Cloudflare › meqat-edge › Logs.'),
+      st(12, 'فعّل التحقق على خادم الحافة', '', 'في تطبيق الإدارة (بحساب المدير العام): الدوام والإعدادات ‣ إعدادات المنشأة ‣ <b>التحقق من بصمة الجهاز</b> ‣ «على خادم الحافة» ‣ حفظ. من هذه اللحظة لا تُقبل بصمة بلا تذكرة صالحة.', undoBox('أعد الخيار إلى «داخل التطبيق» واحفظ — يسري فوراً.'))
+    ].join('');
+  };
+  $('#eClient').onchange = () => { const c = getClients().find(x => x.id === $('#eClient').value); if (c) { $('#ePid').value = c.projectId || ''; $('#eDom').value = c.domain || ''; fill(); } };
+  $('#ePid').oninput = fill; $('#eDom').oninput = fill;
+  el.onclick = e => {
+    const cp = e.target.closest && e.target.closest('[data-copy]'), gt = e.target.closest && e.target.closest('[data-goto]');
+    if (cp) { const ok = () => toast('تم النسخ ✅', 'good'), bad = () => toast('تعذر النسخ — حدّد النص وانسخه يدوياً', 'err'); try { navigator.clipboard.writeText(cp.dataset.copy).then(ok, bad); } catch { bad(); } }
+    if (gt) go(gt.dataset.goto);
+  };
+  fill();
 }
 
 /* ============ رسائل واتساب الجاهزة ============ */

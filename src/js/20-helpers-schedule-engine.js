@@ -23,6 +23,8 @@ let _deferredPwaPrompt = null;
 const isStandalone = () => window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
 const isIOSDevice = () => /iphone|ipad|ipod/i.test(window.navigator.userAgent);
 function refreshPwaButtons() {
+  /* U1: زر الإشعارات مستقل عن أزرار التثبيت — يبقى ظاهراً في التطبيق المثبّت (حيث تعمل الإشعارات فعلاً) ويُخفى فقط إن لم يدعم المتصفح Notification */
+  document.querySelectorAll('.notif-btn').forEach(btn => { btn.style.display = ('Notification' in window) ? 'inline-flex' : 'none'; });
   document.querySelectorAll('.pwa-btn').forEach(btn => {
     if (isStandalone()) { btn.style.display = 'none'; return; }
     if (_deferredPwaPrompt || isIOSDevice()) btn.style.display = 'inline-flex';

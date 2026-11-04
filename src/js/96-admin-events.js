@@ -52,7 +52,7 @@
         const nid = randToken(); const isTask = !!($('#eType') && $('#eType').value === 'task');
         await setDoc(doc(db, 'employees', nid), { name, phone, active: true, deviceId: null, scheduleId: (isTask ? '' : ($('#eSched') ? $('#eSched').value : '')), empType: isTask ? 'task' : 'staff', payMode: isTask ? 'task' : 'none', payAmount: 0, rotOffset: 0, startDate: dayKey(new Date()), createdAt: serverTimestamp() });
         logAudit('emp_create', name, isTask ? 'إضافة موظف مهام جديد' : 'إضافة موظف دوام جديد');
-        await refresh('emps'); toast('تمت الإضافة — انسخ الرابط وأرسله للموظف', 'good');
+        await refresh('emps'); toast(S.set && S.set.bindPin ? 'تمت الإضافة — أرسل الرابط، ثم أصدر رمز التفعيل من «الأجهزة والرمز» وأرسله في رسالة منفصلة' : 'تمت الإضافة — انسخ الرابط وأرسله للموظف', 'good');
       }
       if (act === 'reloadAudit') { S.auditLogs = null; viewEmps($('#content')); await loadAuditLogs(true); viewEmps($('#content')); return toast('تم تحديث سجل التدقيق', 'good'); }
       if (act === 'auditCsv') {
@@ -72,12 +72,12 @@
       if (act === 'copy') { await navigator.clipboard.writeText(linkOf(id)); toast('تم نسخ رابط الموظف', 'good'); }
       if (act === 'wa') {
         const e = S.emps.find(x => x.id === id);
-        const pinTxt = '';
+        const pinTxt = (S.set && S.set.bindPin) ? '\n\nسيصلك «رمز التفعيل» في رسالة منفصلة؛ تحتاجه عند فتح الرابط أول مرة.' : '';
         const msg = `مرحباً ${e.name}، هذا رابطك الشخصي في «${BRAND}» لتسجيل الحضور والانصراف (لا تشاركه مع أحد):\n${linkOf(id)}\n\nافتحه من متصفح Chrome أو Safari وليس من داخل واتساب.${pinTxt}`;
         const a = document.createElement('a'); a.href = `https://wa.me/${e.phone || ''}?text=${encodeURIComponent(msg)}`; a.target = '_blank'; a.rel = 'noopener noreferrer'; a.click();
       }
       if (act === 'devPin') return deviceManager(S.emps.find(x => x.id === id));
-      if (act === 'resetDev') { const e = S.emps.find(x => x.id === id); if (await mqConfirm('إعادة ضبط كل الأجهزة المرتبطة بهذا الموظف؟ سيتوجب عليه فتح الرابط من جهازه بعد ذلك.')) { await updateDoc(doc(db, 'employees', id), { deviceId: null, uid: null, devices: null, rebindProof: null }); logAudit('dev_reset', (e && e.name) || id, 'إعادة ضبط جميع الأجهزة المرتبطة'); await refresh('emps'); toast('تمت إعادة الضبط', 'good'); } }
+      if (act === 'resetDev') { const e = S.emps.find(x => x.id === id); if (await mqConfirm('إعادة ضبط كل الأجهزة المرتبطة بهذا الموظف؟ سيتوجب عليه فتح الرابط من جهازه بعد ذلك.')) { await updateDoc(doc(db, 'employees', id), { deviceId: null, uid: null, devices: null, rebindProof: null }); logAudit('dev_reset', (e && e.name) || id, 'إعادة ضبط جميع الأجهزة المرتبطة'); await refresh('emps'); toast(S.set && S.set.bindPin ? 'تمت إعادة الضبط — أصدر رمز تفعيل جديداً من «الأجهزة والرمز»' : 'تمت إعادة الضبط', 'good'); } }
       if (act === 'toggle') {
         const e = S.emps.find(x => x.id === id);
         if (e.active && !await mqConfirm(`إيقاف «${e.name}»؟\nتبقى سجلاته وتقاريره السابقة محفوظة، ولا يُحتسب غيابه بعد اليوم.`)) return;
@@ -352,7 +352,7 @@
         const org = $('#sOrg').value.trim();
         const tz = parseInt($('#sTz').value, 10);
         const fgd = parseFloat($('#sForgot').value);
-        await setDoc(doc(db, 'settings', 'general'), { orgName: org, tzOffset: isNaN(tz) ? TZ_OFFSET_MIN : tz, ...(isSuper() ? { forgotDeductDays: isNaN(fgd) ? 0 : Math.min(1, Math.max(0, fgd)) } : {}), empNotice: ($('#sNotice') ? $('#sNotice').value.trim().slice(0, 300) : ''), updatedAt: serverTimestamp() }, { merge: true });
+        await setDoc(doc(db, 'settings', 'general'), { orgName: org, tzOffset: isNaN(tz) ? TZ_OFFSET_MIN : tz, ...(isSuper() ? { forgotDeductDays: isNaN(fgd) ? 0 : Math.min(1, Math.max(0, fgd)), bindPin: !!($('#sBindPin') && $('#sBindPin').value === '1'), edgeRequired: !!($('#sEdge') && $('#sEdge').value === '1') } : {}), empNotice: ($('#sNotice') ? $('#sNotice').value.trim().slice(0, 300) : ''), updatedAt: serverTimestamp() }, { merge: true });
         logAudit('settings_update', org || 'إعدادات المنشأة', `تحديث إعدادات المنشأة (التوقيت: ${tz})`);
         if (!isNaN(tz) && tz !== TZOFF) TZOFF = tz;
         await refresh('set', 'recs'); toast('حُفظت إعدادات المنشأة', 'good');
@@ -451,27 +451,13 @@
             batch.update(doc(db, 'employees', empId), { state: latestType, lastAt: latestTs, lastRecId: latestId });
           }
         }
+        /* B5: منح السلفة معاملة (Transaction): الرصيد يُقرأ طازجاً داخلها فلا يضيع تعديل مدير آخر ولا تُحسب السلفة على رصيد قديم من الذاكرة */
         if (st === 'approved' && r && r.kind === 'loan') {
-          await ensureFinanceLoaded();
-          const empDoc = S.emps.find(x => x.id === empId) || {};
-          const addAmt = parseFloat(r.type) || 0, newInst = parseFloat(r.typeName) || (+empDoc.loanInst || 0);
-          const newTotal = r2((+empDoc.loanTotal || 0) + addAmt);
-          if (empDoc.finIsolated) {
-            batch.set(doc(db, 'empFinance', empId), { loanTotal: newTotal, loanInst: newInst, updatedAt: serverTimestamp() }, { merge: true });
-          } else {
-            batch.update(doc(db, 'employees', empId), { loanTotal: newTotal, loanInst: newInst });
-          }
-          if (addAmt > 0) batch.set(doc(db, 'employees', empId, 'loanLedger', 'grant_' + id), { type: 'grant', delta: addAmt, balanceAfter: newTotal, reqId: id, note: 'سلفة بطلب معتمد', by: runBy(), at: serverTimestamp() });
-        }
-        await batch.commit();
-        if (st === 'approved' && r && r.kind === 'loan') {
-          const empDoc = S.emps.find(x => x.id === empId);
-          if (empDoc && empDoc.finIsolated) {
-            const addAmt = parseFloat(r.type) || 0, newInst = parseFloat(r.typeName) || (+empDoc.loanInst || 0);
-            const newTotal = r2((+empDoc.loanTotal || 0) + addAmt);
-            await saveEmpFinanceCache(empId, { ...(S.finMap && S.finMap.get(empId) || {}), loanTotal: newTotal, loanInst: newInst });
-          }
-        }
+          let g;
+          try { g = await commitLoanGrant(empId, id, parseFloat(r.type) || 0, r.typeName, { status: st, reviewedAt: serverTimestamp(), reviewedBy: (auth.currentUser && auth.currentUser.email) || '', ...extra }); }
+          catch (e) { if (e && e.code === 'already-decided') return toast('هذا الطلب لم يعد معلّقاً — حدّث الصفحة', 'err'); throw e; }
+          if (g.iso) await saveEmpFinanceCache(empId, { ...(S.finMap && S.finMap.get(empId) || {}), loanTotal: g.newTotal, loanInst: g.newInst });
+        } else await batch.commit();
         logAudit(st === 'approved' ? 'req_approve' : 'req_reject', r.empName || empId, `${r.kind} (${r.from}${r.to && r.to !== r.from ? ' ← ' + r.to : ''})`);
         if (st === 'approved' && r.kind === 'fix') { await RecCache.clear(); await invalidateMonthSummary(r.from); }
         else await RecCache.del('reqs|' + recScope() + '|' + reqWin());

@@ -187,7 +187,8 @@ service cloud.firestore {
   match /databases/{database}/documents {
     // المالك المعرّف عند توليد القواعد يبقى super_admin لاستعادة الوصول.
     function isOwnerEmail() {
-      return request.auth != null && request.auth.token.get('email', '') == '${email}';
+      return request.auth != null && request.auth.token.get('email', '') == '${email}'
+        && request.auth.token.get('email_verified', false) == true;
     }
     function uidAdminPath() {
       return /databases/$(database)/documents/admins/$(request.auth.uid);
@@ -376,6 +377,11 @@ service cloud.firestore {
         && request.resource.data.usedBy == request.auth.uid && request.resource.data.usedAt == request.time
         && existsAfter(/databases/$(database)/documents/employees/$(id)/joins/$(request.auth.uid));
     }
+    // تذاكر البصمة: يكتبها خادم الحافة وحده (حساب خدمة يتجاوز القواعد)؛ لا قراءة ولا كتابة من أي عميل، ويحذفها صاحبها في دفعة التسجيل نفسها (استهلاك).
+    match /punchTickets/{uid} {
+      allow read, create, update: if false;
+      allow delete: if request.auth != null && request.auth.uid == uid;
+    }
     match /payrollRuns/{rid} {
       allow read: if isSuperAdmin() || isPayrollAdmin();
       allow create: if (isSuperAdmin() || isPayrollAdmin()) && validRunCreate();
@@ -391,11 +397,31 @@ service cloud.firestore {
     }
     match /locations/{id} {
       allow read: if request.auth != null;
-      allow write: if isSuperAdmin() || isHrAdmin();
+      allow delete: if isSuperAdmin() || isHrAdmin();
+      // S5: سياسة طرق الحضور لا تُحفظ إلا صالحة (methods ⊆ gps/qr/bio وغير فارغة، mode = all|any).
+      // قيمة غير صالحة كانت تُسقط طريقة QR/البصمة أو تعطّل البصمة لكل موظفي الموقع.
+      allow create, update: if (isSuperAdmin() || isHrAdmin()) && validLocation();
+      function validLocation() {
+        let d = request.resource.data;
+        return d.get('methods', ['gps']) is list
+          && d.get('methods', ['gps']).size() > 0
+          && d.get('methods', ['gps']).hasOnly(['gps', 'qr', 'bio'])
+          && d.get('mode', 'all') in ['all', 'any'];
+      }
     }
     // أسرار رمز QR المتغيّر: لا يقرؤها الموظفون إطلاقاً (تستعملها قاعدة إنشاء البصمة وشاشة العرض عند الإدارة فقط).
     match /locSecrets/{id} {
       allow read, write: if isSuperAdmin() || isHrAdmin();
+    }
+    // رمز QR الحالي لكل موقع (تكتبه شاشة العرض كل 30 ثانية). الموظفون لا يقرؤونه إطلاقاً.
+    match /locQr/{id} {
+      allow read, delete: if isSuperAdmin() || isHrAdmin();
+      allow create, update: if (isSuperAdmin() || isHrAdmin())
+        && request.resource.data.keys().hasOnly(['cur', 'prev', 'at'])
+        && request.resource.data.keys().hasAll(['cur', 'at'])
+        && request.resource.data.cur is string && request.resource.data.cur.size() >= 16 && request.resource.data.cur.size() <= 128
+        && request.resource.data.get('prev', '') is string
+        && request.resource.data.at == request.time;
     }
     match /schedules/{id} {
       allow read: if request.auth != null;
@@ -468,9 +494,15 @@ service cloud.firestore {
           && resource.data.get('uid', null) == null
           && resource.data.get('devices', null) == null && resource.data.active == true;
       }
+      // S3: عند تفعيل settings/general.bindPin لا يُربط أول جهاز إلا برمز الإدارة (مستند joins يتحقق منه في الدفعة نفسها).
+      function bindPinOk() {
+        return !exists(/databases/$(database)/documents/settings/general)
+          || get(/databases/$(database)/documents/settings/general).data.get('bindPin', false) != true
+          || existsAfter(/databases/$(database)/documents/employees/$(empId)/joins/$(request.auth.uid));
+      }
       function claimDevice() {
         let n = request.resource.data;
-        return unclaimed() && (resource.data.get('deviceId', null) == null
+        return unclaimed() && bindPinOk() && (resource.data.get('deviceId', null) == null
             || n.get('rebindProof', null) == resource.data.get('deviceId', null))
           && n.diff(resource.data).affectedKeys().hasOnly(['deviceId', 'devices', 'rebindProof'])
           && n.devices.size() == 1 && n.devices.values().hasOnly([request.auth.uid])
@@ -565,17 +597,33 @@ service cloud.firestore {
             && d.accuracy >= 0 && d.accuracy <= 250
             && math.sqrt(dx * dx + dy * dy) <= l.radius + 10;
         }
-        // رمز QR = sha256(سر الموقع + ':' + رقم نافذة 30 ثانية)؛ السر في locSecrets لا يقرؤه إلا المشرفون وتقرؤه القاعدة وحدها.
+        // رمز QR: شاشة العرض (حساب إدارة) تكتب رمزاً عشوائياً جديداً كل 30 ثانية في locQr/{موقع} = {cur, prev, at}.
+        // لا يقرؤه الموظفون من Firestore؛ تقرؤه هذه القاعدة وحدها. المقارنة نص بنص دون أي تجزئة أو حساب وقت على الجهاز.
+        // الصلاحية: الرمز الحالي أو السابق (≈30–60 ثانية)، وبشرط أن تكون شاشة العرض حيّة (آخر تحديث خلال 150 ثانية بوقت الخادم).
         function qrOk(d) {
-          let s = get(/databases/$(database)/documents/locSecrets/$(d.locationId)).data.secret;
-          let w = math.floor(request.time.toMillis() / 30000);
-          return d.get('qr', '') is string
-            && (d.qr == hashing.sha256((s + ':' + string(w)).toUtf8()).toHexString()
-              || d.qr == hashing.sha256((s + ':' + string(w - 1)).toUtf8()).toHexString()
-              || d.qr == hashing.sha256((s + ':' + string(w + 1)).toUtf8()).toHexString());
+          let q = get(/databases/$(database)/documents/locQr/$(d.locationId)).data;
+          return d.get('qr', '') is string && d.qr.size() >= 16 && d.qr.size() <= 128
+            && request.time < q.at + duration.value(150, 's')
+            && (d.qr == q.cur || d.qr == q.get('prev', ''));
         }
         // بصمة الجهاز (WebAuthn): يشترط وجود إثبات التوقيع وأن الموظف سجّل مفتاحاً. التحقق من التوقيع نفسه يجري في التطبيق ويُحفظ الإثبات للتدقيق.
+        // P1أ: إذا فعّل المدير العام settings/general.edgeRequired فالبصمة لا تُقبل إلا بتذكرة من خادم الحافة (يتحقق من التوقيع فعلياً).
+        function edgeOn() {
+          return exists(/databases/$(database)/documents/settings/general)
+            && get(/databases/$(database)/documents/settings/general).data.get('edgeRequired', false) == true;
+        }
+        function ticketOk(d) {
+          let t = get(/databases/$(database)/documents/punchTickets/$(request.auth.uid)).data;
+          return d.get('ticket', '') is string && d.ticket == t.nonce
+            && t.empId == empId && t.locId == d.locationId && t.type == d.type
+            && 'bio' in t.m && request.time < t.exp
+            && !existsAfter(/databases/$(database)/documents/punchTickets/$(request.auth.uid));
+        }
         function bioOk(d, e) {
+          // تذكرة مُرسلة ⇒ يجب أن تكون صالحة دائماً؛ وبلا تذكرة يُقبل المسار القديم (wa) فقط إن لم تُلزَم المنشأة بخادم الحافة.
+          return (d.get('ticket', '') is string && d.get('ticket', '') != '') ? ticketOk(d) : (!edgeOn() && bioWaOk(d, e));
+        }
+        function bioWaOk(d, e) {
           return d.get('wa', '') is string && d.get('wa', '').size() >= 40 && d.get('wa', '').size() <= 1500
             && e.get('bio', null) != null;
         }
@@ -596,7 +644,7 @@ service cloud.firestore {
           // 50400000 = 14 ساعة = FORGOT_MS، وهو الحد الأدنى لمهلة نسيان الانصراف؛ مهلة الجدول (forgotMsOf) لا تقل عنه أبدًا،
           // فالقاعدة لا تمنع ما يسمح به التطبيق. يجب أن يبقى الرقمان متطابقين (يحرسه الاختبار tests/forgot-limit.test.mjs).
           return request.auth != null
-            && d.keys().hasOnly(['type','time','lat','lng','accuracy','distance','locationId','locationName','empName','deviceId','qr','wa','m'])
+            && d.keys().hasOnly(['type','time','lat','lng','accuracy','distance','locationId','locationName','empName','deviceId','qr','wa','m','ticket'])
             && d.keys().hasAll(['type','time','lat','lng','accuracy','distance','locationId','locationName','empName','deviceId'])
             && d.time == request.time && d.type in ['in', 'out']
             && d.lat is number && d.lng is number

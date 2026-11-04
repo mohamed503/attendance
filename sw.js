@@ -20,7 +20,8 @@ self.addEventListener('install', e => {
 self.addEventListener('activate', e => {
   e.waitUntil((async () => {
     const keys = await caches.keys();
-    await Promise.all(keys.filter(k => k !== VER).map(k => caches.delete(k)));
+    /* W1: لا نحذف إلا caches ميقات القديمة؛ فالنطاق قد يشاركه تطبيق آخر */
+    await Promise.all(keys.filter(k => k.startsWith('meqat-') && k !== VER).map(k => caches.delete(k)));
     await self.clients.claim();
   })());
 });

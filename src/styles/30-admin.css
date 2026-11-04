@@ -15,9 +15,9 @@
 .phead small{display:flex;align-items:center;gap:8px;flex-wrap:wrap;color:var(--mute);font-weight:500;font-size:14px}
 .phead h1{font-size:30px;line-height:1.2;font-weight:700;margin:2px 0 0}
 .ptools{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
-.ptools .ib,.ptools .pwa-btn{height:40px;border-radius:var(--r-md);background:var(--card);border:1px solid var(--line);color:var(--ink)}
+.ptools .ib,.ptools .pwa-btn,.ptools .notif-btn{height:40px;border-radius:var(--r-md);background:var(--card);border:1px solid var(--line);color:var(--ink)}
 .ptools .ib{width:40px;display:grid;place-items:center}
-.ptools .ib:hover,.ptools .pwa-btn:hover{background:var(--pri-l);color:var(--pri-t)}
+.ptools .ib:hover,.ptools .pwa-btn:hover,.ptools .notif-btn:hover{background:var(--pri-l);color:var(--pri-t)}
 .ptools [data-act=logout]{color:var(--abs-t)}
 
 /* شاشة اليوم (تُستبدل ببطاقات الحلقة/المسطرة في الخطوة 3.3) */
@@ -81,7 +81,7 @@
   .rail-nav .tab.on{background:var(--pri-l);color:var(--pri-t)}.rail-nav .tab.on::before{display:none}
   .rail-nav .tab em{position:absolute;top:2px;inset-inline-end:50%;margin:0 -22px 0 0;background:var(--abs);color:#fff;min-width:17px;height:17px;font-size:10.5px;padding:0 4px}
   .wrap.main{padding:18px 14px 120px}.phead h1{font-size:26px}.phead{margin-bottom:16px}
-  .ptools{width:100%}.ptools .ib,.ptools .pwa-btn{height:42px}.ptools .ib{width:42px}
+  .ptools{width:100%}.ptools .ib,.ptools .pwa-btn,.ptools .notif-btn{height:42px}.ptools .ib{width:42px}
   .tile{padding:16px 18px;min-height:120px}.tile .big{font-size:52px}.t-hero .big{font-size:92px}.tile .tl{font-size:14px}
   .tr-m{grid-template-columns:1fr 1fr;gap:10px 12px}.tr-p{grid-column:1/-1}.trow{padding:14px}
   .act-menu{position:static}.act-drop{inset-inline:12px;width:auto;top:auto}

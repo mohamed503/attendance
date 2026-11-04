@@ -69,3 +69,28 @@ test('تكرار الاعتماد/الطباعة لا يخصم مرتين: ال�
   const b = planInstallments([{ empId: 'e1', dedLoan: 150 }], { e1: { loanTotal: 350 } }, 'runX', BY).items[0].id;
   assert.equal(a, b);       // القاعدة تقبل أول create فقط
 });
+
+/* ---- B4: القسط لا يتجاوز الصافي قبل القسط، والفرق يتأجل (الرصيد لا ينقص بما لم يُستقطع فعلاً) ---- */
+function rowWith(emp, recs = []) {
+  const env = makeEnv(); env.S.scheds = [fixedSched()];
+  env.S.emps = [{ id: 'e1', name: 'م', active: true, payMode: 'monthly', scheduleId: 'sc1', startDate: '2026-01-01', ...emp }];
+  env.S.recs = recs; return row(env, 'e1');
+}
+test('B4: موظف صافيه صفر (جزاء يستغرق الراتب) لا يُسدَّد قسطه ولا يُشطب من الدفتر', () => {
+  const r = rowWith({ payAmount: 3100, loanTotal: 500, loanInst: 150, penalty: 99999, adjMonth: '2026-10' }, []);   // غياب الشهر + جزاء
+  assert.equal(r.net, 0);
+  assert.equal(r.dedLoan, 0, 'القسط يجب ألا يتجاوز الصافي قبل القسط');
+  assert.equal(planInstallments([r], { e1: { loanTotal: 500 } }, 'r1', BY).items.length, 0);
+});
+test('B4: صافٍ أقل من القسط ⇒ يُستقطع المتاح فقط والباقي يبقى في الرصيد', () => {
+  const full = rowWith({ payAmount: 3100, loanTotal: 0, loanInst: 0 }, workDays().flatMap(k => punch('e1', k, 8, 16)));
+  const loanInst = full.net + 100;                                               // قسط أكبر من الصافي كله
+  const r = rowWith({ payAmount: 3100, loanTotal: loanInst * 3, loanInst }, workDays().flatMap(k => punch('e1', k, 8, 16)));
+  assert.ok(r.dedLoan > 0 && r.dedLoan < loanInst, 'المتاح فقط: ' + r.dedLoan);
+  assert.equal(r.net, 0, 'الصافي لا ينزل عن صفر');
+  assert.ok(Math.abs(r.dedLoan - full.net) < 0.011, `المستقطع ${r.dedLoan} يساوي الصافي قبل القسط ${full.net}`);
+});
+test('B4: الحالة العادية لم تتغير (قسط أقل من الصافي)', () => {
+  const r = rowWith({ payAmount: 3100, loanTotal: 500, loanInst: 150 }, workDays().flatMap(k => punch('e1', k, 8, 16)));
+  assert.equal(r.dedLoan, 150);
+});

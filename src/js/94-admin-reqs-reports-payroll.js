@@ -14,8 +14,8 @@
       if (r.kind === 'task') return `<b>مهمة</b> ${esc(r.taskName || '')} × <b>${+(r.qtyApproved ?? r.qty) || 0}</b> · ${fmtDate(dayStart(r.from))}${r.status === 'approved' ? ` <span class="badge b-ok">${+r.amount || 0}</span>` : ''}`;
       if (r.type === 'offline_gps') {
         const meta = parseOfflineNote(r.note);
-        const weak = meta && meta.acc > 100, pendOff = r.status === 'pending';
-        return `<span class="badge ${pendOff ? 'b-warn' : 'b-pri'}" title="الإحداثيات والوقت مصدرهما جهاز الموظف ولا يمكن التحقق منهما من الخادم">📍 بصمة أوفلاين${pendOff ? ' — غير موثّقة، راجعها قبل الاعتماد' : ''}</span> يوم ${fmtDate(dayStart(r.from))}${r.fixIn ? ` · حضور <b>${fmtHM(esc(r.fixIn))}</b>` : ''}${r.fixOut ? ` · انصراف <b>${fmtHM(esc(r.fixOut))}</b>` : ''}${r.typeName ? ` · <b>${esc(r.typeName)}</b>` : ''}${meta ? ` <span class="badge ${weak ? 'b-warn' : 'b-pri'}" title="${weak ? 'دقة GPS ضعيفة (أكثر من 100م)' : 'المسافة عن الموقع (دقة GPS)'}">${weak ? '⚠️ ' : ''}${meta.dist}م (±${meta.acc}م)</span> <a class="btn sm sec" style="text-decoration:none;padding:2px 8px;font-size:11.5px" href="${mapLink(meta.lat, meta.lng)}" target="_blank">${ic('map', 13)} خريطة</a>` : ''}`;
+        const weak = meta && meta.acc != null && meta.acc > 100, pendOff = r.status === 'pending';
+        return `<span class="badge ${pendOff ? 'b-warn' : 'b-pri'}" title="الإحداثيات والوقت مصدرهما جهاز الموظف ولا يمكن التحقق منهما من الخادم">📍 بصمة أوفلاين${pendOff ? ' — غير موثّقة، راجعها قبل الاعتماد' : ''}</span> يوم ${fmtDate(dayStart(r.from))}${r.fixIn ? ` · حضور <b>${fmtHM(esc(r.fixIn))}</b>` : ''}${r.fixOut ? ` · انصراف <b>${fmtHM(esc(r.fixOut))}</b>` : ''}${r.typeName ? ` · <b>${esc(r.typeName)}</b>` : ''}${meta ? ` <span class="badge ${weak ? 'b-warn' : 'b-pri'}" title="${weak ? 'دقة GPS ضعيفة (أكثر من 100م)' : 'المسافة عن الموقع (دقة GPS)'}">${weak ? '⚠️ ' : ''}${esc(meta.dist == null ? '؟' : Math.round(meta.dist))}م (±${esc(meta.acc == null ? '؟' : Math.round(meta.acc))}م)</span>${meta.lat != null && meta.lng != null ? ` <a class="btn sm sec" style="text-decoration:none;padding:2px 8px;font-size:11.5px" href="${esc(mapLink(meta.lat, meta.lng))}" target="_blank" rel="noopener noreferrer">${ic('map', 13)} خريطة</a>` : ''}` : ''}`;
       }
       return `<b>تصحيح</b> يوم ${fmtDate(dayStart(r.from))}${r.fixIn ? ` · حضور <b>${fmtHM(esc(r.fixIn))}</b>` : ''}${r.fixOut ? ` · انصراف <b>${fmtHM(esc(r.fixOut))}</b>` : ''}`;
     };
@@ -27,7 +27,7 @@
       return esc(r.note || '—');
     };
     el.innerHTML = `<div class="card">${ch('send', `طلبات بانتظار المراجعة (${pend.length})`)}<div class="tw"><table><thead><tr><th>الموظف</th><th>تفاصيل الطلب</th><th>ملاحظة</th><th>الحالة</th><th>إجراءات</th></tr></thead><tbody>
-    ${pend.map(r => `<tr><td><div class="who"><span class="av">${ini(cname(r.empId))}</span>${esc(cname(r.empId))}</div></td><td>${det(r)}</td><td class="muted">${fmtReqNote(r)}</td><td><span class="badge b-warn">بانتظار المراجعة</span></td><td><div class="acts"><button class="btn sm ok" data-act="appr" data-id="${r.id}" data-e="${r.empId}">${ic('check', 16)} اعتماد</button> <button class="btn sm bad" data-act="rej" data-id="${r.id}" data-e="${r.empId}">${ic('x', 16)} رفض</button></div></td></tr>`).join('') || '<tr><td colspan="5" class="muted center">لا توجد طلبات معلّقة حالياً</td></tr>'}
+    ${pend.map(r => `<tr><td><div class="who"><span class="av">${ini(cname(r.empId))}</span>${esc(cname(r.empId))}</div></td><td>${det(r)}</td><td class="muted">${fmtReqNote(r)}</td><td><span class="badge b-warn">بانتظار المراجعة</span></td><td><div class="acts"><button class="btn sm ok" data-act="appr" data-id="${esc(r.id)}" data-e="${esc(r.empId)}">${ic('check', 16)} اعتماد</button> <button class="btn sm bad" data-act="rej" data-id="${esc(r.id)}" data-e="${esc(r.empId)}">${ic('x', 16)} رفض</button></div></td></tr>`).join('') || '<tr><td colspan="5" class="muted center">لا توجد طلبات معلّقة حالياً</td></tr>'}
     </tbody></table></div></div>
     <div class="g2" style="align-items:start">
       <div class="card">${ch('check', 'آخر القرارات المعتمدة/المرفوضة')}<div class="tw"><table><thead><tr><th>الموظف</th><th>الطلب</th><th>القرار</th></tr></thead><tbody>
@@ -196,12 +196,15 @@
       const adj = activeAdj(e, S.from, S.to);
       const allowBonus = (+e.allowance || 0) + adj.bonus;
       const dedPen = adj.penalty;
-      const dedLoan = (+e.loanTotal > 0 && +e.loanInst > 0) ? Math.min(+e.loanTotal, +e.loanInst) : 0;
       const grossAfterAtt = Math.max(0, base + otPay + allowBonus - dedLate - dedEarly - dedAbs - dedForgot);
       const statDetail = e.lyStatutory ? calcLibyanStatutory(grossAfterAtt, e.familyStatus) : null;
       const statDed = statDetail ? statDetail.total : 0;
       const paidH = regH;
-      const net = Math.max(0, grossAfterAtt - statDed - dedPen - dedLoan);
+      /* B4: القسط لا يتجاوز ما بقي من الصافي فعلاً (مقرّباً لأسفل لأقرب 0.01)؛ ما لا يُستقطع يبقى في رصيد السلفة ويتأجل
+         بدل أن يُشطب من الدفتر دون استقطاع. */
+      const preLoan = Math.max(0, grossAfterAtt - statDed - dedPen);
+      const dedLoan = (+e.loanTotal > 0 && +e.loanInst > 0) ? Math.min(+e.loanTotal, +e.loanInst, Math.floor(preLoan * 100 + 1e-6) / 100) : 0;
+      const net = Math.max(0, preLoan - dedLoan);
       return { empId: e.id, name: e.name, dept, jobTitle, nationalId, bankName, iban, pm, amt, paidH, otEq: g.otEq, base, otPay, allowBonus, dedLate, dedEarly, dedAbs, dedForgot, dedLoan, dedPen, statDed, statDetail, net, absent: g.absent, unpaidDays: g.lv.filter(x => x.pct === 0).length, payDays, lateMin: g.late, earlyMin: g.early, forgotDays: g.forgotDays, taskQty: 0 };
     });
   }
@@ -231,8 +234,18 @@
     c.set(id, rows);
     return rows;
   }
+  /* B6: لا مسيّر (إنشاء/إعادة حساب/اعتماد) ما لم تكن الماليات المعزولة محمّلة فعلاً؛ وإلا نحسب رواتب بقيم ناقصة. يحاول إعادة التحميل مرة واحدة. */
+  async function finReady() {
+    const need = S.emps.some(e => e.finIsolated);
+    if (!need) return true;
+    if (!S.finLoaded) { try { await ensureFinanceLoaded(true); } catch (e) { console.warn(e); } }
+    if (S.finLoaded && !S.finErr) return true;
+    toast('تعذر تحميل البيانات المالية للموظفين؛ لن يُنشأ المسيّر ببيانات ناقصة. تحقق من الاتصال وأعد المحاولة.', 'err');
+    return false;
+  }
   async function runSave(existingId) {
     if (!(isSuper() || isPay())) return toast('غير مسموح', 'err');
+    if (!await finReady()) return;
     if (S.emp) return toast('ألغِ فلتر الموظف أولًا: المسيّر يشمل كل الموظفين', 'err');
     if (!S.from || !S.to || S.from > S.to) return toast('حدد فترة صحيحة', 'err');
     if ((Date.parse(S.to) - Date.parse(S.from)) / 86400000 > 62) return toast('الفترة أطول من 63 يومًا', 'err');
@@ -271,6 +284,7 @@
   async function runApprove(id) {
     const run = (S.runs || []).find(r => r.id === id); if (!run || run.status !== 'draft') return;
     if (!isSuper()) return toast('الاعتماد للمدير العام فقط', 'err');
+    if (!await finReady()) return;
     if (run.to >= dayKey(new Date())) return toast('لا يمكن اعتماد مسيّر قبل انتهاء فترته', 'err');
     if (!await mqConfirm(`اعتماد مسيّر ${run.from} ← ${run.to}؟\nبعد الاعتماد لا يمكن تعديل أرقامه أو حذفه. التصحيح يكون في الفترة التالية.`)) return;
     try {
@@ -304,9 +318,13 @@
         if (!await mqConfirm(`تنبيهات المراجعة: ${sm.warn} تحذير و${sm.info} ملاحظة\n\n` + alerts.slice(0, 10).map(a => '• ' + a.text).join('\n') + (alerts.length > 10 ? `\n… و${alerts.length - 10} أخرى` : '') + '\n\nهل تعتمد المسيّر رغم ذلك؟')) return;
       }
       await updateDoc(doc(db, 'payrollRuns', id), { status: 'approved', approvedBy: runBy(), approvedAt: serverTimestamp(), rowsHash, rowsCount: snap.size });
+      /* B1: runPostLedger تقرأ حالة المسيّر من الذاكرة المحلية؛ فبدون هذا التحديث كانت تراها «مسودة» وتخرج بنجاح دون أي قيد سلفة */
+      run.status = 'approved'; run.rowsHash = rowsHash; run.rowsCount = snap.size;
       logAudit('run_approve', `${run.from} ← ${run.to}`, `اعتماد وتجميد المسيّر (${snap.size} موظف · البصمة: ${rowsHash.slice(0, 12)}…)`);
       toast('اعتُمد المسيّر وجُمّدت أرقامه', 'good');
-      if (run.from.slice(0, 7) === run.to.slice(0, 7) && run.to < dayKey(new Date()).slice(0, 7) + '-01') {
+      /* B2: لا نحفظ الملخص الشهري إلا لو غطّت السجلات المحمّلة (S.from..S.to) الشهر كله بلا فشل أو فلتر موظف؛ وإلا يُترك لمسار fetchRecsCached الذي يجلب الشهر كاملاً */
+      if (run.from.slice(0, 7) === run.to.slice(0, 7) && run.to < dayKey(new Date()).slice(0, 7) + '-01'
+          && monthFullyLoaded(run.from.slice(0, 7), S.from, S.to, (S.recsFail || []).length, !!S.emp)) {
         const mk = run.from.slice(0, 7), ms = dayStart(mk + '-01'), me = dayStart(nextMonthKey(mk) + '-01');
         const mRecs = (S.recs || []).filter(r => r.t && r.t >= ms && r.t < me);
         if (mRecs.length) saveMonthSummaryDoc(mk, mRecs).catch(() => {});
@@ -423,8 +441,44 @@
   }
   /* ---- دفتر السلف ---- */
   const ledgerCol = id => collection(db, 'employees', id, 'loanLedger');
+  /* B5: كل تعديل لرصيد السلفة (منح/قسط) معاملة: يُقرأ الرصيد طازجاً من الخادم داخلها وتُكتب القيود والرصيد معاً.
+     إن تغيّر المستند من جهاز آخر أثناء ذلك أعاد SDK تنفيذ المعاملة تلقائياً بدل أن يطغى على التعديل. */
+  const finOf = (ed, fs) => (ed.finIsolated && fs && fs.exists() ? fs.data() : ed);
+  async function commitLoanGrant(empId, reqId, addAmt, instRaw, decision) {
+    const reqRef = doc(db, 'employees', empId, 'requests', reqId), empRef = doc(db, 'employees', empId), finRef = doc(db, 'empFinance', empId);
+    const ledRef = doc(db, 'employees', empId, 'loanLedger', 'grant_' + reqId);
+    return runTransaction(db, async tx => {
+      const rq = await tx.get(reqRef);
+      if (!rq.exists() || rq.data().status !== 'pending') { const e = new Error('already-decided'); e.code = 'already-decided'; throw e; }
+      const es = await tx.get(empRef); if (!es.exists()) { const e = new Error('no-employee'); e.code = 'no-employee'; throw e; }
+      const ed = es.data(), iso = !!ed.finIsolated, fs = iso ? await tx.get(finRef) : null, cf = finOf(ed, fs);
+      const newTotal = r2((+cf.loanTotal || 0) + addAmt), newInst = parseFloat(instRaw) || (+cf.loanInst || 0);
+      tx.update(reqRef, decision);
+      if (iso) tx.set(finRef, { loanTotal: newTotal, loanInst: newInst, updatedAt: serverTimestamp() }, { merge: true });
+      else tx.update(empRef, { loanTotal: newTotal, loanInst: newInst });
+      if (addAmt > 0) tx.set(ledRef, { type: 'grant', delta: addAmt, balanceAfter: newTotal, reqId, note: 'سلفة بطلب معتمد', by: runBy(), at: serverTimestamp() });
+      return { newTotal, newInst, iso };
+    });
+  }
+  /* it: عنصر من planInstallments. يعيد { skipped } إن كان القيد موجوداً، أو { newBalance }، أو يرمي low-balance */
+  async function commitInstallment(it) {
+    const empRef = doc(db, 'employees', it.empId), finRef = doc(db, 'empFinance', it.empId), ledRef = doc(db, 'employees', it.empId, 'loanLedger', it.id);
+    return runTransaction(db, async tx => {
+      if ((await tx.get(ledRef)).exists()) return { skipped: true };
+      const es = await tx.get(empRef); if (!es.exists()) { const e = new Error('no-employee'); e.code = 'no-employee'; throw e; }
+      const ed = es.data(), iso = !!ed.finIsolated, fs = iso ? await tx.get(finRef) : null;
+      const cur = +finOf(ed, fs).loanTotal || 0, d = -it.entry.delta;
+      if (cur + 1e-9 < d) { const e = new Error('low-balance'); e.code = 'low-balance'; e.balance = cur; throw e; }
+      const nb = Math.max(0, r2(cur - d));
+      tx.set(ledRef, { ...it.entry, balanceAfter: nb, at: serverTimestamp() });
+      if (iso) { tx.update(empRef, { loanTotal: null }); tx.set(finRef, { loanTotal: nb, updatedAt: serverTimestamp() }, { merge: true }); }
+      else tx.update(empRef, { loanTotal: nb });
+      return { newBalance: nb };
+    });
+  }
   async function runPostLedger(id, preloadedRows = null) {
-    const run = (S.runs || []).find(r => r.id === id); if (!run || !['approved', 'paid'].includes(run.status)) return true;
+    const run = (S.runs || []).find(r => r.id === id);
+    if (!run || !['approved', 'paid'].includes(run.status)) { console.warn('runPostLedger: المسيّر غير معتمد أو غير موجود محلياً', id, run && run.status); return false; }
     const allRows = preloadedRows || await runRowsOf(id);
     const rows = allRows.filter(r => +r.dedLoan > 0);
     if (!rows.length) return true;
@@ -447,18 +501,17 @@
     }));
     const plan = planInstallments(missing, emps, id, runBy());
     if (plan.problems.length) { await mqAlert('تعذر تسجيل قيود السلف:\n' + plan.problems.join('\n')); return false; }
-    for (let i = 0; i < plan.items.length; i += 8) {
-      const b = writeBatch(db);
-      plan.items.slice(i, i + 8).forEach(it => {
-        const empObj = S.emps.find(x => x.id === it.empId);
-        b.set(doc(db, 'employees', it.empId, 'loanLedger', it.id), { ...it.entry, at: serverTimestamp() });
-        b.update(doc(db, 'employees', it.empId), { loanTotal: (empObj && empObj.finIsolated) ? null : it.newBalance });
-        if (empObj && empObj.finIsolated) b.set(doc(db, 'empFinance', it.empId), { loanTotal: it.newBalance, updatedAt: serverTimestamp() }, { merge: true });
-      });
-      await b.commit();
+    const done = [], failed = [];
+    for (const it of plan.items) {
+      try { const res = await commitInstallment(it); if (!res.skipped) done.push({ it, nb: res.newBalance }); }
+      catch (e) {
+        if (e && e.code === 'low-balance') failed.push(`${(rows.find(x => x.empId === it.empId) || {}).name || it.empId}: الرصيد الحالي (${r2(e.balance)}) أقل من القسط`);
+        else throw e;
+      }
     }
-    plan.items.forEach(it => { const e = S.emps.find(x => x.id === it.empId); if (e) e.loanTotal = it.newBalance; });
-    toast(`سُجّلت ${plan.items.length} قيود أقساط سلف`, 'good'); return true;
+    done.forEach(({ it, nb }) => { const e = S.emps.find(x => x.id === it.empId); if (e) e.loanTotal = nb; });
+    if (failed.length) { await mqAlert('تعذر تسجيل بعض قيود السلف:\n' + failed.join('\n')); return false; }
+    toast(`سُجّلت ${done.length} قيود أقساط سلف`, 'good'); return true;
   }
   async function runLedgerAct(id) {
     try { const ok = await runPostLedger(id); if (ok) toast('قيود السلف مكتملة لهذا المسيّر', 'good'); }
@@ -552,7 +605,7 @@
 
   function viewRecs(el) {
     if (!['super_admin', 'payroll_admin'].includes(S.role) && S.recSub === 'payroll') S.recSub = 'summary';
-    if (S.recSub === 'payroll' && !S.finLoaded && (isSuper() || isPay()) && S.emps.some(e => e.finIsolated)) {
+    if (S.recSub === 'payroll' && !S.finLoaded && !S.finErr && (isSuper() || isPay()) && S.emps.some(e => e.finIsolated)) {
       ensureFinanceLoaded().then(() => { if ($('#content') && S.tab === 'recs' && S.recSub === 'payroll') viewRecs($('#content')); });
     }
     const sum = summary();

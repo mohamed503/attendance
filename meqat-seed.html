@@ -59,7 +59,7 @@ input:focus,textarea:focus{outline:none;border-color:var(--pri)}
 </div>
 <script type="module">
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js';
-import { getFirestore, doc, getDoc, getDocs, setDoc, addDoc, collection, writeBatch, serverTimestamp, Timestamp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
+import { getFirestore, doc, getDoc, getDocs, setDoc, collection, writeBatch, serverTimestamp, Timestamp } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import { getAuth, signInWithEmailAndPassword } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
 
 const $ = (s, r = document) => r.querySelector(s);
@@ -67,15 +67,28 @@ const pad = n => String(n).padStart(2, '0');
 const todayKey = () => { const d = new Date(); return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`; };
 const addDays = (key, n) => { const d = new Date(key + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
 const dow = key => new Date(key + 'T00:00:00Z').getUTCDay();
-const uid10 = () => Math.random().toString(36).slice(2, 12);
+/* T1: معرّفات ثابتة للبذر ⇒ إعادة التشغيل لا تكرّر البيانات (تكتب فوق نفس المستندات) */
+const sid = (...p) => ['seed', ...p].join('_').replace(/[^A-Za-z0-9_-]/g, '-');
+/* T1: قراءة بلوك firebaseConfig الملصوق دون eval: أزواج مفتاح: "قيمة نصية" فقط، ولا يُنفَّذ أي كود */
+function parseFirebaseConfig(text) {
+  const m = String(text || '').match(/\{[\s\S]*\}/);
+  if (!m) return null;
+  const out = {}, re = /["']?([A-Za-z_][A-Za-z0-9_]*)["']?\s*:\s*(?:"([^"\\]*)"|'([^'\\]*)')/g;
+  let x; while ((x = re.exec(m[0]))) out[x[1]] = x[2] !== undefined ? x[2] : x[3];
+  return Object.keys(out).length ? out : null;
+}
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 function log(m, e) { const l = $('#log'); l.textContent += (l.textContent === '— جاهز — أدخل البيانات واضغط «اتصال وتهيئة».' ? '' : '\n') + (e ? '' : '• ') + m; if (e) l.textContent += '\n' + (e.message || e); l.scrollTop = l.scrollHeight; }
 const mark = (id, cls) => { const s = $(id); s.textContent = cls === 'done' ? s.textContent.replace('', '') : s.textContent; s.className = 'step ' + cls; };
 
 const geoK = lat => { const p = lat * Math.PI / 180; return { ky: 111132.92 - 559.82 * Math.cos(2 * p) + 1.175 * Math.cos(4 * p), kx: 111412.84 * Math.cos(p) - 93.5 * Math.cos(3 * p) + 0.118 * Math.cos(5 * p) }; };
 const OT_DEF = { mode: 'hours', baseH: 0, min: 15, step: 15, capH: 0, rateNormal: 1.5, rateRest: 2, rateHoliday: 2, offDayAll: true };
-const rnd = (a, b) => a + Math.floor(Math.random() * (b - a + 1));
-const chance = p => Math.random() < p;
+/* T1: مولّد عشوائي حتمي (mulberry32) ببذرة من تاريخ اليوم: إعادة التشغيل في نفس اليوم تنتج نفس المستندات بالضبط */
+let _seed = 1;
+const reseed = () => { _seed = [...todayKey()].reduce((a, c) => (a * 31 + c.charCodeAt(0)) >>> 0, 7); };
+const rand = () => { _seed = (_seed + 0x6D2B79F5) >>> 0; let t = _seed; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+const rnd = (a, b) => a + Math.floor(rand() * (b - a + 1));
+const chance = p => rand() < p;
 
 let db = null, auth = null, ADMIN = null, EP = [];
 let SCHED_FIXED = '', SCHED_ROT = '', LOC_HOME = '';
@@ -109,11 +122,8 @@ const holidaysSeed = () => [
 const names = ['أحمد الطاهر', 'محمد الشريف', 'خالد العماري', 'سمير بن يوسف', 'يوسف الجبالي', 'عمر المنصوري', 'ليلى الأصفر', 'نورا الطرابلسي', 'سارة الغزالي', 'ريم بن سالم', 'طارق الهادي (مهام)', 'فاطمة الوزني (مهام)'];
 
 async function connect() {
-  const raw = $('#cfg').value;
-  const m = raw.match(/\{[\s\S]*\}/);
-  if (!m) return log('الصق بلوك firebaseConfig أولاً', new Error('الصق بلوك firebaseConfig أولاً'));
-  let c;
-  try { c = eval('(' + m[0] + ')'); } catch { return log('بلوك الإعدادات غير صالح', new Error('JSON غير صالح')); }
+  const c = parseFirebaseConfig($('#cfg').value);
+  if (!c) return log('الصق بلوك firebaseConfig أولاً', new Error('الصق بلوك firebaseConfig أولاً'));
   if (!c.apiKey || !c.projectId) return log('ناقصة: apiKey / projectId', new Error('ناقصة: apiKey / projectId'));
   $('#bInit').disabled = true;
   try {
@@ -122,6 +132,10 @@ async function connect() {
     log('جارٍ الدخول بـ ' + ($('#email').value || '؟'));
     ADMIN = await signInWithEmailAndPassword(auth, $('#email').value.trim(), $('#pass').value);
     log('تم الدخول: ' + (ADMIN.user.email || ADMIN.user.uid));
+    /* T1: تأكيد المشروع قبل أي كتابة — الأداة للعروض التجريبية فقط */
+    if (!confirm('ستُكتب بيانات تجريبية في مشروع Firebase:\n\n' + c.projectId + '\n\nهل هذا مشروع العرض التجريبي (وليس مشروع عميل حقيقي)؟')) {
+      log('أُلغيت العملية: لم يُكتب أي شيء.'); $('#bInit').disabled = false; return;
+    }
     await initBase();
     ['#bEmps', '#bRecs', '#bReqs', '#bAll'].forEach(s => $(s).disabled = false);
     mark('#st0', 'done');
@@ -131,18 +145,24 @@ async function connect() {
 
 async function initBase() {
   log('تهيئة الأساس (الإعدادات + الأنماط + الجداول + المواقع + العطل)…');
-  await setDoc(doc(db, 'settings', 'general'), { orgName: $('#org').value.trim() || 'نسخة عرض ميقات', tzOffset: 120, updatedAt: serverTimestamp() });
-  for (const t of taskTypesSeed()) await addDoc(collection(db, 'taskTypes'), t);
-  const fs = fixedSched(), rs = rotSched();
-  SCHED_FIXED = (await addDoc(collection(db, 'schedules'), fs)).id;
-  SCHED_ROT = (await addDoc(collection(db, 'schedules'), rs)).id;
-  const ls = locsSeed();
-  for (const l of ls) { const r = await addDoc(collection(db, 'locations'), l); if (!LOC_HOME) LOC_HOME = r.id; }
-  for (const h of holidaysSeed()) await addDoc(collection(db, 'holidays'), h);
+  /* T1: لا نكتب فوق إعدادات موجودة؛ والبقية بمعرّفات ثابتة فلا تتكرر عند إعادة التشغيل */
+  const gRef = doc(db, 'settings', 'general');
+  if ((await getDoc(gRef)).exists()) log('settings/general موجودة — تُركت كما هي (لم تُستبدل).');
+  else await setDoc(gRef, { orgName: $('#org').value.trim() || 'نسخة عرض ميقات', tzOffset: 120, updatedAt: serverTimestamp() });
+  let i = 0;
+  for (const t of taskTypesSeed()) await setDoc(doc(db, 'taskTypes', sid('task', ++i)), t);
+  SCHED_FIXED = sid('sched', 'fixed'); SCHED_ROT = sid('sched', 'rot');
+  await setDoc(doc(db, 'schedules', SCHED_FIXED), fixedSched());
+  await setDoc(doc(db, 'schedules', SCHED_ROT), rotSched());
+  i = 0;
+  for (const l of locsSeed()) { const id = sid('loc', ++i); await setDoc(doc(db, 'locations', id), l); if (!LOC_HOME) LOC_HOME = id; }
+  i = 0;
+  for (const h of holidaysSeed()) await setDoc(doc(db, 'holidays', sid('hol', ++i)), h);
   log('الأساس جاهز: 6 أنماط مهام + جدولان + 3 مواقع + 3 عطل.');
 }
 
 async function seedEmps() {
+  reseed();
   log('بذر 12 موظفاً…');
   EP = [];
   const today = todayKey(), start = addDays(today, -40);
@@ -159,7 +179,8 @@ async function seedEmps() {
       defs.push({ name: nm.slice(0, nm.indexOf(' (')), phone: '09140' + String(300000 + i * 53).slice(0, 5), active: true, deviceId: null, uid: null, scheduleId: '', rotOffset: 0, startDate: start, dept: 'الإدارة', empType: 'staff', payMode: 'none', payAmount: 0, leaveQuota: 21, locs: [], createdAt: serverTimestamp() });
     }
   });
-  for (const d of defs) { const id = (await addDoc(collection(db, 'employees'), d)).id; EP.push({ id, name: d.name, empType: d.empType, scheduleId: d.scheduleId, rotOffset: d.rotOffset }); }
+  let ei = 0;
+  for (const d of defs) { const id = sid('emp', ++ei); const ref = doc(db, 'employees', id); if (!(await getDoc(ref)).exists()) await setDoc(ref, d); EP.push({ id, name: d.name, empType: d.empType, scheduleId: d.scheduleId, rotOffset: d.rotOffset }); }
   log(`أُنشئ ${EP.length} موظفاً (8 دوام · 2 مهام · 2 بلا جدول)`);
   mark('#st1', 'done');
 }
@@ -177,16 +198,17 @@ function workDay(sched, key, off) {
 }
 
 async function seedRecords() {
+  reseed();
   const N = Math.max(7, Math.min(60, +$('#days').value || 30));
   log(`توليد سجلات آخر ${N} يوماً لكل موظفي الدوام…`);
   const hols = holidaysSeed().map(h => h.date);
-  let made = 0, bat = writeBatch(db), cnt = 0, flush = () => { ; return bat.commit().then(() => { bat = writeBatch(db); cnt = 0; }); };
+  let made = 0; const ops = [];
   const mk = (emp, key, type, time, note) => {
     const d = new Date(`${key}T${time}:00`);
     if (isNaN(d)) return;
-    const lat = 32.8872 + (Math.random() - 0.5) * 0.0012, lng = 13.1913 + (Math.random() - 0.5) * 0.0012;
-    bat.set(doc(db, 'employees', emp.id, 'records', uid10()), { type, time: Timestamp.fromDate(d), lat, lng, accuracy: rnd(6, 30), distance: rnd(4, 45), locationId: LOC_HOME, locationName: 'الموقع الرئيسي (طرابلس)', empName: emp.name, deviceId: 'DEMO-SEED' });
-    cnt++; made++; if (cnt >= 380) { flush(); }
+    const lat = 32.8872 + (rand() - 0.5) * 0.0012, lng = 13.1913 + (rand() - 0.5) * 0.0012;
+    ops.push([doc(db, 'employees', emp.id, 'records', sid(key, type)), { type, time: Timestamp.fromDate(d), lat, lng, accuracy: rnd(6, 30), distance: rnd(4, 45), locationId: LOC_HOME, locationName: 'الموقع الرئيسي (طرابلس)', empName: emp.name, deviceId: 'DEMO-SEED' }]);
+    made++;
   };
   for (const emp of EP.filter(e => e.scheduleId)) {
     const sdata = (await getDoc(doc(db, 'schedules', emp.scheduleId))).data();
@@ -204,20 +226,23 @@ async function seedRecords() {
       } else mk(emp, key, 'out', w.e);
     }
   }
-  await flush();
+  /* T1: الدفعات تُنفَّذ بالتتابع مع await فلا يضيع فشل جزئي ولا تُعاد كتابة دفعة منفَّذة */
+  for (let i = 0; i < ops.length; i += 380) { const b = writeBatch(db); ops.slice(i, i + 380).forEach(([ref, data]) => b.set(ref, data)); await b.commit(); }
   log(`أُنشئ ${made} سجل حضور/انصراف حقيقي الشكل`);
   mark('#st2', 'done');
 }
 
 async function seedRequests() {
+  reseed();
   log('بذر الطلبات (إجازات + تصحيح + مهام)…');
   const today = todayKey();
   const staff = EP.filter(e => e.empType === 'staff');
   const tasks = EP.filter(e => e.empType === 'task');
   const types = (await getDocs(collection(db, 'taskTypes'))).docs.map(x => ({ id: x.id, ...x.data() }));
   const TT = name => types.find(t => t.name === name) || types[0];
+  let rq = 0;
   const put = async (emp, kind, data) => {
-    await addDoc(collection(db, 'employees', emp.id, 'requests'), { kind, status: 'pending', empName: emp.name, createdAt: Timestamp.fromDate(new Date(`${data.from || today}T10:30:00`)), ...data });
+    await setDoc(doc(db, 'employees', emp.id, 'requests', sid('req', ++rq)), { kind, status: 'pending', empName: emp.name, createdAt: Timestamp.fromDate(new Date(`${data.from || today}T10:30:00`)), ...data });
   };
   // إجازات: مؤمّنة وسابقة معتمدة وبند تصحيح
   await put(staff[0], 'leave', { type: 'annual', typeName: 'سنوية', from: addDays(today, 6), to: addDays(today, 10), note: 'ظروف عائلية' });
@@ -228,7 +253,7 @@ async function seedRequests() {
   const doneTask = async (emp, name, qty, dOff) => {
     const t = TT(name);
     const from = addDays(today, dOff);
-    await addDoc(collection(db, 'employees', emp.id, 'requests'), { kind: 'task', status: 'approved', empName: emp.name, type: 'task', typeName: name, taskId: t.id, taskName: t.name, qty, qtyApproved: t.price * qty, unitPrice: t.price, amount: t.price * qty, from, to: from, createdAt: Timestamp.fromDate(new Date(`${from}T14:00:00`)) });
+    await setDoc(doc(db, 'employees', emp.id, 'requests', sid('req', ++rq)), { kind: 'task', status: 'approved', empName: emp.name, type: 'task', typeName: name, taskId: t.id, taskName: t.name, qty, qtyApproved: t.price * qty, unitPrice: t.price, amount: t.price * qty, from, to: from, createdAt: Timestamp.fromDate(new Date(`${from}T14:00:00`)) });
   };
   await doneTask(tasks[0], 'غسيل سيارة', 14, -20); await doneTask(tasks[0], 'غسيل سيارة', 11, -12);
   await doneTask(tasks[0], 'توصيل طرد داخل المدينة', 9, -6);

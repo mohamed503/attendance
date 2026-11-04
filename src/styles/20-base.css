@@ -34,8 +34,8 @@ pre.rules{background:#0B1F16;color:#E6F4EA;padding:16px;border-radius:var(--r-lg
 .btn.ok{background:var(--mint);color:var(--mint-ink)}
 .btn.bad{background:color-mix(in srgb,var(--abs) 14%,transparent);color:var(--abs-t)}
 .btn.sm{height:34px;padding:0 13px;font-size:13px;border-radius:var(--r-sm);gap:6px}
-.pwa-btn{display:none;align-items:center;gap:6px;padding:0 14px;height:40px;border-radius:var(--r-md);border:1px solid var(--line);background:var(--card);color:var(--ink);font-size:13px;font-weight:600;cursor:pointer}
-.pwa-btn:hover{background:var(--pri-l)}
+.pwa-btn,.notif-btn{display:none;align-items:center;gap:6px;padding:0 14px;height:40px;border-radius:var(--r-md);border:1px solid var(--line);background:var(--card);color:var(--ink);font-size:13px;font-weight:600;cursor:pointer}
+.pwa-btn:hover,.notif-btn:hover{background:var(--pri-l)}
 
 /* حقول */
 .row{display:flex;gap:12px;flex-wrap:wrap;align-items:flex-end}

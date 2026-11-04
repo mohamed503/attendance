@@ -182,16 +182,18 @@
             <div class="field" style="max-width:320px"><label>اسم المنشأة (يظهر مكان «مِيقَاتْ» في اللوحة)</label><input id="sOrg" value="${esc((S.set && S.set.orgName) || '')}" placeholder="شركة النور"></div>
             <div class="field" style="max-width:260px"><label>المنطقة الزمنية للتقارير</label><select id="sTz">${TZ_OPTS.map(([v, l]) => `<option value="${v}" ${(S.set && +S.set.tzOffset || TZ_OFFSET_MIN) === v ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
             <div class="field" style="max-width:300px"><label>عند نسيان الموظف تسجيل الانصراف</label><select id="sForgot" ${isSuper() ? '' : 'disabled title="تعديل هذا الخيار للمدير العام فقط"'}>${[[0, 'بلا خصم تلقائي (تنبيه فقط)'], [0.25, 'خصم ربع يوم'], [0.5, 'خصم نصف يوم'], [1, 'خصم يوم كامل']].map(([v, l]) => `<option value="${v}" ${forgotDed() === v ? 'selected' : ''}>${l}</option>`).join('')}</select></div>
+            <div class="field" style="max-width:360px"><label>ربط أول جهاز للموظف</label><select id="sBindPin" ${isSuper() ? '' : 'disabled title="تعديل هذا الخيار للمدير العام فقط"'}><option value="0" ${!(S.set && S.set.bindPin) ? 'selected' : ''}>بالرابط فقط (الوضع الحالي)</option><option value="1" ${S.set && S.set.bindPin ? 'selected' : ''}>بالرابط + رمز تفعيل من الإدارة (أأمن)</option></select></div>
+            <div class="field" style="max-width:360px"><label>التحقق من بصمة الجهاز</label><select id="sEdge" ${isSuper() ? '' : 'disabled title="تعديل هذا الخيار للمدير العام فقط"'}><option value="0" ${!(S.set && S.set.edgeRequired) ? 'selected' : ''}>داخل التطبيق (الوضع الحالي)</option><option value="1" ${S.set && S.set.edgeRequired ? 'selected' : ''}>على خادم الحافة (أأمن — يتطلب إعداد meqat-edge)</option></select></div>
             <div class="field" style="grid-column:1/-1;flex:1 1 100%"><label>تعميم / إشعار إداري يظهر أعلى شاشة كل موظف (اتركه فارغاً لإخفائه)</label><input id="sNotice" value="${esc((S.set && S.set.empNotice) || '')}" placeholder="مثال: تذكير: غداً عطلة رسمية بمناسبة..."></div>
             <button class="btn" data-act="saveSet">${ic('check', 18)} حفظ الإعدادات</button>
           </div>
           <p class="muted" style="font-size:13px;margin:12px 0 0">المنطقة الزمنية تثبّت أسماء الأيام والحدود اليومية في كل التقارير على جهاز أي مدير مهما كانت ساعة جهازه.<br>سياسة «نسيان الانصراف» تُطبَّق على الراتب الشهري (من الراتب اليومي) وعلى الأجر بالساعة (من ساعات اليوم المجدولة). ويظهر للإدارة تنبيه في «اليوم» وعلى تبويب التقارير إلى أن تُصحَّح البصمة، وعند التصحيح يُلغى الخصم تلقائياً.</p>
         </div>
         <div class="card">
-          ${ch('download', 'النسخ الاحتياطي واستعادة قاعدة البيانات (مجاناً)')}
-          <p class="hint" style="margin-top:0">نزّل نسخة احتياطية كاملة (JSON) تشمل جميع الموظفين، جداول الدوام، المواقع، العطل، والإعدادات للاحتفاظ بها على جهازك، أو استعدها في أي وقت.</p>
+          ${ch('download', 'نسخة الإعدادات والموظفين (احتياطي واستعادة)')}
+          <p class="hint" style="margin-top:0">نزّل نسخة (JSON) من الموظفين وجداول الدوام والمواقع والعطل والإعدادات للاحتفاظ بها على جهازك أو لاستعادتها. <b>لا تشمل</b> سجلات الحضور ولا الطلبات ولا الماليات ولا المسيّرات ولا دفتر السلف؛ لحفظ سجلات شهر مغلق استخدم «أرشفة الأشهر».</p>
           <div class="acts">
-            <button class="btn sec" data-act="backupDB">${ic('download', 18)} تنزيل نسخة احتياطية كاملة (JSON)</button>
+            <button class="btn sec" data-act="backupDB">${ic('download', 18)} تنزيل نسخة الإعدادات والموظفين (JSON)</button>
             <button class="btn sec" data-act="restoreDB">${ic('refresh', 18)} استعادة من ملف نسخة احتياطية</button>
             <input type="file" id="restoreInp" accept=".json" style="display:none">
           </div>
@@ -323,7 +325,7 @@
         <label class="chk"><input type="checkbox" data-k="m_bio" data-redraw ${W.methods.includes('bio') ? 'checked' : ''}> <b>بصمة الجهاز</b> — بصمة الإصبع أو الوجه على هاتف الموظف عند كل تسجيل (يمنع البصمة بالنيابة)</label>
       </div>
       ${W.methods.length > 1 ? `<div class="field" style="margin-top:10px"><label>عند تفعيل أكثر من طريقة</label><select data-k="mode" data-redraw><option value="all" ${W.mode === 'all' ? 'selected' : ''}>كل الطرق المفعّلة مطلوبة معاً (الأقوى — موصى به)</option><option value="any" ${W.mode === 'any' ? 'selected' : ''}>أي طريقة واحدة تكفي (أضعف: يكفي نجاح أسهلها)</option></select></div>` : ''}
-      ${W.methods.includes('qr') ? `<p class="hint">بعد الحفظ اضغط «عرض QR» في قائمة المواقع وافتحه على تابلت أو شاشة عند الباب. لا يُقرأ الرمز من بعيد لأنه يتغير كل 30 ثانية.</p>${ex ? `<button type="button" class="chip" data-a="rotQr">${ic('refresh', 16)} تدوير سر الرمز (إبطال أي رمز مسرَّب)</button>` : ''}` : ''}
+      ${W.methods.includes('qr') ? `<p class="hint">بعد الحفظ اضغط «عرض QR» في قائمة المواقع وافتحه على تابلت أو شاشة عند الباب وأبقِه مفتوحاً ومتصلاً بالإنترنت طوال الدوام (الرمز لا يعمل إلا والشاشة مفتوحة). لا يُقرأ الرمز من بعيد لأنه يتغير كل 30 ثانية.</p>` : ''}
       ${W.methods.length === 1 && W.methods[0] === 'gps' ? `<p class="hint" style="color:var(--warn)">GPS وحده يمكن خداعه ببرامج الموقع الوهمي. للإثبات الحقيقي أضف QR المتغيّر وبصمة الجهاز.</p>` : ''}
       <p class="hint">اضغط على الخريطة لوضع النقطة أو اسحب العلامة. الدائرة الزرقاء هي النطاق المسموح للموظف حول الموقع.</p>
       <div id="mapBox" style="height:320px;border-radius:16px;border:1px solid var(--line);background:var(--surface)"></div>
@@ -336,9 +338,6 @@
         else W[k] = v;
       },
       onAct: async a => {
-        if (a === 'rotQr' && ex) {
-          if (await mqConfirm('تدوير السر يُبطل فوراً أي رمز QR قديم أو مصوَّر، وتحتاج لإعادة فتح شاشة العرض. متابعة؟')) { await setDoc(doc(db, 'locSecrets', ex.id), { secret: newQrSecret(), rotatedAt: serverTimestamp() }); toast('تم تدوير سر الرمز', 'good'); }
-        }
         if (a === 'myLoc') {
           toast('جاري تحديد موقعك…');
           try {
@@ -360,7 +359,6 @@
         let locId = ex && ex.id;
         if (ex) await updateDoc(doc(db, 'locations', ex.id), { name: W.name.trim(), lat: W.lat, lng: W.lng, radius: Math.round(W.radius), ...pol, ...geoK(W.lat) });
         else locId = (await addDoc(collection(db, 'locations'), { name: W.name.trim(), lat: W.lat, lng: W.lng, radius: Math.round(W.radius), active: true, ...pol, ...geoK(W.lat) })).id;
-        if (W.methods.includes('qr') && !(await getDoc(doc(db, 'locSecrets', locId))).exists()) await setDoc(doc(db, 'locSecrets', locId), { secret: newQrSecret(), rotatedAt: serverTimestamp() });
         await refresh('locs'); toast('تم حفظ الموقع', 'good');
       }
     });
